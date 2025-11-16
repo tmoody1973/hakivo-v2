@@ -1,6 +1,6 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
-import { ElevenLabsClient } from 'elevenlabs';
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 
 export default class extends Service<Env> {
   private elevenlabs: ElevenLabsClient | null = null;
@@ -44,7 +44,7 @@ export default class extends Service<Env> {
   }> {
     const client = this.getElevenLabsClient();
 
-    // Parse dialogue script into turns
+    // Parse dialogue script into turns for text-to-dialogue API
     const turns = this.parseDialogueScript(script);
 
     if (turns.length === 0) {
@@ -54,39 +54,37 @@ export default class extends Service<Env> {
     console.log(`✓ Parsed ${turns.length} dialogue turns`);
 
     try {
-      // Use text-to-speech with streaming
-      const audioStream = await client.textToSpeech.convert(voiceIdA, {
-        text: script,
-        model_id: 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-          style: 0.5,
-          use_speaker_boost: true
+      // Build input array for text-to-dialogue API (camelCase per SDK)
+      const inputs = turns.map(turn => ({
+        text: turn.text,
+        voiceId: turn.speaker === 'A' ? voiceIdA : voiceIdB
+      }));
+
+      // Use text-to-dialogue API
+      const audioStream = await client.textToDialogue.convert({
+        inputs
+      });
+
+      // Convert Web ReadableStream to Uint8Array
+      const reader = audioStream.getReader();
+      const chunks: Uint8Array[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
         }
-      });
-
-      // Collect chunks from Node.js Readable stream
-      const chunks: Buffer[] = [];
-
-      // Wait for all data chunks
-      await new Promise<void>((resolve, reject) => {
-        audioStream.on('data', (chunk: Buffer) => {
-          chunks.push(chunk);
-        });
-
-        audioStream.on('end', () => {
-          resolve();
-        });
-
-        audioStream.on('error', (err: Error) => {
-          reject(err);
-        });
-      });
+      }
 
       // Combine chunks into single buffer
-      const combinedBuffer = Buffer.concat(chunks);
-      const audioBuffer = new Uint8Array(combinedBuffer);
+      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const audioBuffer = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        audioBuffer.set(chunk, offset);
+        offset += chunk.length;
+      }
 
       const characterCount = script.length;
 
@@ -149,17 +147,17 @@ export default class extends Service<Env> {
     const client = this.getElevenLabsClient();
 
     try {
-      const subscription = await client.user.getSubscription();
+      const subscription: any = await client.user.subscription;
 
-      const characterCount = subscription.character_count || 0;
-      const characterLimit = subscription.character_limit || 0;
+      const characterCount = subscription.characterCount || 0;
+      const characterLimit = subscription.characterLimit || 0;
       const remainingCharacters = characterLimit - characterCount;
 
       return {
         characterCount,
         characterLimit,
         remainingCharacters,
-        canResetVoiceAdd: subscription.can_use_instant_voice_cloning || false
+        canResetVoiceAdd: subscription.canUseInstantVoiceCloning || false
       };
     } catch (error) {
       console.error('ElevenLabs quota check error:', error);
