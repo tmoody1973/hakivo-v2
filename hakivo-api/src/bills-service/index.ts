@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
+import { buildBillFilterQuery, getInterestNames } from '../config/user-interests';
 
 // Validation schemas
 const SearchBillsSchema = z.object({
@@ -24,6 +25,15 @@ const TrackBillSchema = z.object({
   congress: z.number().int(),
   billType: z.string(),
   billNumber: z.number().int()
+});
+
+const InterestBillsSchema = z.object({
+  interests: z.array(z.string()).min(1),
+  useKeywords: z.boolean().default(false),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).default(0),
+  sort: z.enum(['latest_action_date', 'introduced_date', 'title']).default('latest_action_date'),
+  order: z.enum(['asc', 'desc']).default('desc')
 });
 
 // Create Hono app
@@ -121,7 +131,7 @@ app.get('/bills/search', async (c) => {
     let sql = `
       SELECT
         b.id,
-        b.congress_id,
+        b.congress,
         b.bill_type,
         b.bill_number,
         b.title,
@@ -148,7 +158,7 @@ app.get('/bills/search', async (c) => {
     }
 
     if (congress) {
-      sql += ` AND b.congress_id = ?`;
+      sql += ` AND b.congress = ?`;
       bindings.push(congress);
     }
 
@@ -202,7 +212,7 @@ app.get('/bills/search', async (c) => {
     }
 
     if (congress) {
-      countSql += ` AND b.congress_id = ?`;
+      countSql += ` AND b.congress = ?`;
       countBindings.push(congress);
     }
 
@@ -231,7 +241,7 @@ app.get('/bills/search', async (c) => {
     // Format results
     const bills = result.results?.map((row: any) => ({
       id: row.id,
-      congress: row.congress_id,
+      congress: row.congress,
       type: row.bill_type,
       number: row.bill_number,
       title: row.title,
@@ -270,6 +280,150 @@ app.get('/bills/search', async (c) => {
 });
 
 /**
+ * POST /bills/by-interests
+ * Get bills filtered by user interests (Environment, Health, Economy, etc.)
+ *
+ * Body: {
+ *   interests: string[],     // Array of interest names (e.g., ["Environment & Energy", "Health & Social Welfare"])
+ *   useKeywords: boolean,    // Include keyword matching in addition to policy areas (default: false)
+ *   limit: number,
+ *   offset: number,
+ *   sort: 'latest_action_date' | 'introduced_date' | 'title',
+ *   order: 'asc' | 'desc'
+ * }
+ */
+app.post('/bills/by-interests', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Parse and validate body
+    const body = await c.req.json();
+    const validation = InterestBillsSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid parameters', details: validation.error.errors }, 400);
+    }
+
+    const { interests, useKeywords, limit, offset, sort, order } = validation.data;
+
+    // Validate interest names
+    const validInterests = getInterestNames();
+    const invalidInterests = interests.filter(i => !validInterests.includes(i));
+    if (invalidInterests.length > 0) {
+      return c.json({
+        error: 'Invalid interest names',
+        invalidInterests,
+        validInterests
+      }, 400);
+    }
+
+    // Build WHERE clause from interests
+    const interestFilter = buildBillFilterQuery(interests, useKeywords);
+
+    // Build SQL query
+    let sql = `
+      SELECT
+        b.id,
+        b.congress,
+        b.bill_type,
+        b.bill_number,
+        b.title,
+        b.policy_area,
+        b.origin_chamber,
+        b.introduced_date,
+        b.latest_action_date,
+        b.latest_action_text,
+        b.sponsor_bioguide_id,
+        m.first_name,
+        m.last_name,
+        m.party,
+        m.state
+      FROM bills b
+      LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+      WHERE ${interestFilter}
+    `;
+
+    // Add sorting
+    const sortColumn = sort === 'latest_action_date' ? 'b.latest_action_date'
+      : sort === 'introduced_date' ? 'b.introduced_date'
+      : 'b.title';
+
+    sql += ` ORDER BY ${sortColumn} ${order.toUpperCase()}`;
+
+    // Add pagination
+    sql += ` LIMIT ? OFFSET ?`;
+
+    // Execute query
+    const result = await db.prepare(sql).bind(limit, offset).all();
+
+    // Get total count for pagination
+    let countSql = `
+      SELECT COUNT(*) as total
+      FROM bills b
+      WHERE ${interestFilter}
+    `;
+
+    const countResult = await db.prepare(countSql).first();
+    const total = countResult?.total as number || 0;
+
+    // Format results
+    const bills = result.results?.map((row: any) => ({
+      id: row.id,
+      congress: row.congress,
+      type: row.bill_type,
+      number: row.bill_number,
+      title: row.title,
+      policyArea: row.policy_area,
+      originChamber: row.origin_chamber,
+      introducedDate: row.introduced_date,
+      latestAction: {
+        date: row.latest_action_date,
+        text: row.latest_action_text
+      },
+      sponsor: row.sponsor_bioguide_id ? {
+        bioguideId: row.sponsor_bioguide_id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        party: row.party,
+        state: row.state
+      } : null
+    })) || [];
+
+    return c.json({
+      success: true,
+      bills,
+      interests,
+      matchMethod: useKeywords ? 'policy_areas_and_keywords' : 'policy_areas_only',
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+  } catch (error) {
+    console.error('Interest-based bill search error:', error);
+    return c.json({
+      error: 'Interest-based bill search failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /bills/interests
+ * Get list of available interest categories
+ */
+app.get('/bills/interests', (c) => {
+  const interests = getInterestNames();
+  return c.json({
+    success: true,
+    interests,
+    count: interests.length
+  });
+});
+
+/**
  * GET /bills/:congress/:type/:number
  * Get bill details
  */
@@ -281,20 +435,21 @@ app.get('/bills/:congress/:type/:number', async (c) => {
     const billType = c.req.param('type');
     const billNumber = parseInt(c.req.param('number'));
 
-    // Get bill with sponsor details
+    // Get bill with sponsor details (including new metadata)
     const bill = await db
       .prepare(`
         SELECT
           b.*,
           m.first_name,
+          m.middle_name,
           m.last_name,
           m.party,
           m.state,
           m.district,
-          m.official_full_name
+          m.image_url
         FROM bills b
         LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
-        WHERE b.congress_id = ? AND b.bill_type = ? AND b.bill_number = ?
+        WHERE b.congress = ? AND b.bill_type = ? AND b.bill_number = ?
       `)
       .bind(congress, billType, billNumber)
       .first();
@@ -322,44 +477,16 @@ app.get('/bills/:congress/:type/:number', async (c) => {
       .bind(bill.id)
       .all();
 
-    // Get actions
-    const actions = await db
-      .prepare(`
-        SELECT action_date, action_text, action_time
-        FROM actions
-        WHERE bill_id = ?
-        ORDER BY action_date DESC, action_time DESC
-        LIMIT 50
-      `)
-      .bind(bill.id)
-      .all();
-
-    // Get subjects
-    const subjects = await db
-      .prepare(`
-        SELECT s.name
-        FROM bill_subjects bs
-        INNER JOIN subjects s ON bs.subject_id = s.id
-        WHERE bs.bill_id = ?
-      `)
-      .bind(bill.id)
-      .all();
-
-    // Get committees
-    const committees = await db
-      .prepare(`
-        SELECT c.id, c.name, c.chamber
-        FROM bill_committees bc
-        INNER JOIN committees c ON bc.committee_id = c.id
-        WHERE bc.bill_id = ?
-      `)
-      .bind(bill.id)
-      .all();
+    // TODO: Get actions, subjects, committees when tables are created
+    // For now, return empty arrays
+    const actions = { results: [] };
+    const subjects = { results: [] };
+    const committees = { results: [] };
 
     // Format response
     const response = {
       id: bill.id,
-      congress: bill.congress_id,
+      congress: bill.congress,
       type: bill.bill_type,
       number: bill.bill_number,
       title: bill.title,
@@ -372,11 +499,13 @@ app.get('/bills/:congress/:type/:number', async (c) => {
       sponsor: bill.sponsor_bioguide_id ? {
         bioguideId: bill.sponsor_bioguide_id,
         firstName: bill.first_name,
+        middleName: bill.middle_name,
         lastName: bill.last_name,
-        fullName: bill.official_full_name,
+        fullName: [bill.first_name, bill.middle_name, bill.last_name].filter(Boolean).join(' '),
         party: bill.party,
         state: bill.state,
-        district: bill.district
+        district: bill.district,
+        imageUrl: bill.image_url
       } : null,
       cosponsors: cosponsors.results?.map((row: any) => ({
         bioguideId: row.bioguide_id,
@@ -542,7 +671,7 @@ app.get('/bills/tracked', async (c) => {
           t.views,
           t.shares,
           t.bookmarks,
-          b.congress_id,
+          b.congress,
           b.bill_type,
           b.bill_number,
           b.title,
@@ -570,7 +699,7 @@ app.get('/bills/tracked', async (c) => {
       shares: row.shares,
       bookmarks: row.bookmarks,
       bill: {
-        congress: row.congress_id,
+        congress: row.congress,
         type: row.bill_type,
         number: row.bill_number,
         title: row.title,

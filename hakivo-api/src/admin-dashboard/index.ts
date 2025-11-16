@@ -284,6 +284,96 @@ app.get('/api/smartbuckets/info', async (c) => {
   });
 });
 
+/**
+ * POST /api/smartbucket/store
+ * Store content in a SmartBucket
+ */
+app.post('/api/smartbucket/store', async (c) => {
+  try {
+    const { bucket, key, content, contentType = 'text/plain' } = await c.req.json();
+
+    if (!bucket || !key || !content) {
+      return c.json({
+        success: false,
+        error: 'Missing required fields: bucket, key, content'
+      }, 400);
+    }
+
+    // Get the SmartBucket instance
+    const smartBucket = (c.env as any)[bucket];
+    if (!smartBucket) {
+      return c.json({
+        success: false,
+        error: `SmartBucket '${bucket}' not found`
+      }, 404);
+    }
+
+    // Store the content
+    await smartBucket.put(key, content, {
+      httpMetadata: {
+        contentType: contentType
+      }
+    });
+
+    return c.json({
+      success: true,
+      bucket,
+      key,
+      url: `smartbucket://${bucket}/${key}`,
+      size: content.length
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/smartbucket/get/:bucket/:key
+ * Retrieve content from a SmartBucket
+ */
+app.get('/api/smartbucket/get/:bucket/*', async (c) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    const key = c.req.param('*'); // This captures everything after /bucket/
+
+    // Get the SmartBucket instance
+    const smartBucket = (c.env as any)[bucketName];
+    if (!smartBucket) {
+      return c.json({
+        success: false,
+        error: `SmartBucket '${bucketName}' not found`
+      }, 404);
+    }
+
+    // Retrieve the content
+    const object = await smartBucket.get(key);
+    if (!object) {
+      return c.json({
+        success: false,
+        error: `Object '${key}' not found in bucket '${bucketName}'`
+      }, 404);
+    }
+
+    const content = await object.text();
+
+    return c.json({
+      success: true,
+      bucket: bucketName,
+      key,
+      content,
+      size: content.length
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);
@@ -698,13 +788,18 @@ function getAdminDashboardHTML(): string {
         const data = await response.json();
 
         if (data.success) {
-          let html = '<table><thead><tr><th>Table Name</th><th>Rows</th></tr></thead><tbody>';
+          let html = '<table><thead><tr><th>Table Name</th><th>Rows</th><th>Actions</th></tr></thead><tbody>';
 
           data.tables.forEach(table => {
+            const viewBtn = table.rows > 0
+              ? \`<button class="btn" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;" onclick="viewTableData('\${table.name}')">View Data</button>\`
+              : '<span style="color: #94a3b8;">No data</span>';
+
             html += \`
               <tr>
                 <td>\${table.name}</td>
                 <td>\${table.rows.toLocaleString()}</td>
+                <td>\${viewBtn}</td>
               </tr>
             \`;
           });
@@ -716,6 +811,76 @@ function getAdminDashboardHTML(): string {
         }
       } catch (error) {
         container.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+      }
+    }
+
+    // View table data
+    async function viewTableData(tableName) {
+      const resultsDiv = document.getElementById('query-results');
+      resultsDiv.innerHTML = '<div class="loading">Loading table data...</div>';
+
+      // Scroll to results
+      resultsDiv.scrollIntoView({ behavior: 'smooth' });
+
+      try {
+        const response = await fetch('/api/database/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: \`SELECT * FROM \${tableName} LIMIT 100\` })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.results.length > 0) {
+          // Build HTML table
+          const columns = Object.keys(data.results[0]);
+          let html = \`
+            <div class="success">
+              <strong>\${tableName}</strong> - Showing \${data.count} of \${data.count} rows
+              <button class="btn" style="float: right; padding: 0.25rem 0.75rem; font-size: 0.75rem; margin-left: 0.5rem;" onclick="loadTables()">Back to Tables</button>
+            </div>
+            <div class="results">
+              <div style="overflow-x: auto;">
+                <table style="width: 100%; font-size: 0.75rem;">
+                  <thead>
+                    <tr>
+          \`;
+
+          columns.forEach(col => {
+            html += \`<th style="white-space: nowrap; padding: 0.5rem;">\${col}</th>\`;
+          });
+
+          html += '</tr></thead><tbody>';
+
+          data.results.forEach(row => {
+            html += '<tr>';
+            columns.forEach(col => {
+              let value = row[col];
+
+              // Truncate long text
+              if (typeof value === 'string' && value.length > 100) {
+                value = value.substring(0, 100) + '...';
+              }
+
+              // Handle null
+              if (value === null) {
+                value = '<span style="color: #94a3b8; font-style: italic;">null</span>';
+              }
+
+              html += \`<td style="padding: 0.5rem; border-bottom: 1px solid #334155;">\${value}</td>\`;
+            });
+            html += '</tr>';
+          });
+
+          html += '</tbody></table></div></div>';
+          resultsDiv.innerHTML = html;
+        } else if (data.success && data.results.length === 0) {
+          resultsDiv.innerHTML = '<div class="success">Table is empty (0 rows)</div>';
+        } else {
+          resultsDiv.innerHTML = \`<div class="error">\${data.error}</div>\`;
+        }
+      } catch (error) {
+        resultsDiv.innerHTML = \`<div class="error">Error: \${error.message}</div>\`;
       }
     }
 
