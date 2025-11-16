@@ -1,0 +1,9 @@
+[project]
+name = "hakivo-v2"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mcp-vultr>=2.0.2",
+]
