@@ -50,6 +50,10 @@ application "hakivo-api" {
     visibility = "private"
   }
 
+  service "vultr-storage-client" {
+    visibility = "private"
+  }
+
   // Background workers
   observer "brief-generator" {
     source {
@@ -57,23 +61,34 @@ application "hakivo-api" {
     }
   }
 
-  observer "bill-indexer" {
+  observer "congress-sync-observer" {
     source {
-      queue = "indexing-queue"
+      queue = "sync-queue"
     }
+  }
+
+  // Scheduled tasks
+  task "daily-brief-scheduler" {
+    schedule = "0 7 * * *"
+  }
+
+  task "weekly-brief-scheduler" {
+    schedule = "0 7 * * 1"
+  }
+
+  task "congress-sync-scheduler" {
+    schedule = "0 2 * * *"
   }
 
   // Message queues
   queue "brief-queue" {}
 
-  queue "indexing-queue" {}
+  queue "sync-queue" {}
 
   // SQL database for application data
   sql_database "app-db" {}
 
   // KV caches for performance
-  kv_cache "bill-cache" {}
-
   kv_cache "news-cache" {}
 
   kv_cache "dashboard-cache" {}
@@ -82,9 +97,10 @@ application "hakivo-api" {
 
   kv_cache "session-cache" {}
 
-  // SmartBucket for audio storage with search
-  smartbucket "audio-briefs" {}
+  kv_cache "image-cache" {}
 
-  // Vector database integration (external Pinecone)
-  // Note: Vector operations handled via external API in bill-indexer
+  kv_cache "actions-cache" {}
+
+  // SmartBuckets for storage with automatic search
+  smartbucket "bill-texts" {}
 }
