@@ -42,7 +42,7 @@ export default class extends Service<Env> {
 
     const response = await client.chat.completions.create({
       messages,
-      model: 'llama3.1-70b',
+      model: 'gpt-oss-120b',
       stream: false,
       max_completion_tokens: maxTokens,
       temperature,
@@ -80,7 +80,7 @@ export default class extends Service<Env> {
 
     const stream = await client.chat.completions.create({
       messages,
-      model: 'llama3.1-70b',
+      model: 'gpt-oss-120b',
       stream: true,
       max_completion_tokens: maxTokens,
       temperature,
