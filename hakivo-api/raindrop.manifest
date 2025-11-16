@@ -1,0 +1,90 @@
+application "hakivo-api" {
+
+  // Public-facing HTTP services
+  service "auth-service" {
+    visibility = "public"
+  }
+
+  service "bills-service" {
+    visibility = "public"
+  }
+
+  service "briefs-service" {
+    visibility = "public"
+  }
+
+  service "chat-service" {
+    visibility = "public"
+  }
+
+  service "dashboard-service" {
+    visibility = "public"
+  }
+
+  // Private internal services
+  service "user-service" {
+    visibility = "private"
+  }
+
+  service "congress-api-client" {
+    visibility = "private"
+  }
+
+  service "geocodio-client" {
+    visibility = "private"
+  }
+
+  service "claude-client" {
+    visibility = "private"
+  }
+
+  service "elevenlabs-client" {
+    visibility = "private"
+  }
+
+  service "cerebras-client" {
+    visibility = "private"
+  }
+
+  service "exa-client" {
+    visibility = "private"
+  }
+
+  // Background workers
+  observer "brief-generator" {
+    source {
+      queue = "brief-queue"
+    }
+  }
+
+  observer "bill-indexer" {
+    source {
+      queue = "indexing-queue"
+    }
+  }
+
+  // Message queues
+  queue "brief-queue" {}
+
+  queue "indexing-queue" {}
+
+  // SQL database for application data
+  sql_database "app-db" {}
+
+  // KV caches for performance
+  kv_cache "bill-cache" {}
+
+  kv_cache "news-cache" {}
+
+  kv_cache "dashboard-cache" {}
+
+  kv_cache "district-cache" {}
+
+  kv_cache "session-cache" {}
+
+  // SmartBucket for audio storage with search
+  smartbucket "audio-briefs" {}
+
+  // Vector database integration (external Pinecone)
+  // Note: Vector operations handled via external API in bill-indexer
+}
