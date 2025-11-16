@@ -1,15 +1,22 @@
 "use client"
 
 import { useState } from "react"
+import { usePathname } from "next/navigation"
 import { Play, Pause, SkipBack, SkipForward, Volume2, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Card } from "@/components/ui/card"
 
 export function PersistentAudioPlayer() {
+  const pathname = usePathname()
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState([35])
   const [volume, setVolume] = useState([75])
+
+  // Don't show player on landing page or onboarding
+  if (pathname === '/' || pathname === '/onboarding') {
+    return null
+  }
 
   return (
     <Card className="fixed bottom-0 left-0 right-0 z-50 border-t rounded-none bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
