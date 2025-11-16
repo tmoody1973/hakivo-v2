@@ -1,4 +1,4 @@
-# Product Requirements Document: Hakivo API
+1# Product Requirements Document: Hakivo API
 
 ## Executive Summary
 
@@ -57,7 +57,7 @@ The Hakivo API employs a microservices architecture built on Raindrop Framework,
 | geocodio-client | service (private) | Zip to district lookup, indefinite caching | Queries Geocodio API with rate limiting (2500 req/day), caches results in district-cache with no expiration |
 | claude-client | service (private) | Script generation, token counting, cost tracking | Calls Anthropic API with Claude Sonnet 4.5, counts tokens, logs costs to api_usage_logs table, enforces 50 req/min limit |
 | elevenlabs-client | service (private) | Audio synthesis, quota monitoring | Calls ElevenLabs text-to-dialogue API, monitors character quota, logs usage to api_usage_logs, returns MP3 stream |
-| cerebras-client | service (private) | Fast LLM inference for RAG and bill analysis | Calls Cerebras gpt-oss-120b for chat completions with streaming support, bill AI analysis (what it does, who it affects, key provisions, potential benefits/concerns), dashboard summaries, enforces 100 req/min limit, provides ~1-2s response time |
+| cerebras-client | service (private) | Fast LLM inference for RAG | Calls Cerebras gpt-oss-120b for chat completions with streaming support, max 65536 tokens, reasoning_effort: medium, enforces 100 req/min limit, provides ~1-2s response time |
 | exa-client | service (private) | News search, result caching, Pexels image fallback | Calls Exa.ai neural search API, implements 6-hour cache in news-cache, filters by date range and user interests, provides Pexels image fallback with deduplication via image-cache when Exa.ai results lack images |
 | vultr-storage-client | service (private) | Audio file storage to Vultr Object Storage (hackathon requirement) | S3-compatible uploads of MP3 files to Vultr, organizes by date hierarchy (daily/YYYY/MM/DD, weekly/YYYY/W##), returns public CDN URLs, monitors storage usage and bandwidth costs |
 | app-db | sql_database | Persistent storage for users, bills, briefs, chat, tokens, and full Congress.gov dataset | Stores 43 tables (13 user/app tables + 30 Congress.gov tables) with proper indexes and foreign keys, supports transactional operations, handles all application state and legislative data populated by daily sync |

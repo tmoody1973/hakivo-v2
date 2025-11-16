@@ -169,7 +169,7 @@ VULTR_ACCESS_KEY=...
 VULTR_SECRET_KEY=...
 VULTR_BUCKET=hakivo-audio
 VULTR_REGION=ewr1
-VULTR_CDN_URL=https://cdn.hakivo.com
+VULTR_CDN_URL=
 
 # Backend
 NEXT_PUBLIC_API_URL=http://localhost:3001/api
