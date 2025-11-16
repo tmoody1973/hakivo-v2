@@ -2,457 +2,650 @@ import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { QueueSendOptions } from '@liquidmetal-ai/raindrop-framework';
-import { KvCachePutOptions, KvCacheGetOptions } from '@liquidmetal-ai/raindrop-framework';
-import { BucketPutOptions, BucketListOptions } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
+import { z } from 'zod';
 
-// Create Hono app with middleware
+// Validation schemas
+const SearchBillsSchema = z.object({
+  query: z.string().optional(),
+  congress: z.number().int().min(1).optional(),
+  billType: z.string().optional(),
+  sponsor: z.string().optional(),
+  subject: z.string().optional(),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).default(0),
+  sort: z.enum(['latest_action_date', 'introduced_date', 'title']).default('latest_action_date'),
+  order: z.enum(['asc', 'desc']).default('desc')
+});
+
+const TrackBillSchema = z.object({
+  billId: z.number().int(),
+  title: z.string(),
+  congress: z.number().int(),
+  billType: z.string(),
+  billNumber: z.number().int()
+});
+
+// Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
-// Add request logging middleware
+// Middleware
 app.use('*', logger());
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
-// Health check endpoint
+/**
+ * Verify JWT token from auth header
+ */
+async function verifyAuth(authHeader: string | undefined): Promise<{ userId: string } | null> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+
+  // Use jose to verify token
+  try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET not configured');
+    }
+
+    const { jwtVerify } = await import('jose');
+    const secret = new TextEncoder().encode(jwtSecret);
+    const { payload } = await jwtVerify(token, secret);
+
+    if (typeof payload.userId !== 'string') {
+      return null;
+    }
+
+    return { userId: payload.userId };
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Require authentication middleware
+ */
+async function requireAuth(c: any): Promise<{ userId: string } | Response> {
+  const authHeader = c.req.header('Authorization');
+  const auth = await verifyAuth(authHeader);
+
+  if (!auth) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  return auth;
+}
+
+// Health check
 app.get('/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  return c.json({ status: 'ok', service: 'bills-service', timestamp: new Date().toISOString() });
 });
 
-// === Basic API Routes ===
-app.get('/api/hello', (c) => {
-  return c.json({ message: 'Hello from Hono!' });
-});
-
-app.get('/api/hello/:name', (c) => {
-  const name = c.req.param('name');
-  return c.json({ message: `Hello, ${name}!` });
-});
-
-// Example POST endpoint
-app.post('/api/echo', async (c) => {
-  const body = await c.req.json();
-  return c.json({ received: body });
-});
-
-// === RPC Examples: Service calling Actor ===
-// Example: Call an actor method
-/*
-app.post('/api/actor-call', async (c) => {
+/**
+ * GET /bills/search
+ * Search bills with filters
+ */
+app.get('/bills/search', async (c) => {
   try {
-    const { message, actorName } = await c.req.json();
+    const db = c.env.APP_DB;
 
-    if (!actorName) {
-      return c.json({ error: 'actorName is required' }, 400);
+    // Parse query parameters
+    const params = {
+      query: c.req.query('query'),
+      congress: c.req.query('congress') ? parseInt(c.req.query('congress')!) : undefined,
+      billType: c.req.query('billType'),
+      sponsor: c.req.query('sponsor'),
+      subject: c.req.query('subject'),
+      limit: c.req.query('limit') ? parseInt(c.req.query('limit')!) : 20,
+      offset: c.req.query('offset') ? parseInt(c.req.query('offset')!) : 0,
+      sort: c.req.query('sort') || 'latest_action_date',
+      order: c.req.query('order') || 'desc'
+    };
+
+    // Validate
+    const validation = SearchBillsSchema.safeParse(params);
+    if (!validation.success) {
+      return c.json({ error: 'Invalid parameters', details: validation.error.errors }, 400);
     }
 
-    // Get actor namespace and create actor instance
-    // Note: Replace MY_ACTOR with your actual actor binding name
-    const actorNamespace = c.env.MY_ACTOR; // This would be bound in raindrop.manifest
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
+    const { query, congress, billType, sponsor, subject, limit, offset, sort, order } = validation.data;
 
-    // Call actor method (assuming actor has a 'processMessage' method)
-    const response = await actor.processMessage(message);
+    // Build SQL query
+    let sql = `
+      SELECT
+        b.id,
+        b.congress_id,
+        b.bill_type,
+        b.bill_number,
+        b.title,
+        b.origin_chamber,
+        b.introduced_date,
+        b.latest_action_date,
+        b.latest_action_text,
+        b.sponsor_bioguide_id,
+        m.first_name,
+        m.last_name,
+        m.party,
+        m.state
+      FROM bills b
+      LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+      WHERE 1=1
+    `;
 
-    return c.json({
-      success: true,
-      actorName,
-      response
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to call actor',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
+    const bindings: any[] = [];
 
-// Example: Get actor state
-/*
-app.get('/api/actor-state/:actorName', async (c) => {
-  try {
-    const actorName = c.req.param('actorName');
-
-    // Get actor instance
-    const actorNamespace = c.env.MY_ACTOR;
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
-
-    // Get actor state (assuming actor has a 'getState' method)
-    const state = await actor.getState();
-
-    return c.json({
-      success: true,
-      actorName,
-      state
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to get actor state',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === SmartBucket Examples ===
-// Example: Upload file to SmartBucket
-/*
-app.post('/api/upload', async (c) => {
-  try {
-    const formData = await c.req.formData();
-    const file = formData.get('file') as File;
-    const description = formData.get('description') as string;
-
-    if (!file) {
-      return c.json({ error: 'No file provided' }, 400);
+    // Add filters
+    if (query) {
+      sql += ` AND (b.title LIKE ? OR b.latest_action_text LIKE ?)`;
+      bindings.push(`%${query}%`, `%${query}%`);
     }
 
-    // Upload to SmartBucket (Replace MY_SMARTBUCKET with your binding name)
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const arrayBuffer = await file.arrayBuffer();
+    if (congress) {
+      sql += ` AND b.congress_id = ?`;
+      bindings.push(congress);
+    }
 
-    const putOptions: BucketPutOptions = {
-      httpMetadata: {
-        contentType: file.type || 'application/octet-stream',
+    if (billType) {
+      sql += ` AND b.bill_type = ?`;
+      bindings.push(billType);
+    }
+
+    if (sponsor) {
+      sql += ` AND b.sponsor_bioguide_id = ?`;
+      bindings.push(sponsor);
+    }
+
+    if (subject) {
+      // Join with subjects
+      sql = sql.replace('WHERE 1=1', `
+        INNER JOIN bill_subjects bs ON b.id = bs.bill_id
+        INNER JOIN subjects s ON bs.subject_id = s.id
+        WHERE s.name LIKE ?
+      `);
+      bindings.push(`%${subject}%`);
+    }
+
+    // Add sorting
+    const sortColumn = sort === 'latest_action_date' ? 'b.latest_action_date'
+      : sort === 'introduced_date' ? 'b.introduced_date'
+      : 'b.title';
+
+    sql += ` ORDER BY ${sortColumn} ${order.toUpperCase()}`;
+
+    // Add pagination
+    sql += ` LIMIT ? OFFSET ?`;
+    bindings.push(limit, offset);
+
+    // Execute query
+    const result = await db.prepare(sql).bind(...bindings).all();
+
+    // Get total count for pagination
+    let countSql = `
+      SELECT COUNT(*) as total
+      FROM bills b
+      LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+      WHERE 1=1
+    `;
+
+    const countBindings: any[] = [];
+
+    if (query) {
+      countSql += ` AND (b.title LIKE ? OR b.latest_action_text LIKE ?)`;
+      countBindings.push(`%${query}%`, `%${query}%`);
+    }
+
+    if (congress) {
+      countSql += ` AND b.congress_id = ?`;
+      countBindings.push(congress);
+    }
+
+    if (billType) {
+      countSql += ` AND b.bill_type = ?`;
+      countBindings.push(billType);
+    }
+
+    if (sponsor) {
+      countSql += ` AND b.sponsor_bioguide_id = ?`;
+      countBindings.push(sponsor);
+    }
+
+    if (subject) {
+      countSql = countSql.replace('WHERE 1=1', `
+        INNER JOIN bill_subjects bs ON b.id = bs.bill_id
+        INNER JOIN subjects s ON bs.subject_id = s.id
+        WHERE s.name LIKE ?
+      `);
+      countBindings.push(`%${subject}%`);
+    }
+
+    const countResult = await db.prepare(countSql).bind(...countBindings).first();
+    const total = countResult?.total as number || 0;
+
+    // Format results
+    const bills = result.results?.map((row: any) => ({
+      id: row.id,
+      congress: row.congress_id,
+      type: row.bill_type,
+      number: row.bill_number,
+      title: row.title,
+      originChamber: row.origin_chamber,
+      introducedDate: row.introduced_date,
+      latestAction: {
+        date: row.latest_action_date,
+        text: row.latest_action_text
       },
-      customMetadata: {
-        originalName: file.name,
-        size: file.size.toString(),
-        description: description || '',
-        uploadedAt: new Date().toISOString()
-      }
-    };
-
-    const result = await smartbucket.put(file.name, new Uint8Array(arrayBuffer), putOptions);
+      sponsor: row.sponsor_bioguide_id ? {
+        bioguideId: row.sponsor_bioguide_id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        party: row.party,
+        state: row.state
+      } : null
+    })) || [];
 
     return c.json({
       success: true,
-      message: 'File uploaded successfully',
-      key: result.key,
-      size: result.size,
-      etag: result.etag
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to upload file',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get file from SmartBucket
-/*
-app.get('/api/file/:filename', async (c) => {
-  try {
-    const filename = c.req.param('filename');
-
-    // Get file from SmartBucket
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const file = await smartbucket.get(filename);
-
-    if (!file) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-
-    return new Response(file.body, {
-      headers: {
-        'Content-Type': file.httpMetadata?.contentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'X-Object-Size': file.size.toString(),
-        'X-Object-ETag': file.etag,
-        'X-Object-Uploaded': file.uploaded.toISOString(),
+      bills,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
       }
     });
   } catch (error) {
+    console.error('Bill search error:', error);
     return c.json({
-      error: 'Failed to retrieve file',
+      error: 'Bill search failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
 });
-*/
 
-// Example: Search SmartBucket documents
-/*
-app.post('/api/search', async (c) => {
+/**
+ * GET /bills/:congress/:type/:number
+ * Get bill details
+ */
+app.get('/bills/:congress/:type/:number', async (c) => {
   try {
-    const { query, page = 1, pageSize = 10 } = await c.req.json();
+    const db = c.env.APP_DB;
 
-    if (!query) {
-      return c.json({ error: 'Query is required' }, 400);
+    const congress = parseInt(c.req.param('congress'));
+    const billType = c.req.param('type');
+    const billNumber = parseInt(c.req.param('number'));
+
+    // Get bill with sponsor details
+    const bill = await db
+      .prepare(`
+        SELECT
+          b.*,
+          m.first_name,
+          m.last_name,
+          m.party,
+          m.state,
+          m.district,
+          m.official_full_name
+        FROM bills b
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE b.congress_id = ? AND b.bill_type = ? AND b.bill_number = ?
+      `)
+      .bind(congress, billType, billNumber)
+      .first();
+
+    if (!bill) {
+      return c.json({ error: 'Bill not found' }, 404);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    // Get cosponsors
+    const cosponsors = await db
+      .prepare(`
+        SELECT
+          m.bioguide_id,
+          m.first_name,
+          m.last_name,
+          m.party,
+          m.state,
+          m.district,
+          bc.cosponsor_date
+        FROM bill_cosponsors bc
+        INNER JOIN members m ON bc.member_bioguide_id = m.bioguide_id
+        WHERE bc.bill_id = ?
+        ORDER BY bc.cosponsor_date ASC
+      `)
+      .bind(bill.id)
+      .all();
 
-    // For initial search
-    if (page === 1) {
-      const requestId = `search-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-      const results = await smartbucket.search({
-        input: query,
-        requestId
-      });
+    // Get actions
+    const actions = await db
+      .prepare(`
+        SELECT action_date, action_text, action_time
+        FROM actions
+        WHERE bill_id = ?
+        ORDER BY action_date DESC, action_time DESC
+        LIMIT 50
+      `)
+      .bind(bill.id)
+      .all();
 
-      return c.json({
-        success: true,
-        message: 'Search completed',
-        query,
-        results: results.results,
-        pagination: {
-          ...results.pagination,
-          requestId
-        }
-      });
-    } else {
-      // For paginated results
-      const { requestId } = await c.req.json();
-      if (!requestId) {
-        return c.json({ error: 'Request ID required for pagination' }, 400);
+    // Get subjects
+    const subjects = await db
+      .prepare(`
+        SELECT s.name
+        FROM bill_subjects bs
+        INNER JOIN subjects s ON bs.subject_id = s.id
+        WHERE bs.bill_id = ?
+      `)
+      .bind(bill.id)
+      .all();
+
+    // Get committees
+    const committees = await db
+      .prepare(`
+        SELECT c.id, c.name, c.chamber
+        FROM bill_committees bc
+        INNER JOIN committees c ON bc.committee_id = c.id
+        WHERE bc.bill_id = ?
+      `)
+      .bind(bill.id)
+      .all();
+
+    // Format response
+    const response = {
+      id: bill.id,
+      congress: bill.congress_id,
+      type: bill.bill_type,
+      number: bill.bill_number,
+      title: bill.title,
+      originChamber: bill.origin_chamber,
+      introducedDate: bill.introduced_date,
+      latestAction: {
+        date: bill.latest_action_date,
+        text: bill.latest_action_text
+      },
+      sponsor: bill.sponsor_bioguide_id ? {
+        bioguideId: bill.sponsor_bioguide_id,
+        firstName: bill.first_name,
+        lastName: bill.last_name,
+        fullName: bill.official_full_name,
+        party: bill.party,
+        state: bill.state,
+        district: bill.district
+      } : null,
+      cosponsors: cosponsors.results?.map((row: any) => ({
+        bioguideId: row.bioguide_id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        party: row.party,
+        state: row.state,
+        district: row.district,
+        cosponsorDate: row.cosponsor_date
+      })) || [],
+      actions: actions.results?.map((row: any) => ({
+        date: row.action_date,
+        text: row.action_text,
+        time: row.action_time
+      })) || [],
+      subjects: subjects.results?.map((row: any) => row.name) || [],
+      committees: committees.results?.map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        chamber: row.chamber
+      })) || [],
+      text: bill.text,
+      updateDate: bill.update_date
+    };
+
+    return c.json({
+      success: true,
+      bill: response
+    });
+  } catch (error) {
+    console.error('Get bill error:', error);
+    return c.json({
+      error: 'Failed to get bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /bills/track
+ * Track a bill (requires auth)
+ */
+app.post('/bills/track', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = TrackBillSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { billId, title, congress, billType, billNumber } = validation.data;
+
+    // Check if already tracking
+    const existing = await db
+      .prepare('SELECT id FROM tracked_bills WHERE user_id = ? AND bill_id = ?')
+      .bind(auth.userId, billId)
+      .first();
+
+    if (existing) {
+      return c.json({ error: 'Bill already tracked' }, 409);
+    }
+
+    // Add to tracked bills
+    const id = crypto.randomUUID();
+    await db
+      .prepare(`
+        INSERT INTO tracked_bills (
+          id, user_id, bill_id, title, congress, bill_type, bill_number,
+          added_at, views, shares, bookmarks
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(id, auth.userId, billId, title, congress, billType, billNumber, Date.now(), 0, 0, 0)
+      .run();
+
+    console.log(`✓ Bill tracked: ${billType}${billNumber} by user ${auth.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'Bill tracked successfully',
+      trackingId: id
+    }, 201);
+  } catch (error) {
+    console.error('Track bill error:', error);
+    return c.json({
+      error: 'Failed to track bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /bills/track/:trackingId
+ * Untrack a bill (requires auth)
+ */
+app.delete('/bills/track/:trackingId', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const trackingId = c.req.param('trackingId');
+
+    // Verify ownership
+    const tracked = await db
+      .prepare('SELECT user_id FROM tracked_bills WHERE id = ?')
+      .bind(trackingId)
+      .first();
+
+    if (!tracked) {
+      return c.json({ error: 'Tracked bill not found' }, 404);
+    }
+
+    if (tracked.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Delete
+    await db
+      .prepare('DELETE FROM tracked_bills WHERE id = ?')
+      .bind(trackingId)
+      .run();
+
+    console.log(`✓ Bill untracked: ${trackingId} by user ${auth.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'Bill untracked successfully'
+    });
+  } catch (error) {
+    console.error('Untrack bill error:', error);
+    return c.json({
+      error: 'Failed to untrack bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /bills/tracked
+ * Get user's tracked bills (requires auth)
+ */
+app.get('/bills/tracked', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Get tracked bills with latest bill data
+    const result = await db
+      .prepare(`
+        SELECT
+          t.id as tracking_id,
+          t.bill_id,
+          t.added_at,
+          t.views,
+          t.shares,
+          t.bookmarks,
+          b.congress_id,
+          b.bill_type,
+          b.bill_number,
+          b.title,
+          b.latest_action_date,
+          b.latest_action_text,
+          b.sponsor_bioguide_id,
+          m.first_name,
+          m.last_name,
+          m.party,
+          m.state
+        FROM tracked_bills t
+        INNER JOIN bills b ON t.bill_id = b.id
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE t.user_id = ?
+        ORDER BY t.added_at DESC
+      `)
+      .bind(auth.userId)
+      .all();
+
+    const trackedBills = result.results?.map((row: any) => ({
+      trackingId: row.tracking_id,
+      billId: row.bill_id,
+      addedAt: row.added_at,
+      views: row.views,
+      shares: row.shares,
+      bookmarks: row.bookmarks,
+      bill: {
+        congress: row.congress_id,
+        type: row.bill_type,
+        number: row.bill_number,
+        title: row.title,
+        latestAction: {
+          date: row.latest_action_date,
+          text: row.latest_action_text
+        },
+        sponsor: row.sponsor_bioguide_id ? {
+          bioguideId: row.sponsor_bioguide_id,
+          firstName: row.first_name,
+          lastName: row.last_name,
+          party: row.party,
+          state: row.state
+        } : null
       }
-
-      const paginatedResults = await smartbucket.getPaginatedResults({
-        requestId,
-        page,
-        pageSize
-      });
-
-      return c.json({
-        success: true,
-        message: 'Paginated results',
-        query,
-        results: paginatedResults.results,
-        pagination: paginatedResults.pagination
-      });
-    }
-  } catch (error) {
-    return c.json({
-      error: 'Search failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Chunk search for finding specific sections
-/*
-app.post('/api/chunk-search', async (c) => {
-  try {
-    const { query } = await c.req.json();
-
-    if (!query) {
-      return c.json({ error: 'Query is required' }, 400);
-    }
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const requestId = `chunk-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-
-    const results = await smartbucket.chunkSearch({
-      input: query,
-      requestId
-    });
+    })) || [];
 
     return c.json({
       success: true,
-      message: 'Chunk search completed',
-      query,
-      results: results.results
+      trackedBills,
+      count: trackedBills.length
     });
   } catch (error) {
+    console.error('Get tracked bills error:', error);
     return c.json({
-      error: 'Chunk search failed',
+      error: 'Failed to get tracked bills',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
 });
-*/
 
-// Example: Document chat/Q&A
-/*
-app.post('/api/document-chat', async (c) => {
+/**
+ * POST /bills/track/:trackingId/view
+ * Increment view count (requires auth)
+ */
+app.post('/bills/track/:trackingId/view', async (c) => {
   try {
-    const { objectId, query } = await c.req.json();
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
 
-    if (!objectId || !query) {
-      return c.json({ error: 'objectId and query are required' }, 400);
+    const db = c.env.APP_DB;
+    const trackingId = c.req.param('trackingId');
+
+    // Verify ownership
+    const tracked = await db
+      .prepare('SELECT user_id, views FROM tracked_bills WHERE id = ?')
+      .bind(trackingId)
+      .first();
+
+    if (!tracked) {
+      return c.json({ error: 'Tracked bill not found' }, 404);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const requestId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    if (tracked.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
 
-    const response = await smartbucket.documentChat({
-      objectId,
-      input: query,
-      requestId
-    });
+    // Increment views
+    const newViews = (tracked.views as number) + 1;
+    await db
+      .prepare('UPDATE tracked_bills SET views = ? WHERE id = ?')
+      .bind(newViews, trackingId)
+      .run();
 
     return c.json({
       success: true,
-      message: 'Document chat completed',
-      objectId,
-      query,
-      answer: response.answer
+      views: newViews
     });
   } catch (error) {
+    console.error('Increment view error:', error);
     return c.json({
-      error: 'Document chat failed',
+      error: 'Failed to increment view',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
-});
-*/
-
-// Example: List objects in bucket
-/*
-app.get('/api/list', async (c) => {
-  try {
-    const url = new URL(c.req.url);
-    const prefix = url.searchParams.get('prefix') || undefined;
-    const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined;
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-
-    const listOptions: BucketListOptions = {
-      prefix,
-      limit
-    };
-
-    const result = await smartbucket.list(listOptions);
-
-    return c.json({
-      success: true,
-      objects: result.objects.map(obj => ({
-        key: obj.key,
-        size: obj.size,
-        uploaded: obj.uploaded,
-        etag: obj.etag
-      })),
-      truncated: result.truncated,
-      cursor: result.truncated ? result.cursor : undefined
-    });
-  } catch (error) {
-    return c.json({
-      error: 'List failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === KV Cache Examples ===
-// Example: Store data in KV cache
-/*
-app.post('/api/cache', async (c) => {
-  try {
-    const { key, value, ttl } = await c.req.json();
-
-    if (!key || value === undefined) {
-      return c.json({ error: 'key and value are required' }, 400);
-    }
-
-    const cache = c.env.MY_CACHE;
-
-    const putOptions: KvCachePutOptions = {};
-    if (ttl) {
-      putOptions.expirationTtl = ttl;
-    }
-
-    await cache.put(key, JSON.stringify(value), putOptions);
-
-    return c.json({
-      success: true,
-      message: 'Data cached successfully',
-      key
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache put failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get data from KV cache
-/*
-app.get('/api/cache/:key', async (c) => {
-  try {
-    const key = c.req.param('key');
-
-    const cache = c.env.MY_CACHE;
-
-    const getOptions: KvCacheGetOptions<'json'> = {
-      type: 'json'
-    };
-
-    const value = await cache.get(key, getOptions);
-
-    if (value === null) {
-      return c.json({ error: 'Key not found in cache' }, 404);
-    }
-
-    return c.json({
-      success: true,
-      key,
-      value
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache get failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === Queue Examples ===
-// Example: Send message to queue
-/*
-app.post('/api/queue/send', async (c) => {
-  try {
-    const { message, delaySeconds } = await c.req.json();
-
-    if (!message) {
-      return c.json({ error: 'message is required' }, 400);
-    }
-
-    const queue = c.env.MY_QUEUE;
-
-    const sendOptions: QueueSendOptions = {};
-    if (delaySeconds) {
-      sendOptions.delaySeconds = delaySeconds;
-    }
-
-    await queue.send(message, sendOptions);
-
-    return c.json({
-      success: true,
-      message: 'Message sent to queue'
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Queue send failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === Environment Variable Examples ===
-app.get('/api/config', (c) => {
-  return c.json({
-    hasEnv: !!c.env,
-    availableBindings: {
-      // These would be true if the resources are bound in raindrop.manifest
-      // MY_ACTOR: !!c.env.MY_ACTOR,
-      // MY_SMARTBUCKET: !!c.env.MY_SMARTBUCKET,
-      // MY_CACHE: !!c.env.MY_CACHE,
-      // MY_QUEUE: !!c.env.MY_QUEUE,
-    },
-    // Example access to environment variables:
-    // MY_SECRET_VAR: c.env.MY_SECRET_VAR // This would be undefined if not set
-  });
 });
 
 export default class extends Service<Env> {
