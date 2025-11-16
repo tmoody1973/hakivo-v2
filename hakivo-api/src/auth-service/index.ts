@@ -2,457 +2,781 @@ import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { QueueSendOptions } from '@liquidmetal-ai/raindrop-framework';
-import { KvCachePutOptions, KvCacheGetOptions } from '@liquidmetal-ai/raindrop-framework';
-import { BucketPutOptions, BucketListOptions } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
+import * as jose from 'jose';
+import * as bcrypt from 'bcryptjs';
+import { z } from 'zod';
 
-// Create Hono app with middleware
+// Validation schemas
+const RegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  zipCode: z.string().regex(/^\d{5}$/).optional()
+});
+
+const LoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string()
+});
+
+const RefreshSchema = z.object({
+  refreshToken: z.string()
+});
+
+const PasswordResetRequestSchema = z.object({
+  email: z.string().email()
+});
+
+const PasswordResetSchema = z.object({
+  token: z.string(),
+  newPassword: z.string().min(8)
+});
+
+const VerifyEmailSchema = z.object({
+  token: z.string()
+});
+
+// Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
-// Add request logging middleware
+// Middleware
 app.use('*', logger());
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
-// Health check endpoint
+/**
+ * Generate JWT access token
+ */
+async function generateAccessToken(userId: string, email: string): Promise<string> {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is not set');
+  }
+
+  const secret = new TextEncoder().encode(jwtSecret);
+
+  const token = await new jose.SignJWT({ userId, email })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('15m') // Short-lived access token
+    .sign(secret);
+
+  return token;
+}
+
+/**
+ * Generate refresh token
+ */
+async function generateRefreshToken(
+  db: any,
+  userId: string
+): Promise<string> {
+  // Generate random token
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(tokenBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Hash token for storage
+  const tokenHash = await bcrypt.hash(token, 10);
+
+  // Store in database (valid for 30 days)
+  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  const id = crypto.randomUUID();
+
+  await db
+    .prepare(
+      'INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)'
+    )
+    .bind(id, userId, tokenHash, expiresAt, Date.now())
+    .run();
+
+  return token;
+}
+
+/**
+ * Generate email verification token
+ */
+async function generateVerificationToken(
+  db: any,
+  userId: string
+): Promise<string> {
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(tokenBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  const tokenHash = await bcrypt.hash(token, 10);
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  const id = crypto.randomUUID();
+
+  await db
+    .prepare(
+      'INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at, used, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .bind(id, userId, tokenHash, expiresAt, 0, Date.now())
+    .run();
+
+  return token;
+}
+
+/**
+ * Generate password reset token
+ */
+async function generatePasswordResetToken(
+  db: any,
+  userId: string
+): Promise<string> {
+  const tokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(tokenBytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  const tokenHash = await bcrypt.hash(token, 10);
+  const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+  const id = crypto.randomUUID();
+
+  await db
+    .prepare(
+      'INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .bind(id, userId, tokenHash, expiresAt, 0, Date.now())
+    .run();
+
+  return token;
+}
+
+/**
+ * Verify JWT token
+ */
+async function verifyAccessToken(token: string): Promise<{ userId: string; email: string } | null> {
+  try {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      throw new Error('JWT_SECRET not configured');
+    }
+
+    const secret = new TextEncoder().encode(jwtSecret);
+    const { payload } = await jose.jwtVerify(token, secret);
+
+    if (typeof payload.userId !== 'string' || typeof payload.email !== 'string') {
+      return null;
+    }
+
+    return {
+      userId: payload.userId,
+      email: payload.email
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Check rate limit
+ */
+async function checkRateLimit(
+  db: any,
+  key: string,
+  maxRequests: number,
+  windowMs: number
+): Promise<boolean> {
+  const now = Date.now();
+  const resetAt = now + windowMs;
+
+  const result = await db
+    .prepare('SELECT count, reset_at FROM rate_limits WHERE key = ?')
+    .bind(key)
+    .first();
+
+  if (!result) {
+    // Create new rate limit entry
+    await db
+      .prepare('INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)')
+      .bind(key, 1, resetAt)
+      .run();
+    return true;
+  }
+
+  const count = result.count as number;
+  const storedResetAt = result.reset_at as number;
+
+  // Reset if window expired
+  if (now > storedResetAt) {
+    await db
+      .prepare('UPDATE rate_limits SET count = ?, reset_at = ? WHERE key = ?')
+      .bind(1, resetAt, key)
+      .run();
+    return true;
+  }
+
+  // Check limit
+  if (count >= maxRequests) {
+    return false;
+  }
+
+  // Increment counter
+  await db
+    .prepare('UPDATE rate_limits SET count = ? WHERE key = ?')
+    .bind(count + 1, key)
+    .run();
+
+  return true;
+}
+
+// Health check
 app.get('/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  return c.json({ status: 'ok', service: 'auth-service', timestamp: new Date().toISOString() });
 });
 
-// === Basic API Routes ===
-app.get('/api/hello', (c) => {
-  return c.json({ message: 'Hello from Hono!' });
-});
-
-app.get('/api/hello/:name', (c) => {
-  const name = c.req.param('name');
-  return c.json({ message: `Hello, ${name}!` });
-});
-
-// Example POST endpoint
-app.post('/api/echo', async (c) => {
-  const body = await c.req.json();
-  return c.json({ received: body });
-});
-
-// === RPC Examples: Service calling Actor ===
-// Example: Call an actor method
-/*
-app.post('/api/actor-call', async (c) => {
+/**
+ * POST /auth/register
+ * Register a new user account
+ */
+app.post('/auth/register', async (c) => {
   try {
-    const { message, actorName } = await c.req.json();
+    const db = c.env.APP_DB;
 
-    if (!actorName) {
-      return c.json({ error: 'actorName is required' }, 400);
+    // Rate limiting: 5 registrations per IP per hour
+    const clientIP = c.req.header('cf-connecting-ip') || 'unknown';
+    const rateLimitKey = `register:${clientIP}`;
+    const allowed = await checkRateLimit(db, rateLimitKey, 5, 60 * 60 * 1000);
+
+    if (!allowed) {
+      return c.json({ error: 'Too many registration attempts. Please try again later.' }, 429);
     }
 
-    // Get actor namespace and create actor instance
-    // Note: Replace MY_ACTOR with your actual actor binding name
-    const actorNamespace = c.env.MY_ACTOR; // This would be bound in raindrop.manifest
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
+    // Validate input
+    const body = await c.req.json();
+    const validation = RegisterSchema.safeParse(body);
 
-    // Call actor method (assuming actor has a 'processMessage' method)
-    const response = await actor.processMessage(message);
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { email, password, firstName, lastName, zipCode } = validation.data;
+
+    // Check if user already exists
+    const existingUser = await c.env.USER_SERVICE.getUserByEmail(email);
+    if (existingUser) {
+      return c.json({ error: 'User with this email already exists' }, 409);
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Create user ID
+    const userId = crypto.randomUUID();
+
+    // Insert user with password hash
+    const now = Date.now();
+    await db
+      .prepare(
+        `INSERT INTO users (
+          id, email, password_hash, first_name, last_name, zip_code,
+          email_verified, onboarding_completed, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        userId,
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        zipCode || null,
+        0,
+        0,
+        now,
+        now
+      )
+      .run();
+
+    // Create user via user-service to populate district info
+    await c.env.USER_SERVICE.createUser({
+      id: userId,
+      email,
+      firstName,
+      lastName,
+      zipCode
+    });
+
+    // Generate verification token
+    const verificationToken = await generateVerificationToken(db, userId);
+
+    // TODO: Send verification email
+    console.log(`✓ User registered: ${email} (verification token: ${verificationToken})`);
+
+    // Generate tokens
+    const accessToken = await generateAccessToken(userId, email);
+    const refreshToken = await generateRefreshToken(db, userId);
 
     return c.json({
       success: true,
-      actorName,
-      response
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to call actor',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get actor state
-/*
-app.get('/api/actor-state/:actorName', async (c) => {
-  try {
-    const actorName = c.req.param('actorName');
-
-    // Get actor instance
-    const actorNamespace = c.env.MY_ACTOR;
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
-
-    // Get actor state (assuming actor has a 'getState' method)
-    const state = await actor.getState();
-
-    return c.json({
-      success: true,
-      actorName,
-      state
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to get actor state',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === SmartBucket Examples ===
-// Example: Upload file to SmartBucket
-/*
-app.post('/api/upload', async (c) => {
-  try {
-    const formData = await c.req.formData();
-    const file = formData.get('file') as File;
-    const description = formData.get('description') as string;
-
-    if (!file) {
-      return c.json({ error: 'No file provided' }, 400);
-    }
-
-    // Upload to SmartBucket (Replace MY_SMARTBUCKET with your binding name)
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const arrayBuffer = await file.arrayBuffer();
-
-    const putOptions: BucketPutOptions = {
-      httpMetadata: {
-        contentType: file.type || 'application/octet-stream',
-      },
-      customMetadata: {
-        originalName: file.name,
-        size: file.size.toString(),
-        description: description || '',
-        uploadedAt: new Date().toISOString()
+      message: 'Registration successful. Please check your email to verify your account.',
+      accessToken,
+      refreshToken,
+      user: {
+        id: userId,
+        email,
+        firstName,
+        lastName,
+        emailVerified: false,
+        onboardingCompleted: false
       }
-    };
+    }, 201);
+  } catch (error) {
+    console.error('Registration error:', error);
+    return c.json({
+      error: 'Registration failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
 
-    const result = await smartbucket.put(file.name, new Uint8Array(arrayBuffer), putOptions);
+/**
+ * POST /auth/login
+ * Login with email and password
+ */
+app.post('/auth/login', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Rate limiting: 10 login attempts per IP per 15 minutes
+    const clientIP = c.req.header('cf-connecting-ip') || 'unknown';
+    const rateLimitKey = `login:${clientIP}`;
+    const allowed = await checkRateLimit(db, rateLimitKey, 10, 15 * 60 * 1000);
+
+    if (!allowed) {
+      return c.json({ error: 'Too many login attempts. Please try again later.' }, 429);
+    }
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = LoginSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { email, password } = validation.data;
+
+    // Get user from database
+    const result = await db
+      .prepare('SELECT * FROM users WHERE email = ?')
+      .bind(email)
+      .first();
+
+    if (!result || !result.password_hash) {
+      return c.json({ error: 'Invalid email or password' }, 401);
+    }
+
+    // Verify password
+    const passwordValid = await bcrypt.compare(password, result.password_hash as string);
+
+    if (!passwordValid) {
+      return c.json({ error: 'Invalid email or password' }, 401);
+    }
+
+    const userId = result.id as string;
+
+    // Generate tokens
+    const accessToken = await generateAccessToken(userId, email);
+    const refreshToken = await generateRefreshToken(db, userId);
+
+    console.log(`✓ User logged in: ${email}`);
 
     return c.json({
       success: true,
-      message: 'File uploaded successfully',
-      key: result.key,
-      size: result.size,
-      etag: result.etag
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to upload file',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get file from SmartBucket
-/*
-app.get('/api/file/:filename', async (c) => {
-  try {
-    const filename = c.req.param('filename');
-
-    // Get file from SmartBucket
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const file = await smartbucket.get(filename);
-
-    if (!file) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-
-    return new Response(file.body, {
-      headers: {
-        'Content-Type': file.httpMetadata?.contentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'X-Object-Size': file.size.toString(),
-        'X-Object-ETag': file.etag,
-        'X-Object-Uploaded': file.uploaded.toISOString(),
+      accessToken,
+      refreshToken,
+      user: {
+        id: userId,
+        email: result.email as string,
+        firstName: result.first_name as string,
+        lastName: result.last_name as string,
+        emailVerified: Boolean(result.email_verified),
+        onboardingCompleted: Boolean(result.onboarding_completed)
       }
     });
   } catch (error) {
+    console.error('Login error:', error);
     return c.json({
-      error: 'Failed to retrieve file',
+      error: 'Login failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
 });
-*/
 
-// Example: Search SmartBucket documents
-/*
-app.post('/api/search', async (c) => {
+/**
+ * POST /auth/refresh
+ * Refresh access token using refresh token
+ */
+app.post('/auth/refresh', async (c) => {
   try {
-    const { query, page = 1, pageSize = 10 } = await c.req.json();
+    const db = c.env.APP_DB;
 
-    if (!query) {
-      return c.json({ error: 'Query is required' }, 400);
+    // Validate input
+    const body = await c.req.json();
+    const validation = RefreshSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
+    const { refreshToken } = validation.data;
 
-    // For initial search
-    if (page === 1) {
-      const requestId = `search-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-      const results = await smartbucket.search({
-        input: query,
-        requestId
-      });
+    // Get all refresh tokens (we need to check hash)
+    const tokens = await db
+      .prepare('SELECT * FROM refresh_tokens WHERE expires_at > ?')
+      .bind(Date.now())
+      .all();
 
+    if (!tokens.results || tokens.results.length === 0) {
+      return c.json({ error: 'Invalid or expired refresh token' }, 401);
+    }
+
+    // Find matching token by comparing hashes
+    let matchedToken = null;
+    for (const tokenRecord of tokens.results) {
+      const isMatch = await bcrypt.compare(refreshToken, tokenRecord.token_hash as string);
+      if (isMatch) {
+        matchedToken = tokenRecord;
+        break;
+      }
+    }
+
+    if (!matchedToken) {
+      return c.json({ error: 'Invalid or expired refresh token' }, 401);
+    }
+
+    const userId = matchedToken.user_id as string;
+
+    // Get user email
+    const user = await db
+      .prepare('SELECT email FROM users WHERE id = ?')
+      .bind(userId)
+      .first();
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    // Generate new access token
+    const accessToken = await generateAccessToken(userId, user.email as string);
+
+    console.log(`✓ Token refreshed for user: ${userId}`);
+
+    return c.json({
+      success: true,
+      accessToken
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    return c.json({
+      error: 'Token refresh failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/logout
+ * Logout and invalidate refresh token
+ */
+app.post('/auth/logout', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Get authorization header
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return c.json({ error: 'No authorization token provided' }, 401);
+    }
+
+    const token = authHeader.substring(7);
+    const payload = await verifyAccessToken(token);
+
+    if (!payload) {
+      return c.json({ error: 'Invalid token' }, 401);
+    }
+
+    // Delete all refresh tokens for this user
+    await db
+      .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+      .bind(payload.userId)
+      .run();
+
+    console.log(`✓ User logged out: ${payload.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return c.json({
+      error: 'Logout failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/verify-email
+ * Verify email address with token
+ */
+app.post('/auth/verify-email', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = VerifyEmailSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { token } = validation.data;
+
+    // Get all verification tokens
+    const tokens = await db
+      .prepare('SELECT * FROM email_verification_tokens WHERE used = ? AND expires_at > ?')
+      .bind(0, Date.now())
+      .all();
+
+    if (!tokens.results || tokens.results.length === 0) {
+      return c.json({ error: 'Invalid or expired verification token' }, 400);
+    }
+
+    // Find matching token
+    let matchedToken = null;
+    for (const tokenRecord of tokens.results) {
+      const isMatch = await bcrypt.compare(token, tokenRecord.token_hash as string);
+      if (isMatch) {
+        matchedToken = tokenRecord;
+        break;
+      }
+    }
+
+    if (!matchedToken) {
+      return c.json({ error: 'Invalid or expired verification token' }, 400);
+    }
+
+    const userId = matchedToken.user_id as string;
+
+    // Mark email as verified
+    await db
+      .prepare('UPDATE users SET email_verified = ?, updated_at = ? WHERE id = ?')
+      .bind(1, Date.now(), userId)
+      .run();
+
+    // Mark token as used
+    await db
+      .prepare('UPDATE email_verification_tokens SET used = ? WHERE id = ?')
+      .bind(1, matchedToken.id)
+      .run();
+
+    console.log(`✓ Email verified for user: ${userId}`);
+
+    return c.json({
+      success: true,
+      message: 'Email verified successfully'
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    return c.json({
+      error: 'Email verification failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/request-password-reset
+ * Request password reset token
+ */
+app.post('/auth/request-password-reset', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Rate limiting
+    const clientIP = c.req.header('cf-connecting-ip') || 'unknown';
+    const rateLimitKey = `password-reset:${clientIP}`;
+    const allowed = await checkRateLimit(db, rateLimitKey, 3, 60 * 60 * 1000);
+
+    if (!allowed) {
+      return c.json({ error: 'Too many password reset requests. Please try again later.' }, 429);
+    }
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = PasswordResetRequestSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { email } = validation.data;
+
+    // Get user
+    const user = await db
+      .prepare('SELECT id FROM users WHERE email = ?')
+      .bind(email)
+      .first();
+
+    // Don't reveal if user exists (security best practice)
+    if (!user) {
       return c.json({
         success: true,
-        message: 'Search completed',
-        query,
-        results: results.results,
-        pagination: {
-          ...results.pagination,
-          requestId
-        }
+        message: 'If an account with that email exists, a password reset link has been sent.'
       });
-    } else {
-      // For paginated results
-      const { requestId } = await c.req.json();
-      if (!requestId) {
-        return c.json({ error: 'Request ID required for pagination' }, 400);
+    }
+
+    const userId = user.id as string;
+
+    // Generate reset token
+    const resetToken = await generatePasswordResetToken(db, userId);
+
+    // TODO: Send reset email
+    console.log(`✓ Password reset requested: ${email} (token: ${resetToken})`);
+
+    return c.json({
+      success: true,
+      message: 'If an account with that email exists, a password reset link has been sent.'
+    });
+  } catch (error) {
+    console.error('Password reset request error:', error);
+    return c.json({
+      error: 'Password reset request failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/reset-password
+ * Reset password with token
+ */
+app.post('/auth/reset-password', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = PasswordResetSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { token, newPassword } = validation.data;
+
+    // Get all reset tokens
+    const tokens = await db
+      .prepare('SELECT * FROM password_reset_tokens WHERE used = ? AND expires_at > ?')
+      .bind(0, Date.now())
+      .all();
+
+    if (!tokens.results || tokens.results.length === 0) {
+      return c.json({ error: 'Invalid or expired reset token' }, 400);
+    }
+
+    // Find matching token
+    let matchedToken = null;
+    for (const tokenRecord of tokens.results) {
+      const isMatch = await bcrypt.compare(token, tokenRecord.token_hash as string);
+      if (isMatch) {
+        matchedToken = tokenRecord;
+        break;
       }
-
-      const paginatedResults = await smartbucket.getPaginatedResults({
-        requestId,
-        page,
-        pageSize
-      });
-
-      return c.json({
-        success: true,
-        message: 'Paginated results',
-        query,
-        results: paginatedResults.results,
-        pagination: paginatedResults.pagination
-      });
-    }
-  } catch (error) {
-    return c.json({
-      error: 'Search failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Chunk search for finding specific sections
-/*
-app.post('/api/chunk-search', async (c) => {
-  try {
-    const { query } = await c.req.json();
-
-    if (!query) {
-      return c.json({ error: 'Query is required' }, 400);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const requestId = `chunk-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    if (!matchedToken) {
+      return c.json({ error: 'Invalid or expired reset token' }, 400);
+    }
 
-    const results = await smartbucket.chunkSearch({
-      input: query,
-      requestId
-    });
+    const userId = matchedToken.user_id as string;
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await db
+      .prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+      .bind(passwordHash, Date.now(), userId)
+      .run();
+
+    // Mark token as used
+    await db
+      .prepare('UPDATE password_reset_tokens SET used = ? WHERE id = ?')
+      .bind(1, matchedToken.id)
+      .run();
+
+    // Invalidate all refresh tokens
+    await db
+      .prepare('DELETE FROM refresh_tokens WHERE user_id = ?')
+      .bind(userId)
+      .run();
+
+    console.log(`✓ Password reset for user: ${userId}`);
 
     return c.json({
       success: true,
-      message: 'Chunk search completed',
-      query,
-      results: results.results
+      message: 'Password reset successfully. Please log in with your new password.'
     });
   } catch (error) {
+    console.error('Password reset error:', error);
     return c.json({
-      error: 'Chunk search failed',
+      error: 'Password reset failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
 });
-*/
 
-// Example: Document chat/Q&A
-/*
-app.post('/api/document-chat', async (c) => {
+/**
+ * GET /auth/me
+ * Get current user profile (requires auth)
+ */
+app.get('/auth/me', async (c) => {
   try {
-    const { objectId, query } = await c.req.json();
-
-    if (!objectId || !query) {
-      return c.json({ error: 'objectId and query are required' }, 400);
+    // Get authorization header
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return c.json({ error: 'No authorization token provided' }, 401);
     }
 
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const requestId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const token = authHeader.substring(7);
+    const payload = await verifyAccessToken(token);
 
-    const response = await smartbucket.documentChat({
-      objectId,
-      input: query,
-      requestId
-    });
-
-    return c.json({
-      success: true,
-      message: 'Document chat completed',
-      objectId,
-      query,
-      answer: response.answer
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Document chat failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: List objects in bucket
-/*
-app.get('/api/list', async (c) => {
-  try {
-    const url = new URL(c.req.url);
-    const prefix = url.searchParams.get('prefix') || undefined;
-    const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined;
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-
-    const listOptions: BucketListOptions = {
-      prefix,
-      limit
-    };
-
-    const result = await smartbucket.list(listOptions);
-
-    return c.json({
-      success: true,
-      objects: result.objects.map(obj => ({
-        key: obj.key,
-        size: obj.size,
-        uploaded: obj.uploaded,
-        etag: obj.etag
-      })),
-      truncated: result.truncated,
-      cursor: result.truncated ? result.cursor : undefined
-    });
-  } catch (error) {
-    return c.json({
-      error: 'List failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === KV Cache Examples ===
-// Example: Store data in KV cache
-/*
-app.post('/api/cache', async (c) => {
-  try {
-    const { key, value, ttl } = await c.req.json();
-
-    if (!key || value === undefined) {
-      return c.json({ error: 'key and value are required' }, 400);
+    if (!payload) {
+      return c.json({ error: 'Invalid or expired token' }, 401);
     }
 
-    const cache = c.env.MY_CACHE;
+    // Get full user data from user-service
+    const user = await c.env.USER_SERVICE.getUserById(payload.userId);
 
-    const putOptions: KvCachePutOptions = {};
-    if (ttl) {
-      putOptions.expirationTtl = ttl;
-    }
-
-    await cache.put(key, JSON.stringify(value), putOptions);
-
-    return c.json({
-      success: true,
-      message: 'Data cached successfully',
-      key
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache put failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get data from KV cache
-/*
-app.get('/api/cache/:key', async (c) => {
-  try {
-    const key = c.req.param('key');
-
-    const cache = c.env.MY_CACHE;
-
-    const getOptions: KvCacheGetOptions<'json'> = {
-      type: 'json'
-    };
-
-    const value = await cache.get(key, getOptions);
-
-    if (value === null) {
-      return c.json({ error: 'Key not found in cache' }, 404);
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
     }
 
     return c.json({
       success: true,
-      key,
-      value
+      user
     });
   } catch (error) {
+    console.error('Get user error:', error);
     return c.json({
-      error: 'Cache get failed',
+      error: 'Failed to get user',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
-});
-*/
-
-// === Queue Examples ===
-// Example: Send message to queue
-/*
-app.post('/api/queue/send', async (c) => {
-  try {
-    const { message, delaySeconds } = await c.req.json();
-
-    if (!message) {
-      return c.json({ error: 'message is required' }, 400);
-    }
-
-    const queue = c.env.MY_QUEUE;
-
-    const sendOptions: QueueSendOptions = {};
-    if (delaySeconds) {
-      sendOptions.delaySeconds = delaySeconds;
-    }
-
-    await queue.send(message, sendOptions);
-
-    return c.json({
-      success: true,
-      message: 'Message sent to queue'
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Queue send failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === Environment Variable Examples ===
-app.get('/api/config', (c) => {
-  return c.json({
-    hasEnv: !!c.env,
-    availableBindings: {
-      // These would be true if the resources are bound in raindrop.manifest
-      // MY_ACTOR: !!c.env.MY_ACTOR,
-      // MY_SMARTBUCKET: !!c.env.MY_SMARTBUCKET,
-      // MY_CACHE: !!c.env.MY_CACHE,
-      // MY_QUEUE: !!c.env.MY_QUEUE,
-    },
-    // Example access to environment variables:
-    // MY_SECRET_VAR: c.env.MY_SECRET_VAR // This would be undefined if not set
-  });
 });
 
 export default class extends Service<Env> {

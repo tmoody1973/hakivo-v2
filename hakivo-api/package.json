@@ -21,6 +21,7 @@
     "@elevenlabs/elevenlabs-js": "^2.24.1",
     "@liquidmetal-ai/raindrop-framework": "0.10.0",
     "@modelcontextprotocol/sdk": "^1",
+    "bcryptjs": "^3.0.3",
     "exa-js": "^1.0",
     "hono": "^4",
     "jose": "^5",
