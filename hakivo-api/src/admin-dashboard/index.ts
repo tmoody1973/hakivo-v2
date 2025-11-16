@@ -1,0 +1,865 @@
+import { Service } from '@liquidmetal-ai/raindrop-framework';
+import { Hono } from 'hono';
+import { Env } from './raindrop.gen';
+
+const app = new Hono<{ Bindings: Env }>();
+
+/**
+ * Admin Dashboard Service
+ * Provides web UI and API endpoints for monitoring and managing Hakivo API
+ */
+
+// Serve the admin dashboard UI
+app.get('/', (c) => {
+  return c.html(getAdminDashboardHTML());
+});
+
+app.get('/health', (c) => {
+  return c.json({ status: 'ok', service: 'admin-dashboard', timestamp: new Date().toISOString() });
+});
+
+/**
+ * GET /api/overview
+ * Get overall system statistics
+ */
+app.get('/api/overview', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Get table counts
+    const tables = [
+      'users', 'briefs', 'chat_sessions', 'bill_tracking',
+      'bills', 'members', 'committees', 'votes'
+    ];
+
+    const counts: Record<string, number> = {};
+
+    for (const table of tables) {
+      try {
+        const result = await db.prepare(`SELECT COUNT(*) as count FROM ${table}`).first() as { count: number } | null;
+        counts[table] = result?.count || 0;
+      } catch (error) {
+        counts[table] = 0;
+      }
+    }
+
+    return c.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      database: counts,
+      services: {
+        total: 11,
+        public: 5,
+        private: 6
+      }
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/services/health
+ * Check health of all services
+ */
+app.get('/api/services/health', async (c) => {
+  const services = [
+    'AUTH_SERVICE',
+    'BILLS_SERVICE',
+    'BRIEFS_SERVICE',
+    'CHAT_SERVICE',
+    'DASHBOARD_SERVICE',
+    'USER_SERVICE'
+  ];
+
+  const health: Record<string, any> = {};
+
+  for (const service of services) {
+    try {
+      // Check if service is available in env
+      const serviceExists = !!(c.env as any)[service];
+      health[service] = {
+        available: serviceExists,
+        status: serviceExists ? 'ok' : 'unavailable'
+      };
+    } catch (error) {
+      health[service] = {
+        available: false,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown'
+      };
+    }
+  }
+
+  return c.json({
+    success: true,
+    services: health,
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * GET /api/database/tables
+ * List all database tables with row counts
+ */
+app.get('/api/database/tables', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Get all tables
+    const tablesResult = await db.prepare(`
+      SELECT name FROM sqlite_master
+      WHERE type='table'
+      ORDER BY name
+    `).all();
+
+    const tables = tablesResult.results || [];
+    const tableStats = [];
+
+    // Get row count for each table
+    for (const table of tables) {
+      const tableName = (table as any).name;
+      try {
+        const countResult = await db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).first();
+        tableStats.push({
+          name: tableName,
+          rows: countResult?.count || 0
+        });
+      } catch (error) {
+        tableStats.push({
+          name: tableName,
+          rows: 0,
+          error: 'Count failed'
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      tables: tableStats,
+      total: tableStats.length
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/database/query
+ * Execute a custom SQL query
+ */
+app.post('/api/database/query', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const { query, limit = 100 } = await c.req.json();
+
+    if (!query) {
+      return c.json({ success: false, error: 'Query is required' }, 400);
+    }
+
+    // Add LIMIT if it's a SELECT query without one
+    let finalQuery = query.trim();
+    if (/^SELECT/i.test(finalQuery) && !/LIMIT/i.test(finalQuery)) {
+      finalQuery += ` LIMIT ${limit}`;
+    }
+
+    const result = await db.prepare(finalQuery).all();
+
+    return c.json({
+      success: true,
+      results: result.results || [],
+      count: result.results?.length || 0,
+      query: finalQuery
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/database/initialize
+ * Initialize database schema
+ */
+app.post('/api/database/initialize', async (c) => {
+  try {
+    // Call the db-admin service
+    const result = await c.env.DB_ADMIN.fetch(new Request('http://internal/db-admin/initialize', {
+      method: 'POST'
+    }));
+
+    const data = await result.json();
+    return c.json(data);
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to initialize database'
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/cache/stats
+ * Get statistics for all KV caches
+ */
+app.get('/api/cache/stats', async (c) => {
+  const caches = [
+    'NEWS_CACHE',
+    'DASHBOARD_CACHE',
+    'DISTRICT_CACHE',
+    'SESSION_CACHE',
+    'IMAGE_CACHE',
+    'ACTIONS_CACHE'
+  ];
+
+  const stats: Record<string, any> = {};
+
+  for (const cacheName of caches) {
+    try {
+      const cache = (c.env as any)[cacheName];
+      if (cache) {
+        stats[cacheName] = {
+          available: true,
+          // Note: KV doesn't provide size stats, this is just availability
+          status: 'ok'
+        };
+      } else {
+        stats[cacheName] = { available: false };
+      }
+    } catch (error) {
+      stats[cacheName] = {
+        available: false,
+        error: error instanceof Error ? error.message : 'Unknown'
+      };
+    }
+  }
+
+  return c.json({
+    success: true,
+    caches: stats,
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * GET /api/smartbuckets/info
+ * Get information about SmartBuckets
+ */
+app.get('/api/smartbuckets/info', async (c) => {
+  const buckets = ['BILL_TEXTS', 'AUDIO_BRIEFS'];
+
+  const info: Record<string, any> = {};
+
+  for (const bucketName of buckets) {
+    try {
+      const bucket = (c.env as any)[bucketName];
+      if (bucket) {
+        info[bucketName] = {
+          available: true,
+          status: 'ok'
+        };
+      } else {
+        info[bucketName] = { available: false };
+      }
+    } catch (error) {
+      info[bucketName] = {
+        available: false,
+        error: error instanceof Error ? error.message : 'Unknown'
+      };
+    }
+  }
+
+  return c.json({
+    success: true,
+    buckets: info,
+    timestamp: new Date().toISOString()
+  });
+});
+
+export default class extends Service<Env> {
+  async fetch(request: Request): Promise<Response> {
+    return app.fetch(request, this.env);
+  }
+}
+
+/**
+ * Generate the admin dashboard HTML
+ */
+function getAdminDashboardHTML(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hakivo API - Admin Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      line-height: 1.6;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+      padding: 2rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .header p {
+      opacity: 0.9;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      border: 1px solid #334155;
+    }
+
+    .card h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #334155;
+    }
+
+    .stat:last-child {
+      border-bottom: none;
+    }
+
+    .stat-label {
+      color: #94a3b8;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .badge-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .badge-error {
+      background: #ef4444;
+      color: white;
+    }
+
+    .badge-warning {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover {
+      background: #2563eb;
+    }
+
+    .btn:disabled {
+      background: #475569;
+      cursor: not-allowed;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+
+    .section {
+      margin-bottom: 2rem;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.75rem;
+      border-bottom: 1px solid #334155;
+    }
+
+    th {
+      background: #0f172a;
+      font-weight: 600;
+      color: #60a5fa;
+    }
+
+    .query-section {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 1rem;
+      color: #e2e8f0;
+      font-family: 'Courier New', monospace;
+      font-size: 0.875rem;
+      resize: vertical;
+    }
+
+    .results {
+      margin-top: 1rem;
+      max-height: 400px;
+      overflow: auto;
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: #94a3b8;
+    }
+
+    .error {
+      background: #7f1d1d;
+      border: 1px solid #991b1b;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      color: #fecaca;
+    }
+
+    .success {
+      background: #064e3b;
+      border: 1px solid #065f46;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      color: #a7f3d0;
+    }
+
+    .refresh-btn {
+      float: right;
+      font-size: 0.875rem;
+      padding: 0.5rem 1rem;
+    }
+
+    pre {
+      background: #0f172a;
+      padding: 1rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎙️ Hakivo API - Admin Dashboard</h1>
+    <p>Monitor and manage your legislative briefing platform</p>
+  </div>
+
+  <div class="container">
+    <!-- Overview Stats -->
+    <div class="section">
+      <h2 style="margin-bottom: 1rem;">📊 System Overview</h2>
+      <button class="btn refresh-btn" onclick="loadOverview()">Refresh</button>
+      <div class="grid" id="overview-grid">
+        <div class="loading">Loading system overview...</div>
+      </div>
+    </div>
+
+    <!-- Services Health -->
+    <div class="section">
+      <h2 style="margin-bottom: 1rem;">🔧 Services Health</h2>
+      <button class="btn refresh-btn" onclick="loadServicesHealth()">Refresh</button>
+      <div class="card" id="services-health">
+        <div class="loading">Loading services health...</div>
+      </div>
+    </div>
+
+    <!-- Database Tables -->
+    <div class="section">
+      <h2 style="margin-bottom: 1rem;">🗄️ Database Tables</h2>
+      <button class="btn refresh-btn" onclick="loadTables()">Refresh</button>
+      <button class="btn btn-danger" onclick="initializeDatabase()" style="margin-left: 0.5rem;">Initialize Database</button>
+      <div class="card">
+        <div class="table-container" id="tables-container">
+          <div class="loading">Loading database tables...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resources -->
+    <div class="grid">
+      <div class="card">
+        <h2>💾 KV Caches</h2>
+        <div id="cache-stats">
+          <div class="loading">Loading cache stats...</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🗂️ SmartBuckets</h2>
+        <div id="smartbucket-info">
+          <div class="loading">Loading SmartBucket info...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SQL Query Tool -->
+    <div class="query-section">
+      <h2 style="margin-bottom: 1rem;">🔍 SQL Query Tool</h2>
+      <textarea id="sql-query" placeholder="SELECT * FROM users LIMIT 10"></textarea>
+      <button class="btn" onclick="executeQuery()" style="margin-top: 1rem;">Execute Query</button>
+      <div id="query-results"></div>
+    </div>
+  </div>
+
+  <script>
+    // Load overview stats
+    async function loadOverview() {
+      const grid = document.getElementById('overview-grid');
+      grid.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const response = await fetch('/api/overview');
+        const data = await response.json();
+
+        if (data.success) {
+          grid.innerHTML = \`
+            <div class="card">
+              <h2>👥 Users</h2>
+              <div class="stat">
+                <span class="stat-label">Total Users</span>
+                <span class="stat-value">\${data.database.users || 0}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Briefs Generated</span>
+                <span class="stat-value">\${data.database.briefs || 0}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Chat Sessions</span>
+                <span class="stat-value">\${data.database.chat_sessions || 0}</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>📜 Legislative Data</h2>
+              <div class="stat">
+                <span class="stat-label">Bills</span>
+                <span class="stat-value">\${data.database.bills || 0}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Members</span>
+                <span class="stat-value">\${data.database.members || 0}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Committees</span>
+                <span class="stat-value">\${data.database.committees || 0}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Votes</span>
+                <span class="stat-value">\${data.database.votes || 0}</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>⚙️ Services</h2>
+              <div class="stat">
+                <span class="stat-label">Total Services</span>
+                <span class="stat-value">\${data.services.total}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Public</span>
+                <span class="stat-value">\${data.services.public}</span>
+              </div>
+              <div class="stat">
+                <span class="stat-label">Private</span>
+                <span class="stat-value">\${data.services.private}</span>
+              </div>
+            </div>
+          \`;
+        } else {
+          grid.innerHTML = '<div class="error">Failed to load overview</div>';
+        }
+      } catch (error) {
+        grid.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+      }
+    }
+
+    // Load services health
+    async function loadServicesHealth() {
+      const container = document.getElementById('services-health');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const response = await fetch('/api/services/health');
+        const data = await response.json();
+
+        if (data.success) {
+          let html = '';
+          for (const [name, info] of Object.entries(data.services)) {
+            const badge = info.available
+              ? '<span class="badge badge-success">OK</span>'
+              : '<span class="badge badge-error">Unavailable</span>';
+
+            html += \`
+              <div class="stat">
+                <span class="stat-label">\${name}</span>
+                <span class="stat-value">\${badge}</span>
+              </div>
+            \`;
+          }
+          container.innerHTML = html;
+        } else {
+          container.innerHTML = '<div class="error">Failed to load services</div>';
+        }
+      } catch (error) {
+        container.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+      }
+    }
+
+    // Load database tables
+    async function loadTables() {
+      const container = document.getElementById('tables-container');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const response = await fetch('/api/database/tables');
+        const data = await response.json();
+
+        if (data.success) {
+          let html = '<table><thead><tr><th>Table Name</th><th>Rows</th></tr></thead><tbody>';
+
+          data.tables.forEach(table => {
+            html += \`
+              <tr>
+                <td>\${table.name}</td>
+                <td>\${table.rows.toLocaleString()}</td>
+              </tr>
+            \`;
+          });
+
+          html += '</tbody></table>';
+          container.innerHTML = html;
+        } else {
+          container.innerHTML = '<div class="error">Failed to load tables</div>';
+        }
+      } catch (error) {
+        container.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+      }
+    }
+
+    // Load cache stats
+    async function loadCacheStats() {
+      const container = document.getElementById('cache-stats');
+
+      try {
+        const response = await fetch('/api/cache/stats');
+        const data = await response.json();
+
+        if (data.success) {
+          let html = '';
+          for (const [name, info] of Object.entries(data.caches)) {
+            const badge = info.available
+              ? '<span class="badge badge-success">OK</span>'
+              : '<span class="badge badge-error">N/A</span>';
+
+            html += \`
+              <div class="stat">
+                <span class="stat-label">\${name}</span>
+                <span class="stat-value">\${badge}</span>
+              </div>
+            \`;
+          }
+          container.innerHTML = html;
+        }
+      } catch (error) {
+        container.innerHTML = '<div class="error">Error loading caches</div>';
+      }
+    }
+
+    // Load SmartBucket info
+    async function loadSmartBucketInfo() {
+      const container = document.getElementById('smartbucket-info');
+
+      try {
+        const response = await fetch('/api/smartbuckets/info');
+        const data = await response.json();
+
+        if (data.success) {
+          let html = '';
+          for (const [name, info] of Object.entries(data.buckets)) {
+            const badge = info.available
+              ? '<span class="badge badge-success">OK</span>'
+              : '<span class="badge badge-error">N/A</span>';
+
+            html += \`
+              <div class="stat">
+                <span class="stat-label">\${name}</span>
+                <span class="stat-value">\${badge}</span>
+              </div>
+            \`;
+          }
+          container.innerHTML = html;
+        }
+      } catch (error) {
+        container.innerHTML = '<div class="error">Error loading SmartBuckets</div>';
+      }
+    }
+
+    // Execute SQL query
+    async function executeQuery() {
+      const query = document.getElementById('sql-query').value;
+      const resultsDiv = document.getElementById('query-results');
+
+      if (!query.trim()) {
+        resultsDiv.innerHTML = '<div class="error">Please enter a query</div>';
+        return;
+      }
+
+      resultsDiv.innerHTML = '<div class="loading">Executing query...</div>';
+
+      try {
+        const response = await fetch('/api/database/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          resultsDiv.innerHTML = \`
+            <div class="success">Query executed successfully (\${data.count} rows)</div>
+            <div class="results">
+              <pre>\${JSON.stringify(data.results, null, 2)}</pre>
+            </div>
+          \`;
+        } else {
+          resultsDiv.innerHTML = \`<div class="error">\${data.error}</div>\`;
+        }
+      } catch (error) {
+        resultsDiv.innerHTML = \`<div class="error">Error: \${error.message}</div>\`;
+      }
+    }
+
+    // Initialize database
+    async function initializeDatabase() {
+      if (!confirm('This will initialize the database schema. Continue?')) {
+        return;
+      }
+
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = 'Initializing...';
+
+      try {
+        const response = await fetch('/api/database/initialize', {
+          method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert('Database initialized successfully!');
+          loadTables();
+          loadOverview();
+        } else {
+          alert('Initialization failed: ' + data.error);
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Initialize Database';
+      }
+    }
+
+    // Load all data on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadOverview();
+      loadServicesHealth();
+      loadTables();
+      loadCacheStats();
+      loadSmartBucketInfo();
+
+      // Auto-refresh every 30 seconds
+      setInterval(() => {
+        loadOverview();
+        loadServicesHealth();
+      }, 30000);
+    });
+  </script>
+</body>
+</html>`;
+}

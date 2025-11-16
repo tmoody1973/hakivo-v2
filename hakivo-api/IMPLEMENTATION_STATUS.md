@@ -2,15 +2,17 @@
 
 ## Completed Components ✅
 
-### Public Services (4/4)
+### Public Services (6/6)
 - ✅ **auth-service** - JWT authentication, registration, login, password reset
 - ✅ **bills-service** - Bill search, detail retrieval, tracking management
 - ✅ **briefs-service** - Brief generation requests, status polling, progress tracking
 - ✅ **chat-service** - RAG-based Q&A (Note: SmartBucket integration pending)
 - ✅ **dashboard-service** - Data aggregation, user statistics, trending bills
+- ✅ **admin-dashboard** - Web-based admin UI for monitoring all services and database
 
-### Private Services (1/1)
+### Private Services (2/2)
 - ✅ **user-service** - User CRUD operations (implemented earlier)
+- ✅ **db-admin** - Database initialization and management operations
 
 ### Observers (1/2)
 - ✅ **brief-generator** - Async brief generation orchestration
@@ -129,6 +131,24 @@ The following components need to be created as separate Raindrop modules:
 - GET /dashboard/trending-bills
 - GET /dashboard/latest-actions
 - POST /dashboard/refresh-cache
+
+### admin-dashboard
+- GET / - Admin dashboard web UI
+- GET /health - Health check
+- GET /api/overview - System statistics (users, briefs, bills, etc.)
+- GET /api/services/health - Service availability monitoring
+- GET /api/database/tables - List all tables with row counts
+- POST /api/database/query - Execute custom SQL queries
+- POST /api/database/initialize - Initialize database schema
+- GET /api/cache/stats - KV cache availability
+- GET /api/smartbuckets/info - SmartBucket availability
+
+### db-admin (private)
+- GET /health - Health check
+- POST /db-admin/initialize - Execute schema initialization
+- GET /db-admin/tables - List all tables and indexes
+- GET /db-admin/schema/:table - Get table schema
+- POST /db-admin/query - Execute custom SQL query
 
 ## Build Status
 ✅ All TypeScript compilation successful

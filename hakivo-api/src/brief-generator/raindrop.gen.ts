@@ -6,6 +6,7 @@ export interface Env {
     app: App;
   };
   ACTIONS_CACHE: KvCache;
+  ADMIN_DASHBOARD: ServiceStub<import('../admin-dashboard/index.js').default>;
   AI: Ai;
   annotation: Annotation<Omit<MRNObject, 'type' | 'applicationName' | 'versionId'>>;
   APP_DB: SqlDatabase;

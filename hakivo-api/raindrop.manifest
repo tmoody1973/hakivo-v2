@@ -21,6 +21,10 @@ application "hakivo-api" {
     visibility = "public"
   }
 
+  service "admin-dashboard" {
+    visibility = "public"
+  }
+
   service "db-admin" {
     visibility = "private"
   }
