@@ -1,8 +1,6 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
 import { Env } from './raindrop.gen';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -18,23 +16,30 @@ app.get('/health', (c) => {
 /**
  * POST /db-admin/initialize
  * Initialize the database schema
- * WARNING: This will create all tables and indexes
+ *
+ * NOTE: For edge runtime compatibility, schema SQL should be passed in the request body
+ * or fetched from a static URL. File system access is not available in edge runtime.
  */
 app.post('/db-admin/initialize', async (c) => {
   try {
     const db = c.env.APP_DB;
+    const body = await c.req.json();
+    const { schema } = body;
+
+    if (!schema) {
+      return c.json({
+        success: false,
+        error: 'Schema SQL is required in request body'
+      }, 400);
+    }
 
     console.log('📦 Starting database initialization...');
-
-    // Read the SQL schema file
-    const schemaPath = join(process.cwd(), 'sql/init-schema.sql');
-    const schema = readFileSync(schemaPath, 'utf-8');
 
     // Split into individual statements
     const statements = schema
       .split(';')
-      .map(stmt => stmt.trim())
-      .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
+      .map((stmt: string) => stmt.trim())
+      .filter((stmt: string) => stmt.length > 0 && !stmt.startsWith('--'));
 
     console.log(`Found ${statements.length} SQL statements to execute`);
 
