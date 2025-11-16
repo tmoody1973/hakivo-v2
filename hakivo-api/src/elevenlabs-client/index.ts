@@ -1,27 +1,26 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
-import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 
+/**
+ * ElevenLabs Client Service (REST API)
+ *
+ * Uses direct REST API calls instead of the SDK to avoid Node.js dependencies
+ * that aren't compatible with edge runtime (child_process, stream, events).
+ */
 export default class extends Service<Env> {
-  private elevenlabs: ElevenLabsClient | null = null;
+  private readonly BASE_URL = 'https://api.elevenlabs.io';
 
   /**
-   * Initialize ElevenLabs client
+   * Get API key from environment
    */
-  private getElevenLabsClient(): ElevenLabsClient {
-    if (!this.elevenlabs) {
-      const apiKey = process.env.ELEVENLABS_API_KEY;
+  private getApiKey(): string {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
 
-      if (!apiKey) {
-        throw new Error('ELEVENLABS_API_KEY environment variable is not set');
-      }
-
-      this.elevenlabs = new ElevenLabsClient({
-        apiKey
-      });
+    if (!apiKey) {
+      throw new Error('ELEVENLABS_API_KEY environment variable is not set');
     }
 
-    return this.elevenlabs;
+    return apiKey;
   }
 
   /**
@@ -42,7 +41,7 @@ export default class extends Service<Env> {
     characterCount: number;
     durationSeconds: number | null;
   }> {
-    const client = this.getElevenLabsClient();
+    const apiKey = this.getApiKey();
 
     // Parse dialogue script into turns for text-to-dialogue API
     const turns = this.parseDialogueScript(script);
@@ -54,38 +53,30 @@ export default class extends Service<Env> {
     console.log(`✓ Parsed ${turns.length} dialogue turns`);
 
     try {
-      // Build input array for text-to-dialogue API (camelCase per SDK)
+      // Build input array for text-to-dialogue API
       const inputs = turns.map(turn => ({
         text: turn.text,
-        voiceId: turn.speaker === 'A' ? voiceIdA : voiceIdB
+        voice_id: turn.speaker === 'A' ? voiceIdA : voiceIdB
       }));
 
-      // Use text-to-dialogue API
-      const audioStream = await client.textToDialogue.convert({
-        inputs
+      // Call ElevenLabs text-to-dialogue REST API
+      const response = await fetch(`${this.BASE_URL}/v1/text-to-dialogue`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ inputs })
       });
 
-      // Convert Web ReadableStream to Uint8Array
-      const reader = audioStream.getReader();
-      const chunks: Uint8Array[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          chunks.push(value);
-        }
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`ElevenLabs API error: ${response.status} ${errorText}`);
       }
 
-      // Combine chunks into single buffer
-      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-      const audioBuffer = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        audioBuffer.set(chunk, offset);
-        offset += chunk.length;
-      }
-
+      // Get audio as ArrayBuffer
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = new Uint8Array(arrayBuffer);
       const characterCount = script.length;
 
       console.log(`✓ ElevenLabs audio synthesis: ${characterCount} characters, ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
@@ -144,20 +135,30 @@ export default class extends Service<Env> {
     remainingCharacters: number;
     canResetVoiceAdd: boolean;
   }> {
-    const client = this.getElevenLabsClient();
+    const apiKey = this.getApiKey();
 
     try {
-      const subscription: any = await client.user.subscription;
+      const response = await fetch(`${this.BASE_URL}/v1/user/subscription`, {
+        headers: {
+          'xi-api-key': apiKey
+        }
+      });
 
-      const characterCount = subscription.characterCount || 0;
-      const characterLimit = subscription.characterLimit || 0;
+      if (!response.ok) {
+        throw new Error(`ElevenLabs API error: ${response.status}`);
+      }
+
+      const subscription: any = await response.json();
+
+      const characterCount = subscription.character_count || 0;
+      const characterLimit = subscription.character_limit || 0;
       const remainingCharacters = characterLimit - characterCount;
 
       return {
         characterCount,
         characterLimit,
         remainingCharacters,
-        canResetVoiceAdd: subscription.canUseInstantVoiceCloning || false
+        canResetVoiceAdd: subscription.can_use_instant_voice_cloning || false
       };
     } catch (error) {
       console.error('ElevenLabs quota check error:', error);
@@ -177,12 +178,22 @@ export default class extends Service<Env> {
     category: string;
     description: string | null;
   }>> {
-    const client = this.getElevenLabsClient();
+    const apiKey = this.getApiKey();
 
     try {
-      const response = await client.voices.getAll();
+      const response = await fetch(`${this.BASE_URL}/v1/voices`, {
+        headers: {
+          'xi-api-key': apiKey
+        }
+      });
 
-      return response.voices.map((voice: any) => ({
+      if (!response.ok) {
+        throw new Error(`ElevenLabs API error: ${response.status}`);
+      }
+
+      const data: any = await response.json();
+
+      return data.voices.map((voice: any) => ({
         voiceId: voice.voice_id,
         name: voice.name,
         category: voice.category || 'general',
