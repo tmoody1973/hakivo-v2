@@ -21,6 +21,10 @@ application "hakivo-api" {
     visibility = "public"
   }
 
+  service "db-admin" {
+    visibility = "private"
+  }
+
   // Private internal services
   service "user-service" {
     visibility = "private"
@@ -69,15 +73,18 @@ application "hakivo-api" {
 
   // Scheduled tasks
   task "daily-brief-scheduler" {
-    schedule = "0 7 * * *"
+    type = "cron"
+    cron = "0 7 * * *"
   }
 
   task "weekly-brief-scheduler" {
-    schedule = "0 7 * * 1"
+    type = "cron"
+    cron = "0 7 * * 1"
   }
 
   task "congress-sync-scheduler" {
-    schedule = "0 2 * * *"
+    type = "cron"
+    cron = "0 2 * * *"
   }
 
   // Message queues
@@ -103,4 +110,6 @@ application "hakivo-api" {
 
   // SmartBuckets for storage with automatic search
   smartbucket "bill-texts" {}
+
+  smartbucket "audio-briefs" {}
 }

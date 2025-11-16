@@ -5,12 +5,13 @@ export interface Env {
   _raindrop: {
     app: App;
   };
+  ACTIONS_CACHE: KvCache;
   AI: Ai;
   annotation: Annotation<Omit<MRNObject, 'type' | 'applicationName' | 'versionId'>>;
   APP_DB: SqlDatabase;
   AUDIO_BRIEFS: SmartBucket;
   AUTH_SERVICE: ServiceStub<import('../auth-service/index.js').default>;
-  BILL_CACHE: KvCache;
+  BILL_TEXTS: SmartBucket;
   BRIEF_QUEUE: Queue<import('../brief-generator').Body>;
   BRIEFS_SERVICE: ServiceStub<import('../briefs-service/index.js').default>;
   CEREBRAS_CLIENT: ServiceStub<import('../cerebras-client/index.js').default>;
@@ -19,15 +20,18 @@ export interface Env {
   CONGRESS_API_CLIENT: ServiceStub<import('../congress-api-client/index.js').default>;
   DASHBOARD_CACHE: KvCache;
   DASHBOARD_SERVICE: ServiceStub<import('../dashboard-service/index.js').default>;
+  DB_ADMIN: ServiceStub<import('../db-admin/index.js').default>;
   DISTRICT_CACHE: KvCache;
   ELEVENLABS_CLIENT: ServiceStub<import('../elevenlabs-client/index.js').default>;
   EXA_CLIENT: ServiceStub<import('../exa-client/index.js').default>;
   GEOCODIO_CLIENT: ServiceStub<import('../geocodio-client/index.js').default>;
-  INDEXING_QUEUE: Queue<import('../bill-indexer').Body>;
+  IMAGE_CACHE: KvCache;
   logger: Logger;
   mem: KvCache;
   NEWS_CACHE: KvCache;
   SESSION_CACHE: KvCache;
+  SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;
   USER_SERVICE: ServiceStub<import('../user-service/index.js').default>;
+  VULTR_STORAGE_CLIENT: ServiceStub<import('../vultr-storage-client/index.js').default>;
 }

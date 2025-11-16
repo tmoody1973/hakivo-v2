@@ -29,24 +29,34 @@
 - ✅ **geocodio-client** - Zip to district lookup
 - ✅ **congress-api-client** - Congress.gov integration
 
+## Database & Infrastructure ✅
+
+### SQL Database Schema
+- ✅ Complete schema created in `sql/init-schema.sql`
+- ✅ 13 user/application tables
+- ✅ 30+ Congress.gov legislative data tables
+- ✅ All indexes and foreign keys defined
+- ✅ Database admin service created for initialization
+
+### SmartBuckets Configured
+- ✅ `bill-texts` - Bill full text storage for semantic search
+- ✅ `audio-briefs` - Audio file storage with metadata
+
+### Raindrop Manifest
+- ✅ All services defined
+- ✅ All resources configured (SQL, KV caches, queues, SmartBuckets)
+- ✅ Task schedulers defined with cron expressions
+- ✅ Observer source bindings configured
+
 ## Known Issues & TODOs
 
-### SmartBucket Integration
-The chat-service currently uses basic bill metadata instead of SmartBucket semantic search because:
-- `BILL_TEXT_BUCKET` SmartBucket is not defined in the environment bindings
-- Only `AUDIO_BRIEFS` SmartBucket is currently available
+### Chat Service SmartBucket Integration
+The chat-service currently uses basic bill metadata instead of SmartBucket semantic search.
 
-**Required Fix:**
-Add to raindrop.manifest or configuration:
-```yaml
-smartbuckets:
-  - name: BILL_TEXT_BUCKET
-    description: "Bill full text storage for semantic search"
-```
-
-Then update chat-service:index.ts:188-224 to use:
+**Required Update:**
+Update chat-service:index.ts:188-224 to use BILL_TEXTS SmartBucket:
 ```typescript
-const searchResults = await c.env.BILL_TEXT_BUCKET.chunkSearch({
+const searchResults = await c.env.BILL_TEXTS.chunkSearch({
   input: message,
   requestId
 });
