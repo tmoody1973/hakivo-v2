@@ -63,6 +63,9 @@ const MOCK_SESSION: AuthSession = {
  * @param state - Optional state parameter for CSRF protection
  * @returns Authorization URL to redirect user to
  *
+ * AUTHENTICATION: Bearer {WORKOS_API_KEY} (in Authorization header)
+ * RATE LIMIT: 100 requests per minute per IP
+ *
  * API ENDPOINT: POST https://api.workos.com/user_management/authorize
  * HEADERS: {
  *   'Authorization': 'Bearer {WORKOS_API_KEY}',
@@ -79,9 +82,15 @@ const MOCK_SESSION: AuthSession = {
  *   url: string
  * }
  * ERROR RESPONSES:
- *   400: { code: 'invalid_request', message: 'Invalid provider or redirect URI' }
- *   401: { code: 'unauthorized', message: 'Invalid API key' }
- *   429: { code: 'rate_limit_exceeded', message: 'Too many requests' }
+ *   400 INVALID_REQUEST: Invalid provider or redirect URI
+ *   401 UNAUTHORIZED: Invalid or missing API key
+ *   429 RATE_LIMIT_EXCEEDED: Too many requests (max 100/min)
+ *
+ * VALIDATION:
+ *   - provider: Required, must be 'GoogleOAuth', 'MicrosoftOAuth', or 'GitHubOAuth'
+ *   - client_id: Required, must match WorkOS configuration
+ *   - redirect_uri: Required, must be whitelisted in WorkOS dashboard
+ *   - state: Optional, recommended for CSRF protection, max 500 chars
  */
 export async function getOAuthAuthorizationURL(
   provider: OAuthProvider,
@@ -265,6 +274,9 @@ export async function register(
  * @param data - Login credentials (email, password)
  * @returns User session with access token
  *
+ * AUTHENTICATION: Bearer {WORKOS_API_KEY} (in Authorization header)
+ * RATE LIMIT: 10 requests per 15 minutes per IP (stricter for login attempts)
+ *
  * API ENDPOINT: POST https://api.workos.com/user_management/authenticate
  * HEADERS: {
  *   'Authorization': 'Bearer {WORKOS_API_KEY}',
@@ -278,8 +290,8 @@ export async function register(
  *   password: string
  * }
  * SUCCESS RESPONSE (200): {
- *   access_token: string,
- *   refresh_token: string,
+ *   access_token: string,  // JWT token, valid for 1 hour
+ *   refresh_token: string,  // Valid for 30 days
  *   user: {
  *     id: string,
  *     email: string,
@@ -290,13 +302,22 @@ export async function register(
  *     created_at: string,
  *     updated_at: string
  *   },
- *   expires_in: number
+ *   expires_in: number  // Token expiry in seconds (3600)
  * }
  * ERROR RESPONSES:
- *   400: { code: 'invalid_request', message: 'Missing email or password' }
- *   401: { code: 'invalid_credentials', message: 'Invalid email or password' }
- *   403: { code: 'email_not_verified', message: 'Please verify your email before logging in' }
- *   429: { code: 'rate_limit_exceeded', message: 'Too many login attempts. Try again later.' }
+ *   400 INVALID_REQUEST: Missing email or password
+ *   401 INVALID_CREDENTIALS: Invalid email or password (after 5 failed attempts, account locked for 15 minutes)
+ *   403 EMAIL_NOT_VERIFIED: Please verify your email before logging in
+ *   429 RATE_LIMIT_EXCEEDED: Too many login attempts. Try again later (max 10 per 15 minutes)
+ *
+ * VALIDATION:
+ *   - email: Required, must be valid email format, max 255 characters
+ *   - password: Required, min 8 characters, max 128 characters
+ *   - After 5 failed attempts from same IP, account is locked for 15 minutes
+ *
+ * SIDE EFFECTS:
+ *   - Updates user.lastLoginAt timestamp
+ *   - Creates session log entry
  */
 export async function login(
   data: LoginRequest
