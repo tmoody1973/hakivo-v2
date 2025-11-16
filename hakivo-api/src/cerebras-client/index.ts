@@ -169,6 +169,97 @@ Question: ${question}`
   }
 
   /**
+   * Generate comprehensive AI analysis for bill detail page
+   * Provides structured analysis with what it does, who it affects, key provisions, and potential impact
+   *
+   * @param billTitle - Full bill title
+   * @param billText - Full bill text or summary
+   * @param billNumber - Bill number (e.g., "HR 1234")
+   * @returns Structured analysis
+   */
+  async generateBillAnalysis(
+    billTitle: string,
+    billText: string,
+    billNumber: string
+  ): Promise<{
+    whatItDoes: string;
+    whoItAffects: string[];
+    keyProvisions: string[];
+    potentialBenefits: string[];
+    potentialConcerns: string[];
+    tokensUsed: number;
+  }> {
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are a legislative analyst providing clear, objective analysis of Congressional bills.
+Analyze the bill and provide:
+1. A plain-language summary of what the bill does (2-3 sentences)
+2. A list of stakeholder groups affected (3-5 groups)
+3. Key provisions as bullet points (3-5 provisions)
+4. Potential benefits (2-4 benefits with brief explanations)
+5. Potential concerns (2-4 concerns with brief explanations)
+
+Format your response as JSON with this exact structure:
+{
+  "whatItDoes": "string",
+  "whoItAffects": ["string", "string", ...],
+  "keyProvisions": ["string", "string", ...],
+  "potentialBenefits": ["string", "string", ...],
+  "potentialConcerns": ["string", "string", ...]
+}
+
+Be objective and balanced. Present both benefits and concerns fairly.`
+      },
+      {
+        role: 'user' as const,
+        content: `Analyze ${billNumber}: ${billTitle}
+
+Bill Text:
+${billText.slice(0, 8000)}
+
+Provide a structured analysis in JSON format.`
+      }
+    ];
+
+    const result = await this.generateCompletion(messages, 0.4, 2048);
+
+    try {
+      // Extract JSON from response (handles cases where LLM adds markdown formatting)
+      let jsonText = result.content.trim();
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      return {
+        whatItDoes: parsed.whatItDoes || 'Analysis not available',
+        whoItAffects: Array.isArray(parsed.whoItAffects) ? parsed.whoItAffects : [],
+        keyProvisions: Array.isArray(parsed.keyProvisions) ? parsed.keyProvisions : [],
+        potentialBenefits: Array.isArray(parsed.potentialBenefits) ? parsed.potentialBenefits : [],
+        potentialConcerns: Array.isArray(parsed.potentialConcerns) ? parsed.potentialConcerns : [],
+        tokensUsed: result.tokensUsed
+      };
+    } catch (error) {
+      console.error('Failed to parse bill analysis JSON:', error);
+      console.error('Raw response:', result.content);
+
+      // Fallback to empty analysis
+      return {
+        whatItDoes: 'Unable to generate analysis at this time.',
+        whoItAffects: [],
+        keyProvisions: [],
+        potentialBenefits: [],
+        potentialConcerns: [],
+        tokensUsed: result.tokensUsed
+      };
+    }
+  }
+
+  /**
    * Required fetch method for Raindrop Service
    * This is a private service, so fetch returns 501 Not Implemented
    */

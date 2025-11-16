@@ -1,0 +1,10 @@
+{
+  "extends": "@liquidmetal-ai/typescript-config/base.json",
+  "include": ["*.ts"],
+  "ts-node": {
+    "experimentalSpecifierResolution": "node",
+    "transpileOnly": true,
+    "esm": true
+  },
+  "exclude": []
+}

@@ -54,7 +54,7 @@
 
 **elevenlabs-client**: Text-to-dialogue conversion, quota monitoring
 
-**cerebras-client**: Chat completion for RAG, fast inference
+**cerebras-client**: Chat completion for RAG, bill AI analysis generation (what it does, who it affects, key provisions, potential benefits/concerns), dashboard bill summaries, fast inference with llama3.1-70b
 
 **exa-client**: News search with result caching
 
