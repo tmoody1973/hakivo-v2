@@ -1,462 +1,277 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
-import { QueueSendOptions } from '@liquidmetal-ai/raindrop-framework';
-import { KvCachePutOptions, KvCacheGetOptions } from '@liquidmetal-ai/raindrop-framework';
-import { BucketPutOptions, BucketListOptions } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
 
-// Create Hono app with middleware
-const app = new Hono<{ Bindings: Env }>();
-
-// Add request logging middleware
-app.use('*', logger());
-
-// Health check endpoint
-app.get('/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// === Basic API Routes ===
-app.get('/api/hello', (c) => {
-  return c.json({ message: 'Hello from Hono!' });
-});
-
-app.get('/api/hello/:name', (c) => {
-  const name = c.req.param('name');
-  return c.json({ message: `Hello, ${name}!` });
-});
-
-// Example POST endpoint
-app.post('/api/echo', async (c) => {
-  const body = await c.req.json();
-  return c.json({ received: body });
-});
-
-// === RPC Examples: Service calling Actor ===
-// Example: Call an actor method
-/*
-app.post('/api/actor-call', async (c) => {
-  try {
-    const { message, actorName } = await c.req.json();
-
-    if (!actorName) {
-      return c.json({ error: 'actorName is required' }, 400);
-    }
-
-    // Get actor namespace and create actor instance
-    // Note: Replace MY_ACTOR with your actual actor binding name
-    const actorNamespace = c.env.MY_ACTOR; // This would be bound in raindrop.manifest
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
-
-    // Call actor method (assuming actor has a 'processMessage' method)
-    const response = await actor.processMessage(message);
-
-    return c.json({
-      success: true,
-      actorName,
-      response
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to call actor',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get actor state
-/*
-app.get('/api/actor-state/:actorName', async (c) => {
-  try {
-    const actorName = c.req.param('actorName');
-
-    // Get actor instance
-    const actorNamespace = c.env.MY_ACTOR;
-    const actorId = actorNamespace.idFromName(actorName);
-    const actor = actorNamespace.get(actorId);
-
-    // Get actor state (assuming actor has a 'getState' method)
-    const state = await actor.getState();
-
-    return c.json({
-      success: true,
-      actorName,
-      state
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to get actor state',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === SmartBucket Examples ===
-// Example: Upload file to SmartBucket
-/*
-app.post('/api/upload', async (c) => {
-  try {
-    const formData = await c.req.formData();
-    const file = formData.get('file') as File;
-    const description = formData.get('description') as string;
-
-    if (!file) {
-      return c.json({ error: 'No file provided' }, 400);
-    }
-
-    // Upload to SmartBucket (Replace MY_SMARTBUCKET with your binding name)
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const arrayBuffer = await file.arrayBuffer();
-
-    const putOptions: BucketPutOptions = {
-      httpMetadata: {
-        contentType: file.type || 'application/octet-stream',
-      },
-      customMetadata: {
-        originalName: file.name,
-        size: file.size.toString(),
-        description: description || '',
-        uploadedAt: new Date().toISOString()
-      }
-    };
-
-    const result = await smartbucket.put(file.name, new Uint8Array(arrayBuffer), putOptions);
-
-    return c.json({
-      success: true,
-      message: 'File uploaded successfully',
-      key: result.key,
-      size: result.size,
-      etag: result.etag
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to upload file',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get file from SmartBucket
-/*
-app.get('/api/file/:filename', async (c) => {
-  try {
-    const filename = c.req.param('filename');
-
-    // Get file from SmartBucket
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const file = await smartbucket.get(filename);
-
-    if (!file) {
-      return c.json({ error: 'File not found' }, 404);
-    }
-
-    return new Response(file.body, {
-      headers: {
-        'Content-Type': file.httpMetadata?.contentType || 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'X-Object-Size': file.size.toString(),
-        'X-Object-ETag': file.etag,
-        'X-Object-Uploaded': file.uploaded.toISOString(),
-      }
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Failed to retrieve file',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Search SmartBucket documents
-/*
-app.post('/api/search', async (c) => {
-  try {
-    const { query, page = 1, pageSize = 10 } = await c.req.json();
-
-    if (!query) {
-      return c.json({ error: 'Query is required' }, 400);
-    }
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-
-    // For initial search
-    if (page === 1) {
-      const requestId = `search-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-      const results = await smartbucket.search({
-        input: query,
-        requestId
-      });
-
-      return c.json({
-        success: true,
-        message: 'Search completed',
-        query,
-        results: results.results,
-        pagination: {
-          ...results.pagination,
-          requestId
-        }
-      });
-    } else {
-      // For paginated results
-      const { requestId } = await c.req.json();
-      if (!requestId) {
-        return c.json({ error: 'Request ID required for pagination' }, 400);
-      }
-
-      const paginatedResults = await smartbucket.getPaginatedResults({
-        requestId,
-        page,
-        pageSize
-      });
-
-      return c.json({
-        success: true,
-        message: 'Paginated results',
-        query,
-        results: paginatedResults.results,
-        pagination: paginatedResults.pagination
-      });
-    }
-  } catch (error) {
-    return c.json({
-      error: 'Search failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Chunk search for finding specific sections
-/*
-app.post('/api/chunk-search', async (c) => {
-  try {
-    const { query } = await c.req.json();
-
-    if (!query) {
-      return c.json({ error: 'Query is required' }, 400);
-    }
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const requestId = `chunk-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-
-    const results = await smartbucket.chunkSearch({
-      input: query,
-      requestId
-    });
-
-    return c.json({
-      success: true,
-      message: 'Chunk search completed',
-      query,
-      results: results.results
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Chunk search failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Document chat/Q&A
-/*
-app.post('/api/document-chat', async (c) => {
-  try {
-    const { objectId, query } = await c.req.json();
-
-    if (!objectId || !query) {
-      return c.json({ error: 'objectId and query are required' }, 400);
-    }
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-    const requestId = `chat-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-
-    const response = await smartbucket.documentChat({
-      objectId,
-      input: query,
-      requestId
-    });
-
-    return c.json({
-      success: true,
-      message: 'Document chat completed',
-      objectId,
-      query,
-      answer: response.answer
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Document chat failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: List objects in bucket
-/*
-app.get('/api/list', async (c) => {
-  try {
-    const url = new URL(c.req.url);
-    const prefix = url.searchParams.get('prefix') || undefined;
-    const limit = url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined;
-
-    const smartbucket = c.env.MY_SMARTBUCKET;
-
-    const listOptions: BucketListOptions = {
-      prefix,
-      limit
-    };
-
-    const result = await smartbucket.list(listOptions);
-
-    return c.json({
-      success: true,
-      objects: result.objects.map(obj => ({
-        key: obj.key,
-        size: obj.size,
-        uploaded: obj.uploaded,
-        etag: obj.etag
-      })),
-      truncated: result.truncated,
-      cursor: result.truncated ? result.cursor : undefined
-    });
-  } catch (error) {
-    return c.json({
-      error: 'List failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === KV Cache Examples ===
-// Example: Store data in KV cache
-/*
-app.post('/api/cache', async (c) => {
-  try {
-    const { key, value, ttl } = await c.req.json();
-
-    if (!key || value === undefined) {
-      return c.json({ error: 'key and value are required' }, 400);
-    }
-
-    const cache = c.env.MY_CACHE;
-
-    const putOptions: KvCachePutOptions = {};
-    if (ttl) {
-      putOptions.expirationTtl = ttl;
-    }
-
-    await cache.put(key, JSON.stringify(value), putOptions);
-
-    return c.json({
-      success: true,
-      message: 'Data cached successfully',
-      key
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache put failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// Example: Get data from KV cache
-/*
-app.get('/api/cache/:key', async (c) => {
-  try {
-    const key = c.req.param('key');
-
-    const cache = c.env.MY_CACHE;
-
-    const getOptions: KvCacheGetOptions<'json'> = {
-      type: 'json'
-    };
-
-    const value = await cache.get(key, getOptions);
-
-    if (value === null) {
-      return c.json({ error: 'Key not found in cache' }, 404);
-    }
-
-    return c.json({
-      success: true,
-      key,
-      value
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Cache get failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === Queue Examples ===
-// Example: Send message to queue
-/*
-app.post('/api/queue/send', async (c) => {
-  try {
-    const { message, delaySeconds } = await c.req.json();
-
-    if (!message) {
-      return c.json({ error: 'message is required' }, 400);
-    }
-
-    const queue = c.env.MY_QUEUE;
-
-    const sendOptions: QueueSendOptions = {};
-    if (delaySeconds) {
-      sendOptions.delaySeconds = delaySeconds;
-    }
-
-    await queue.send(message, sendOptions);
-
-    return c.json({
-      success: true,
-      message: 'Message sent to queue'
-    });
-  } catch (error) {
-    return c.json({
-      error: 'Queue send failed',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-*/
-
-// === Environment Variable Examples ===
-app.get('/api/config', (c) => {
-  return c.json({
-    hasEnv: !!c.env,
-    availableBindings: {
-      // These would be true if the resources are bound in raindrop.manifest
-      // MY_ACTOR: !!c.env.MY_ACTOR,
-      // MY_SMARTBUCKET: !!c.env.MY_SMARTBUCKET,
-      // MY_CACHE: !!c.env.MY_CACHE,
-      // MY_QUEUE: !!c.env.MY_QUEUE,
-    },
-    // Example access to environment variables:
-    // MY_SECRET_VAR: c.env.MY_SECRET_VAR // This would be undefined if not set
-  });
-});
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  zipCode?: string;
+  city?: string;
+  congressionalDistrict?: string;
+  emailVerified: boolean;
+  onboardingCompleted: boolean;
+  createdAt: number;
+}
+
+interface UserPreferences {
+  policyInterests: string[];
+  briefingTime: string;
+  briefingDays: string[];
+  playbackSpeed: number;
+  autoplay: boolean;
+  emailNotifications: boolean;
+}
 
 export default class extends Service<Env> {
-  async fetch(request: Request): Promise<Response> {
-    return app.fetch(request, this.env);
+  /**
+   * Create a new user
+   * Called by auth-service during registration
+   */
+  async createUser(data: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    zipCode?: string;
+  }): Promise<User> {
+    const db = this.env.APP_DB;
+
+    // Look up Congressional district if zip code provided
+    let districtInfo = null;
+    if (data.zipCode) {
+      try {
+        districtInfo = await this.env.GEOCODIO_CLIENT.lookupDistrict(data.zipCode);
+      } catch (error) {
+        console.error('Failed to lookup district:', error);
+        // Continue without district info
+      }
+    }
+
+    const user: User = {
+      id: data.id,
+      email: data.email,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      zipCode: data.zipCode,
+      city: districtInfo?.city,
+      congressionalDistrict: districtInfo?.congressionalDistrict,
+      emailVerified: false,
+      onboardingCompleted: false,
+      createdAt: Date.now()
+    };
+
+    await db
+      .prepare(
+        `INSERT INTO users (
+          id, email, first_name, last_name, zip_code, city,
+          congressional_district, email_verified, onboarding_completed, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        user.id,
+        user.email,
+        user.firstName,
+        user.lastName,
+        user.zipCode || null,
+        user.city || null,
+        user.congressionalDistrict || null,
+        user.emailVerified ? 1 : 0,
+        user.onboardingCompleted ? 1 : 0,
+        user.createdAt
+      )
+      .run();
+
+    console.log(`✓ User created: ${user.id} (${user.email})`);
+
+    return user;
+  }
+
+  /**
+   * Get user by ID
+   * Called by auth-service and other services
+   */
+  async getUserById(userId: string): Promise<User | null> {
+    const db = this.env.APP_DB;
+
+    const result = await db
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .bind(userId)
+      .first();
+
+    if (!result) {
+      return null;
+    }
+
+    return {
+      id: result.id as string,
+      email: result.email as string,
+      firstName: result.first_name as string,
+      lastName: result.last_name as string,
+      zipCode: result.zip_code as string | undefined,
+      city: result.city as string | undefined,
+      congressionalDistrict: result.congressional_district as string | undefined,
+      emailVerified: Boolean(result.email_verified),
+      onboardingCompleted: Boolean(result.onboarding_completed),
+      createdAt: result.created_at as number
+    };
+  }
+
+  /**
+   * Get user by email
+   * Called by auth-service during login
+   */
+  async getUserByEmail(email: string): Promise<User | null> {
+    const db = this.env.APP_DB;
+
+    const result = await db
+      .prepare('SELECT * FROM users WHERE email = ?')
+      .bind(email)
+      .first();
+
+    if (!result) {
+      return null;
+    }
+
+    return {
+      id: result.id as string,
+      email: result.email as string,
+      firstName: result.first_name as string,
+      lastName: result.last_name as string,
+      zipCode: result.zip_code as string | undefined,
+      city: result.city as string | undefined,
+      congressionalDistrict: result.congressional_district as string | undefined,
+      emailVerified: Boolean(result.email_verified),
+      onboardingCompleted: Boolean(result.onboarding_completed),
+      createdAt: result.created_at as number
+    };
+  }
+
+  /**
+   * Update user preferences
+   */
+  async updatePreferences(
+    userId: string,
+    preferences: Partial<UserPreferences>
+  ): Promise<UserPreferences> {
+    const db = this.env.APP_DB;
+
+    // Get current preferences or create default
+    let current = await db
+      .prepare('SELECT * FROM user_preferences WHERE user_id = ?')
+      .bind(userId)
+      .first();
+
+    const updated = {
+      policyInterests: preferences.policyInterests || (current?.policy_interests ? JSON.parse(current.policy_interests as string) : []),
+      briefingTime: preferences.briefingTime || current?.briefing_time as string || '08:00',
+      briefingDays: preferences.briefingDays || (current?.briefing_days ? JSON.parse(current.briefing_days as string) : ['Monday', 'Wednesday', 'Friday']),
+      playbackSpeed: preferences.playbackSpeed ?? (current?.playback_speed as number || 1.0),
+      autoplay: preferences.autoplay ?? Boolean(current?.autoplay ?? true),
+      emailNotifications: preferences.emailNotifications ?? Boolean(current?.email_notifications ?? true)
+    };
+
+    if (current) {
+      // Update existing
+      await db
+        .prepare(
+          `UPDATE user_preferences SET
+            policy_interests = ?,
+            briefing_time = ?,
+            briefing_days = ?,
+            playback_speed = ?,
+            autoplay = ?,
+            email_notifications = ?
+          WHERE user_id = ?`
+        )
+        .bind(
+          JSON.stringify(updated.policyInterests),
+          updated.briefingTime,
+          JSON.stringify(updated.briefingDays),
+          updated.playbackSpeed,
+          updated.autoplay ? 1 : 0,
+          updated.emailNotifications ? 1 : 0,
+          userId
+        )
+        .run();
+    } else {
+      // Insert new
+      await db
+        .prepare(
+          `INSERT INTO user_preferences (
+            user_id, policy_interests, briefing_time, briefing_days,
+            playback_speed, autoplay, email_notifications
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          userId,
+          JSON.stringify(updated.policyInterests),
+          updated.briefingTime,
+          JSON.stringify(updated.briefingDays),
+          updated.playbackSpeed,
+          updated.autoplay ? 1 : 0,
+          updated.emailNotifications ? 1 : 0
+        )
+        .run();
+    }
+
+    console.log(`✓ Preferences updated for user: ${userId}`);
+
+    return updated;
+  }
+
+  /**
+   * Get user preferences
+   */
+  async getPreferences(userId: string): Promise<UserPreferences> {
+    const db = this.env.APP_DB;
+
+    const result = await db
+      .prepare('SELECT * FROM user_preferences WHERE user_id = ?')
+      .bind(userId)
+      .first();
+
+    if (!result) {
+      // Return defaults
+      return {
+        policyInterests: [],
+        briefingTime: '08:00',
+        briefingDays: ['Monday', 'Wednesday', 'Friday'],
+        playbackSpeed: 1.0,
+        autoplay: true,
+        emailNotifications: true
+      };
+    }
+
+    return {
+      policyInterests: JSON.parse(result.policy_interests as string),
+      briefingTime: result.briefing_time as string,
+      briefingDays: JSON.parse(result.briefing_days as string),
+      playbackSpeed: result.playback_speed as number,
+      autoplay: Boolean(result.autoplay),
+      emailNotifications: Boolean(result.email_notifications)
+    };
+  }
+
+  /**
+   * Mark onboarding as completed
+   */
+  async completeOnboarding(userId: string): Promise<void> {
+    const db = this.env.APP_DB;
+
+    await db
+      .prepare('UPDATE users SET onboarding_completed = ? WHERE id = ?')
+      .bind(1, userId)
+      .run();
+
+    console.log(`✓ Onboarding completed for user: ${userId}`);
+  }
+
+  /**
+   * Required fetch method for Raindrop Service
+   * This is a private service, so fetch returns 501 Not Implemented
+   */
+  async fetch(_request: Request): Promise<Response> {
+    return new Response('Not Implemented - Private Service', { status: 501 });
   }
 }
