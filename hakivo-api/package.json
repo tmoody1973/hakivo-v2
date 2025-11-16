@@ -14,25 +14,26 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1",
+    "@anthropic-ai/sdk": "^0.27",
+    "@aws-sdk/client-s3": "^3.600",
+    "@aws-sdk/s3-request-presigner": "^3.600",
+    "@cerebras/cerebras_cloud_sdk": "^1.5",
     "@liquidmetal-ai/raindrop-framework": "0.10.0",
+    "@modelcontextprotocol/sdk": "^1",
+    "elevenlabs": "^1.59.0",
+    "exa-js": "^1.0",
     "hono": "^4",
+    "jose": "^5",
     "kysely": "^0.27.2",
     "kysely-d1": "^0.3.0",
-    "zod": "^3",
-    "jose": "^5",
-    "@anthropic-ai/sdk": "^0.27",
-    "@cerebras/cerebras_cloud_sdk": "^1.5",
-    "exa-js": "^1.0",
     "pexels": "^1.4",
-    "@aws-sdk/client-s3": "^3.600",
-    "@aws-sdk/s3-request-presigner": "^3.600"
+    "zod": "^3"
   },
   "devDependencies": {
     "shx": "^0.4.0",
     "ts-node": "^10",
-    "typescript-eslint": "^8.7.0",
     "typescript": "^5.0.4",
+    "typescript-eslint": "^8.7.0",
     "vitest": "^3.1.3"
   }
 }
