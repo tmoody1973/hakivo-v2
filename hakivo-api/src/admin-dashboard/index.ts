@@ -337,7 +337,18 @@ app.post('/api/smartbucket/store', async (c) => {
 app.get('/api/smartbucket/get/:bucket/*', async (c) => {
   try {
     const bucketName = c.req.param('bucket');
-    const key = c.req.param('*'); // This captures everything after /bucket/
+
+    // Extract the key from the full path
+    const fullPath = c.req.path;
+    const prefix = `/api/smartbucket/get/${bucketName}/`;
+    const key = fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : '';
+
+    if (!key) {
+      return c.json({
+        success: false,
+        error: 'No key provided'
+      }, 400);
+    }
 
     // Get the SmartBucket instance
     const smartBucket = (c.env as any)[bucketName];
@@ -365,6 +376,52 @@ app.get('/api/smartbucket/get/:bucket/*', async (c) => {
       key,
       content,
       size: content.length
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/smartbucket/list/:bucket
+ * List objects in a SmartBucket
+ */
+app.get('/api/smartbucket/list/:bucket', async (c) => {
+  try {
+    const bucketName = c.req.param('bucket');
+    const prefix = c.req.query('prefix') || '';
+    const limit = parseInt(c.req.query('limit') || '100');
+
+    // Get the SmartBucket instance
+    const smartBucket = (c.env as any)[bucketName];
+    if (!smartBucket) {
+      return c.json({
+        success: false,
+        error: `SmartBucket '${bucketName}' not found`
+      }, 404);
+    }
+
+    // List objects
+    const options: any = { limit };
+    if (prefix) {
+      options.prefix = prefix;
+    }
+
+    const listed = await smartBucket.list(options);
+
+    return c.json({
+      success: true,
+      bucket: bucketName,
+      objects: listed.objects.map((obj: any) => ({
+        key: obj.key,
+        size: obj.size,
+        uploaded: obj.uploaded
+      })),
+      truncated: listed.truncated,
+      count: listed.objects.length
     });
   } catch (error) {
     return c.json({

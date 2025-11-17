@@ -20,6 +20,7 @@ interface Stats {
   membersProcessed: number;
   bioDataAdded: number;
   socialMediaAdded: number;
+  partyUpdated: number;
   notFound: number;
   errors: number;
 }
@@ -28,6 +29,7 @@ const stats: Stats = {
   membersProcessed: 0,
   bioDataAdded: 0,
   socialMediaAdded: 0,
+  partyUpdated: 0,
   notFound: 0,
   errors: 0
 };
@@ -121,6 +123,12 @@ async function main() {
         if (name?.nickname) updates.push(`nickname = ${escapeSQLString(name.nickname)}`);
         if (name?.suffix) updates.push(`suffix = ${escapeSQLString(name.suffix)}`);
 
+        // CRITICAL: Extract party from current term
+        if (currentTerm?.party) {
+          updates.push(`party = ${escapeSQLString(currentTerm.party)}`);
+          stats.partyUpdated++;
+        }
+
         // IDs
         if (ids?.thomas) updates.push(`thomas_id = ${escapeSQLString(ids.thomas)}`);
         if (ids?.lis) updates.push(`lis_id = ${escapeSQLString(ids.lis)}`);
@@ -188,6 +196,7 @@ async function main() {
     // Progress update every 100 members
     if (stats.membersProcessed % 100 === 0) {
       console.log(`\n📊 Progress: ${stats.membersProcessed}/${members.length} members`);
+      console.log(`   Party updated: ${stats.partyUpdated}`);
       console.log(`   Bio data added: ${stats.bioDataAdded}`);
       console.log(`   Social media added: ${stats.socialMediaAdded}`);
       console.log(`   Not found: ${stats.notFound}`);
@@ -200,6 +209,7 @@ async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`\n📊 Final Statistics:`);
   console.log(`   Members processed: ${stats.membersProcessed}`);
+  console.log(`   Party updated: ${stats.partyUpdated}`);
   console.log(`   Bio data added: ${stats.bioDataAdded}`);
   console.log(`   Social media added: ${stats.socialMediaAdded}`);
   console.log(`   Not found: ${stats.notFound}`);

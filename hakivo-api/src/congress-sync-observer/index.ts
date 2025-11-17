@@ -2,6 +2,29 @@ import { Each, Message } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
 
 /**
+ * Strip HTML tags and extract plain text from bill content
+ */
+function stripHTML(html: string): string {
+  // Remove HTML tags
+  let text = html.replace(/<[^>]*>/g, '');
+
+  // Decode HTML entities
+  text = text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+
+  // Remove excessive whitespace
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/[ \t]+/g, ' ');
+
+  return text.trim();
+}
+
+/**
  * Congress Sync Observer
  *
  * Processes messages from the sync-queue to synchronize Congress.gov data.
@@ -101,9 +124,12 @@ export default class extends Each<SyncMessage, Env> {
                     const textResponse = await fetch(textFormat.url);
                     const billText = await textResponse.text();
 
-                    // Upload to SmartBucket
+                    // Strip HTML to get plain text
+                    const plainText = stripHTML(billText);
+
+                    // Upload plain text to SmartBucket
                     const documentKey = `congress-${congress}/${bill.type}${bill.number}.txt`;
-                    await billTexts.put(documentKey, billText, {
+                    await billTexts.put(documentKey, plainText, {
                       customMetadata: {
                         congress: String(congress),
                         type: bill.type,
@@ -112,7 +138,7 @@ export default class extends Each<SyncMessage, Env> {
                       }
                     });
 
-                    console.log(`    ✓ Uploaded ${bill.type}${bill.number} to SmartBucket`);
+                    console.log(`    ✓ Uploaded ${bill.type}${bill.number} to SmartBucket (${plainText.length} chars)`);
                   } catch (error) {
                     console.warn(`    ⚠️  Failed to upload bill text for ${bill.type}${bill.number}`);
                   }
