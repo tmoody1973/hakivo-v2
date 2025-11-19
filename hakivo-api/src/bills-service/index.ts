@@ -1160,6 +1160,99 @@ app.get('/members/:bioguide_id', async (c) => {
   }
 });
 
+/**
+ * GET /members/:bioguide_id/cosponsored-legislation
+ * Get all bills co-sponsored by a specific member
+ */
+app.get('/members/:bioguide_id/cosponsored-legislation', async (c) => {
+  try {
+    const bioguideId = c.req.param('bioguide_id');
+    const db = c.env.APP_DB;
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = parseInt(c.req.query('offset') || '0');
+
+    console.log(`[CosponsoredBills] Fetching for bioguide_id: ${bioguideId}, limit: ${limit}, offset: ${offset}`);
+
+    // Get co-sponsored bills with bill details
+    const cosponsoredBills = await db
+      .prepare(`
+        SELECT
+          b.id,
+          b.congress,
+          b.bill_type,
+          b.bill_number,
+          b.title,
+          b.introduced_date,
+          b.latest_action_date,
+          b.latest_action_text,
+          b.sponsor_bioguide_id,
+          bc.cosponsor_date,
+          m.first_name as sponsor_first_name,
+          m.last_name as sponsor_last_name,
+          m.party as sponsor_party,
+          m.state as sponsor_state
+        FROM bill_cosponsors bc
+        JOIN bills b ON bc.bill_id = b.id
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE bc.member_bioguide_id = ?
+        ORDER BY bc.cosponsor_date DESC
+        LIMIT ? OFFSET ?
+      `)
+      .bind(bioguideId, limit, offset)
+      .all();
+
+    // Get total count
+    const countResult = await db
+      .prepare(`
+        SELECT COUNT(*) as total
+        FROM bill_cosponsors
+        WHERE member_bioguide_id = ?
+      `)
+      .bind(bioguideId)
+      .first() as any;
+
+    const total = countResult?.total || 0;
+
+    console.log(`[CosponsoredBills] Found ${total} total, returning ${cosponsoredBills.results?.length || 0} results`);
+
+    return c.json({
+      success: true,
+      cosponsoredBills: (cosponsoredBills.results || []).map((bill: any) => ({
+        id: bill.id,
+        congress: bill.congress,
+        billType: bill.bill_type,
+        billNumber: bill.bill_number,
+        title: bill.title,
+        introducedDate: bill.introduced_date,
+        latestActionDate: bill.latest_action_date,
+        latestActionText: bill.latest_action_text,
+        cosponsorDate: bill.cosponsor_date,
+        sponsor: {
+          bioguideId: bill.sponsor_bioguide_id,
+          firstName: bill.sponsor_first_name,
+          lastName: bill.sponsor_last_name,
+          fullName: [bill.sponsor_first_name, bill.sponsor_last_name].filter(Boolean).join(' '),
+          party: bill.sponsor_party,
+          state: bill.sponsor_state
+        }
+      })),
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[CosponsoredBills] Failed to get cosponsored bills:', error);
+    return c.json({
+      error: 'Failed to get cosponsored bills',
+      message: error.message
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

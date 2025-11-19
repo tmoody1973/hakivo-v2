@@ -745,6 +745,56 @@ export async function getMemberById(bioguideId: string): Promise<APIResponse<any
   }
 }
 
+/**
+ * Get co-sponsored legislation for a member by bioguide ID
+ */
+export async function getMemberCosponsoredLegislation(
+  bioguideId: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<APIResponse<any>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const url = `${BILLS_API_URL}/members/${encodeURIComponent(bioguideId)}/cosponsored-legislation?limit=${limit}&offset=${offset}`;
+    console.log('[getMemberCosponsoredLegislation] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getMemberCosponsoredLegislation] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getMemberCosponsoredLegislation] Error response:', errorText);
+      let errorMessage = 'Failed to get co-sponsored legislation';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get co-sponsored legislation';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getMemberCosponsoredLegislation] Success, found:', result.cosponsoredBills?.length || 0, 'bills');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getMemberCosponsoredLegislation] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get co-sponsored legislation',
+      },
+    };
+  }
+}
+
 export async function getRepresentatives(
   accessToken: string,
   refreshToken?: string,

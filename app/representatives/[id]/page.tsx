@@ -1,94 +1,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { getMemberById } from '@/lib/api/backend'
-import { Loader2, Phone, Mail, Globe, ExternalLink } from 'lucide-react'
-
-const representativesDataOLD: Record<string, any> = {
-  '1': {
-    id: '1',
-    name: 'Elizabeth Warren',
-    title: 'Senator',
-    party: 'Democrat',
-    state: 'Massachusetts',
-    district: '',
-    image: '/woman-senator.jpg',
-    phone: '(202) 224-4543',
-    email: 'elizabeth_warren@warren.senate.gov',
-    website: 'www.warren.senate.gov',
-    twitter: '@SenWarren',
-    bio: 'Elizabeth Warren is the senior United States Senator from Massachusetts. A former Harvard Law School professor, she is known for her expertise in bankruptcy law and consumer protection.',
-    committees: [
-      { name: 'Banking, Housing, and Urban Affairs', role: 'Member' },
-      { name: 'Finance', role: 'Member' },
-      { name: 'Armed Services', role: 'Member' }
-    ],
-    votes: [
-      { bill: 'H.R. 1234 - Infrastructure Investment', vote: 'Yes', date: 'Nov 10, 2024' },
-      { bill: 'S. 5678 - Climate Action Act', vote: 'Yes', date: 'Nov 5, 2024' },
-      { bill: 'H.R. 9012 - Tax Reform Bill', vote: 'No', date: 'Oct 28, 2024' }
-    ],
-    sponsored: [
-      { number: 'S. 2345', title: 'Student Loan Debt Relief Act', status: 'In Committee' },
-      { number: 'S. 6789', title: 'Affordable Housing Expansion Act', status: 'Passed Senate' }
-    ]
-  },
-  '2': {
-    id: '2',
-    name: 'Ed Markey',
-    title: 'Senator',
-    party: 'Democrat',
-    state: 'Massachusetts',
-    district: '',
-    image: '/man-senator.jpg',
-    phone: '(202) 224-2742',
-    email: 'ed_markey@markey.senate.gov',
-    website: 'www.markey.senate.gov',
-    twitter: '@SenMarkey',
-    bio: 'Ed Markey is the junior United States Senator from Massachusetts. He is a leader on climate change and clean energy policy.',
-    committees: [
-      { name: 'Environment and Public Works', role: 'Ranking Member' },
-      { name: 'Commerce, Science, and Transportation', role: 'Member' }
-    ],
-    votes: [
-      { bill: 'H.R. 1234 - Infrastructure Investment', vote: 'Yes', date: 'Nov 10, 2024' },
-      { bill: 'S. 5678 - Climate Action Act', vote: 'Yes', date: 'Nov 5, 2024' }
-    ],
-    sponsored: [
-      { number: 'S. 3456', title: 'Green New Deal Resolution', status: 'In Committee' }
-    ]
-  },
-  '3': {
-    id: '3',
-    name: 'Ayanna Pressley',
-    title: 'Representative',
-    party: 'Democrat',
-    state: 'Massachusetts',
-    district: '7th District',
-    image: '/woman-representative.png',
-    phone: '(202) 225-5111',
-    email: 'ayanna.pressley@mail.house.gov',
-    website: 'pressley.house.gov',
-    twitter: '@RepPressley',
-    bio: 'Ayanna Pressley represents Massachusetts 7th Congressional District. She is a champion for equity and justice.',
-    committees: [
-      { name: 'Financial Services', role: 'Member' },
-      { name: 'Oversight and Reform', role: 'Member' }
-    ],
-    votes: [
-      { bill: 'H.R. 1234 - Infrastructure Investment', vote: 'Yes', date: 'Nov 10, 2024' },
-      { bill: 'H.R. 9012 - Tax Reform Bill', vote: 'No', date: 'Oct 28, 2024' }
-    ],
-    sponsored: [
-      { number: 'H.R. 4567', title: 'Criminal Justice Reform Act', status: 'In Committee' }
-    ]
-  }
-}
+import { getMemberById, getMemberCosponsoredLegislation } from '@/lib/api/backend'
+import {
+  Loader2, Phone, MapPin, Globe, ExternalLink, Twitter, Facebook, Youtube, Instagram,
+  FileText, TrendingUp, Calendar, Users, CheckCircle2, XCircle, MinusCircle, BarChart3
+} from 'lucide-react'
+import Link from 'next/link'
 
 export default function RepresentativeDetailPage({
   params,
@@ -99,6 +22,9 @@ export default function RepresentativeDetailPage({
   const [member, setMember] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [cosponsoredBills, setCosponsoredBills] = useState<any[]>([])
+  const [cosponsoredLoading, setCosponsoredLoading] = useState(false)
+  const [cosponsoredTotal, setCosponsoredTotal] = useState(0)
 
   useEffect(() => {
     params.then(p => setBioguideId(p.id))
@@ -129,9 +55,28 @@ export default function RepresentativeDetailPage({
     fetchMember()
   }, [bioguideId])
 
+  // Fetch co-sponsored bills
+  const fetchCosponsoredBills = async () => {
+    if (!bioguideId || cosponsoredBills.length > 0) return // Already loaded
+
+    try {
+      setCosponsoredLoading(true)
+      const response = await getMemberCosponsoredLegislation(bioguideId, 20, 0)
+
+      if (response.success && response.data) {
+        setCosponsoredBills(response.data.cosponsoredBills || [])
+        setCosponsoredTotal(response.data.pagination?.total || 0)
+      }
+    } catch (err) {
+      console.error('Failed to fetch co-sponsored bills:', err)
+    } finally {
+      setCosponsoredLoading(false)
+    }
+  }
+
   if (loading) {
     return (
-      <div className="px-6 md:px-8 py-8 flex items-center justify-center min-h-[400px]">
+      <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p className="text-muted-foreground">Loading representative...</p>
@@ -142,150 +87,527 @@ export default function RepresentativeDetailPage({
 
   if (error || !member) {
     return (
-      <div className="px-6 md:px-8 py-8">
+      <div className="container mx-auto px-4 py-8">
         <Card className="p-8 text-center">
           <h1 className="text-2xl font-bold">Representative Not Found</h1>
           <p className="text-muted-foreground mt-2">{error || 'The representative you are looking for does not exist.'}</p>
+          <Button asChild className="mt-4">
+            <Link href="/representatives">Back to Representatives</Link>
+          </Button>
         </Card>
       </div>
     )
   }
 
-  const rep = member
+  const partyColor = member.party === 'Democratic' || member.party === 'Democrat' ? 'blue' :
+                     member.party === 'Republican' ? 'red' : 'gray'
 
   return (
-    <div className="px-6 md:px-8 py-8 space-y-6">
-      {/* Header Section */}
-      <Card className="p-6">
-        <div className="flex flex-col md:flex-row gap-6">
-          <Avatar className="w-32 h-32">
-            <AvatarImage src={rep.imageUrl || "/placeholder.svg"} alt={rep.fullName} />
-            <AvatarFallback>{rep.firstName?.[0]}{rep.lastName?.[0]}</AvatarFallback>
-          </Avatar>
+    <div className="container mx-auto px-4 py-6 md:py-8 space-y-6">
+      {/* Hero Section */}
+      <Card className="overflow-hidden">
+        <div className="relative bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-6 md:p-8">
+          <div className="flex flex-col md:flex-row gap-6 items-start">
+            {/* Avatar */}
+            <Avatar className="w-24 h-24 md:w-32 md:h-32 border-4 border-background shadow-xl shrink-0">
+              <AvatarImage src={member.imageUrl || "/placeholder.svg"} alt={member.fullName} />
+              <AvatarFallback className="text-2xl md:text-3xl">{member.firstName?.[0]}{member.lastName?.[0]}</AvatarFallback>
+            </Avatar>
 
-          <div className="flex-1">
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            {/* Info */}
+            <div className="flex-1 space-y-3">
               <div>
-                <h1 className="text-3xl font-bold">{rep.fullName}</h1>
-                <p className="text-lg text-muted-foreground mt-1">
-                  U.S. {rep.chamber === 'House' ? 'Representative' : 'Senator'} • {rep.state} {rep.district !== null && rep.district !== undefined && `District ${rep.district}`}
+                <h1 className="text-2xl md:text-4xl font-bold">{member.fullName}</h1>
+                <p className="text-lg md:text-xl text-muted-foreground mt-1">
+                  U.S. {member.chamber === 'House' ? 'Representative' : 'Senator'}
+                  {member.state && ` from ${member.state}`}
+                  {member.district !== null && member.district !== undefined && ` - District ${member.district}`}
                 </p>
-                <Badge className="mt-2" variant={rep.party === 'Democratic' || rep.party === 'Democrat' ? 'default' : 'secondary'}>
-                  {rep.party}
-                </Badge>
               </div>
 
-              <div className="flex gap-2">
-                {rep.url && (
-                  <Button asChild>
-                    <a href={rep.url} target="_blank" rel="noopener noreferrer">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={partyColor === 'blue' ? 'default' : 'secondary'} className="px-3 py-1">
+                  {member.party}
+                </Badge>
+                {member.currentMember && (
+                  <Badge variant="outline" className="px-3 py-1">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Currently Serving
+                  </Badge>
+                )}
+              </div>
+
+              {/* Contact Actions - Desktop */}
+              <div className="hidden md:flex flex-wrap gap-2 pt-2">
+                {member.url && (
+                  <Button asChild size="sm">
+                    <a href={member.url} target="_blank" rel="noopener noreferrer">
                       <Globe className="h-4 w-4 mr-2" />
-                      Website
+                      Official Website
+                    </a>
+                  </Button>
+                )}
+                {member.phoneNumber && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`tel:${member.phoneNumber}`}>
+                      <Phone className="h-4 w-4 mr-2" />
+                      {member.phoneNumber}
                     </a>
                   </Button>
                 )}
               </div>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              {rep.phoneNumber && (
-                <div>
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Phone className="h-4 w-4" />
-                    Phone
-                  </p>
-                  <p className="font-medium">{rep.phoneNumber}</p>
-                </div>
-              )}
-              {rep.officeAddress && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Office</p>
-                  <p className="font-medium text-sm">{rep.officeAddress}</p>
-                </div>
-              )}
-              {rep.url && (
-                <div className="md:col-span-2">
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Globe className="h-4 w-4" />
-                    Website
-                  </p>
-                  <a href={rep.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline flex items-center gap-1">
-                    {rep.url}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
-            </div>
+          {/* Contact Actions - Mobile */}
+          <div className="flex md:hidden flex-col gap-2 mt-4">
+            {member.url && (
+              <Button asChild size="sm" className="w-full">
+                <a href={member.url} target="_blank" rel="noopener noreferrer">
+                  <Globe className="h-4 w-4 mr-2" />
+                  Official Website
+                </a>
+              </Button>
+            )}
+            {member.phoneNumber && (
+              <Button asChild size="sm" variant="outline" className="w-full">
+                <a href={`tel:${member.phoneNumber}`}>
+                  <Phone className="h-4 w-4 mr-2" />
+                  {member.phoneNumber}
+                </a>
+              </Button>
+            )}
           </div>
         </div>
       </Card>
 
-      {/* Tabs Section */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="bills">Sponsored Bills</TabsTrigger>
-        </TabsList>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Sponsored Bills
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl md:text-3xl font-bold">{member.sponsoredBillsCount || 0}</div>
+          </CardContent>
+        </Card>
 
-        <TabsContent value="overview" className="space-y-4">
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">About</h2>
-            <div className="space-y-4 text-muted-foreground">
-              {rep.birthDate && (
-                <div>
-                  <span className="font-semibold text-foreground">Born:</span> {new Date(rep.birthDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Co-Sponsored
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl md:text-3xl font-bold">
+              {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
+            </div>
+            {cosponsoredTotal === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">No data yet</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Votes Cast
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+            <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <XCircle className="h-4 w-4" />
+              Missed Votes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+            <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Contact & Social Media */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            Contact & Social Media
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Office Information */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-sm text-muted-foreground">Office Information</h3>
+              {member.officeAddress && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm">{member.officeAddress}</span>
                 </div>
               )}
-              {rep.gender && (
-                <div>
-                  <span className="font-semibold text-foreground">Gender:</span> {rep.gender}
-                </div>
-              )}
-              {rep.currentMember && (
-                <div>
-                  <Badge variant="outline">Current Member</Badge>
+              {member.phoneNumber && (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <a href={`tel:${member.phoneNumber}`} className="text-sm hover:underline">
+                    {member.phoneNumber}
+                  </a>
                 </div>
               )}
             </div>
+
+            {/* Social Media Links */}
+            {member.socialMedia && (
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm text-muted-foreground">Follow Online</h3>
+                <div className="flex flex-wrap gap-2">
+                  {member.socialMedia.twitter && (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={`https://twitter.com/${member.socialMedia.twitter}`} target="_blank" rel="noopener noreferrer">
+                        <Twitter className="h-4 w-4 mr-2" />
+                        Twitter
+                      </a>
+                    </Button>
+                  )}
+                  {member.socialMedia.facebook && (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={member.socialMedia.facebook} target="_blank" rel="noopener noreferrer">
+                        <Facebook className="h-4 w-4 mr-2" />
+                        Facebook
+                      </a>
+                    </Button>
+                  )}
+                  {member.socialMedia.youtube && (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={member.socialMedia.youtube} target="_blank" rel="noopener noreferrer">
+                        <Youtube className="h-4 w-4 mr-2" />
+                        YouTube
+                      </a>
+                    </Button>
+                  )}
+                  {member.socialMedia.instagram && (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={`https://instagram.com/${member.socialMedia.instagram}`} target="_blank" rel="noopener noreferrer">
+                        <Instagram className="h-4 w-4 mr-2" />
+                        Instagram
+                      </a>
+                    </Button>
+                  )}
+                  {member.socialMedia.contactForm && (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={member.socialMedia.contactForm} target="_blank" rel="noopener noreferrer">
+                        <Globe className="h-4 w-4 mr-2" />
+                        Contact Form
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabs for Detailed Information */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="sponsored">
+            Sponsored Bills
+            {member.sponsoredBillsCount > 0 && (
+              <Badge variant="secondary" className="ml-2">{member.sponsoredBillsCount}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="cosponsored" onClick={fetchCosponsoredBills}>
+            Co-Sponsored
+            <Badge variant="secondary" className="ml-2">
+              {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="voting">
+            Voting Record
+            <Badge variant="secondary" className="ml-2 bg-muted">—</Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Biographical Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                {member.birthDate && (
+                  <div>
+                    <span className="text-sm font-semibold text-muted-foreground">Date of Birth</span>
+                    <p>{new Date(member.birthDate).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}</p>
+                  </div>
+                )}
+                {member.birthPlace && (
+                  <div>
+                    <span className="text-sm font-semibold text-muted-foreground">Place of Birth</span>
+                    <p>{member.birthPlace}</p>
+                  </div>
+                )}
+                {member.gender && (
+                  <div>
+                    <span className="text-sm font-semibold text-muted-foreground">Gender</span>
+                    <p>{member.gender}</p>
+                  </div>
+                )}
+                {member.currentTerm && (
+                  <div>
+                    <span className="text-sm font-semibold text-muted-foreground">Current Term</span>
+                    <p>{new Date(member.currentTerm.start).getFullYear()} - {new Date(member.currentTerm.end).getFullYear()}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* External Resources */}
+          <Card>
+            <CardHeader>
+              <CardTitle>External Resources</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {member.ids?.govtrack && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`https://www.govtrack.us/congress/members/${member.ids.govtrack}`} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-2" />
+                      GovTrack
+                    </a>
+                  </Button>
+                )}
+                {member.ids?.opensecrets && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`https://www.opensecrets.org/members-of-congress/summary?cid=${member.ids.opensecrets}`} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-2" />
+                      OpenSecrets
+                    </a>
+                  </Button>
+                )}
+                {member.ids?.votesmart && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`https://justfacts.votesmart.org/candidate/${member.ids.votesmart}`} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-2" />
+                      Vote Smart
+                    </a>
+                  </Button>
+                )}
+                {member.ids?.ballotpedia && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`https://ballotpedia.org/${member.ids.ballotpedia}`} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-2" />
+                      Ballotpedia
+                    </a>
+                  </Button>
+                )}
+                {member.ids?.wikipedia && (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`https://en.wikipedia.org/wiki/${member.ids.wikipedia}`} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-3 w-3 mr-2" />
+                      Wikipedia
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="bills" className="space-y-4">
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Sponsored Legislation</h2>
-            {rep.sponsoredBills && rep.sponsoredBills.length > 0 ? (
-              <div className="space-y-4">
-                {rep.sponsoredBills.map((bill: any, index: number) => (
-                  <div key={index} className="p-4 border rounded-lg">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="outline">
+        {/* Sponsored Bills Tab */}
+        <TabsContent value="sponsored" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Sponsored Legislation
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {member.sponsoredBills && member.sponsoredBills.length > 0 ? (
+                <div className="space-y-3">
+                  {member.sponsoredBills.map((bill: any, index: number) => (
+                    <div key={index} className="p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="font-mono">
                             {bill.billType?.toUpperCase()}. {bill.billNumber}
                           </Badge>
-                          <span className="text-sm text-muted-foreground">
-                            Congress {bill.congress}
-                          </span>
+                          <Badge variant="secondary">
+                            {bill.congress}th Congress
+                          </Badge>
                         </div>
-                        <h3 className="font-medium">{bill.title}</h3>
                         {bill.introducedDate && (
-                          <p className="text-sm text-muted-foreground mt-2">
-                            Introduced: {new Date(bill.introducedDate).toLocaleDateString()}
-                          </p>
-                        )}
-                        {bill.latestActionText && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Latest Action: {bill.latestActionText}
-                          </p>
+                          <span className="text-sm text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(bill.introducedDate).toLocaleDateString()}
+                          </span>
                         )}
                       </div>
+                      <h3 className="font-medium mb-2">{bill.title}</h3>
+                      {bill.latestActionText && (
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-semibold">Latest Action: </span>
+                          {bill.latestActionText}
+                          {bill.latestActionDate && (
+                            <span className="ml-2">
+                              ({new Date(bill.latestActionDate).toLocaleDateString()})
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No sponsored bills available.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Co-Sponsored Bills Tab */}
+        <TabsContent value="cosponsored" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Co-Sponsored Legislation
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {cosponsoredLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <span className="ml-3 text-muted-foreground">Loading co-sponsored bills...</span>
+                </div>
+              ) : cosponsoredBills.length > 0 ? (
+                <div className="space-y-3">
+                  {cosponsoredBills.map((bill: any, index: number) => (
+                    <div key={index} className="p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2 mb-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="font-mono">
+                            {bill.billType?.toUpperCase()}. {bill.billNumber}
+                          </Badge>
+                          <Badge variant="secondary">
+                            {bill.congress}th Congress
+                          </Badge>
+                        </div>
+                        <div className="flex flex-col text-sm text-muted-foreground gap-1">
+                          {bill.cosponsorDate && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              Co-sponsored: {new Date(bill.cosponsorDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <h3 className="font-medium mb-2">{bill.title}</h3>
+                      {bill.sponsor && (
+                        <div className="text-sm text-muted-foreground mb-2">
+                          <span className="font-semibold">Sponsor: </span>
+                          {bill.sponsor.fullName} ({bill.sponsor.party} - {bill.sponsor.state})
+                        </div>
+                      )}
+                      {bill.latestActionText && (
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-semibold">Latest Action: </span>
+                          {bill.latestActionText}
+                          {bill.latestActionDate && (
+                            <span className="ml-2">
+                              ({new Date(bill.latestActionDate).toLocaleDateString()})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <TrendingUp className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+                  <h3 className="text-lg font-semibold mb-2">No Co-Sponsored Bills Found</h3>
+                  <p className="text-muted-foreground max-w-md mx-auto">
+                    {member.fullName} has not co-sponsored any bills yet, or the data hasn't been ingested.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Voting Record Tab (Placeholder) */}
+        <TabsContent value="voting" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Voting Record & Analysis
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-12">
+                <BarChart3 className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
+                <h3 className="text-lg font-semibold mb-2">Voting Data Coming Soon</h3>
+                <p className="text-muted-foreground max-w-md mx-auto mb-6">
+                  We're integrating voting records from the Congress.gov API. Soon you'll be able to see:
+                </p>
+                <div className="grid gap-4 md:grid-cols-2 max-w-2xl mx-auto text-left">
+                  <div className="p-4 border rounded-lg">
+                    <CheckCircle2 className="h-8 w-8 mb-2 text-green-500" />
+                    <h4 className="font-semibold mb-1">Vote History</h4>
+                    <p className="text-sm text-muted-foreground">
+                      See how they voted on recent bills and resolutions
+                    </p>
                   </div>
-                ))}
+                  <div className="p-4 border rounded-lg">
+                    <XCircle className="h-8 w-8 mb-2 text-red-500" />
+                    <h4 className="font-semibold mb-1">Missed Votes</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Track attendance and participation rate
+                    </p>
+                  </div>
+                  <div className="p-4 border rounded-lg">
+                    <TrendingUp className="h-8 w-8 mb-2 text-blue-500" />
+                    <h4 className="font-semibold mb-1">Voting Patterns</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Analyze voting trends by policy area
+                    </p>
+                  </div>
+                  <div className="p-4 border rounded-lg">
+                    <Users className="h-8 w-8 mb-2 text-purple-500" />
+                    <h4 className="font-semibold mb-1">Party Alignment</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Compare voting with party positions
+                    </p>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <p className="text-muted-foreground">No sponsored bills available.</p>
-            )}
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

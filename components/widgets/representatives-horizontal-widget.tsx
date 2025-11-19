@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { Phone, Mail } from "lucide-react"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -79,9 +80,10 @@ export function RepresentativesHorizontalWidget() {
       <CardContent>
         <div className="grid gap-4 md:grid-cols-3">
           {representatives.map((rep) => (
-            <div
+            <Link
               key={rep.bioguideId}
-              className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+              href={`/representatives/${rep.bioguideId}`}
+              className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
             >
               <Avatar className="h-12 w-12 shrink-0">
                 <AvatarImage src={rep.imageUrl || "/placeholder.svg"} alt={rep.fullName} />
@@ -97,13 +99,16 @@ export function RepresentativesHorizontalWidget() {
                     {rep.party.charAt(0)}
                   </Badge>
                 </div>
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2 mt-2" onClick={(e) => e.preventDefault()}>
                   {rep.phoneNumber && (
                     <Button
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs bg-transparent"
-                      onClick={() => window.open(`tel:${rep.phoneNumber}`, '_self')}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        window.open(`tel:${rep.phoneNumber}`, '_self')
+                      }}
                     >
                       <Phone className="h-3 w-3 mr-1" />
                       Call
@@ -114,7 +119,10 @@ export function RepresentativesHorizontalWidget() {
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs bg-transparent"
-                      onClick={() => window.open(rep.url, '_blank')}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        window.open(rep.url, '_blank')
+                      }}
                     >
                       <Mail className="h-3 w-3 mr-1" />
                       Contact
@@ -122,7 +130,7 @@ export function RepresentativesHorizontalWidget() {
                   )}
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       </CardContent>

@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { DailyBriefWidget } from "@/components/widgets/daily-brief-widget"
 import { RepresentativesHorizontalWidget } from "@/components/widgets/representatives-horizontal-widget"
 import { BillActionsWidget } from "@/components/widgets/bill-actions-widget"
-import { PersonalizedNewsWidget } from "@/components/widgets/personalized-news-widget"
+import { PersonalizedContentWidget } from "@/components/widgets/personalized-content-widget"
+import { getUserPreferences } from '@/lib/api/backend';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, accessToken } = useAuth();
+  const [userInterests, setUserInterests] = useState<string[]>([]);
 
   useEffect(() => {
     // Redirect to sign-in if not authenticated
@@ -18,6 +20,28 @@ export default function DashboardPage() {
       router.push('/auth/signin');
     }
   }, [isAuthenticated, isLoading, router]);
+
+  // Fetch user preferences to get policy interests
+  useEffect(() => {
+    const fetchPreferences = async () => {
+      if (accessToken && isAuthenticated) {
+        try {
+          const response = await getUserPreferences(accessToken);
+          if (response.success && response.data) {
+            // Extract policy interests from preferences
+            const preferences = response.data as any;
+            if (preferences.policyInterests) {
+              setUserInterests(preferences.policyInterests);
+            }
+          }
+        } catch (error) {
+          console.error('[Dashboard] Failed to fetch user preferences:', error);
+        }
+      }
+    };
+
+    fetchPreferences();
+  }, [accessToken, isAuthenticated]);
 
   // Show loading state while checking authentication
   if (isLoading) {
@@ -48,7 +72,7 @@ export default function DashboardPage() {
         <div className="grid gap-6 md:grid-cols-2">
           <BillActionsWidget />
 
-          <PersonalizedNewsWidget />
+          <PersonalizedContentWidget userInterests={userInterests} />
         </div>
       </div>
     </div>

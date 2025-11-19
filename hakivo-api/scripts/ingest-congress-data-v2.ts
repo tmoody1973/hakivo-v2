@@ -10,6 +10,7 @@
  * - Fetches ALL members (not just current congress - includes historical)
  * - Properly fetches and stores FULL bill text
  * - Captures policy areas for bills
+ * - Fetches and stores bill co-sponsors
  * - Better error handling for foreign key constraints
  */
 
@@ -28,6 +29,7 @@ interface Stats {
   bills: number;
   billsWithText: number;
   billsWithPolicyArea: number;
+  cosponsors: number;
   members: number;
   committees: number;
   votes: number;
@@ -38,6 +40,7 @@ const stats: Stats = {
   bills: 0,
   billsWithText: 0,
   billsWithPolicyArea: 0,
+  cosponsors: 0,
   members: 0,
   committees: 0,
   votes: 0,
@@ -61,7 +64,7 @@ async function fetchCongressAPI(endpoint: string): Promise<any> {
 /**
  * Execute SQL query against the database via db-admin service
  */
-async function executeSQL(query: string, params: any[] = []): Promise<any> {
+async function executeSQL(query: string): Promise<any> {
   const response = await fetch(`${ADMIN_DASHBOARD_URL}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -188,12 +191,45 @@ async function ingestBills(congress: number): Promise<void> {
             }
           }
 
+          // Fetch and store cosponsors
+          try {
+            const cosponsorsData = await fetchCongressAPI(`/bill/${congress}/${billType}/${billNumber}/cosponsors`);
+            const cosponsors = cosponsorsData.cosponsors || [];
+
+            if (cosponsors.length > 0) {
+              console.log(`      👥 Fetching ${cosponsors.length} cosponsors for ${billId}...`);
+
+              for (const cosponsor of cosponsors) {
+                if (cosponsor.bioguideId) {
+                  try {
+                    const cosponsorQuery = `
+                      INSERT OR REPLACE INTO bill_cosponsors (
+                        bill_id, member_bioguide_id, cosponsor_date
+                      ) VALUES (
+                        ${escapeSQLString(billId)},
+                        ${escapeSQLString(cosponsor.bioguideId)},
+                        ${escapeSQLString(cosponsor.sponsorshipDate)}
+                      )
+                    `;
+                    await executeSQL(cosponsorQuery);
+                    stats.cosponsors++;
+                  } catch (error) {
+                    console.warn(`      ⚠️  Failed to insert cosponsor ${cosponsor.bioguideId} for ${billId}`);
+                  }
+                }
+              }
+              console.log(`      ✅ Stored ${cosponsors.length} cosponsors for ${billId}`);
+            }
+          } catch (error) {
+            console.warn(`      ⚠️  No cosponsors available for ${billId}`);
+          }
+
           if (stats.bills % 10 === 0) {
-            console.log(`    ✓ Inserted ${stats.bills} bills (${stats.billsWithText} with full text, ${stats.billsWithPolicyArea} with policy areas)`);
+            console.log(`    ✓ Inserted ${stats.bills} bills (${stats.billsWithText} with full text, ${stats.billsWithPolicyArea} with policy areas, ${stats.cosponsors} cosponsors)`);
           }
 
           // Rate limiting
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 150));
 
         } catch (error) {
           console.error(`    ✗ Failed to insert bill ${bill.type}${bill.number}:`, error);
@@ -213,7 +249,7 @@ async function ingestBills(congress: number): Promise<void> {
     }
   }
 
-  console.log(`  ✅ Completed: ${stats.bills} bills inserted (${stats.billsWithText} with full text, ${stats.billsWithPolicyArea} with policy areas)`);
+  console.log(`  ✅ Completed: ${stats.bills} bills inserted (${stats.billsWithText} with full text, ${stats.billsWithPolicyArea} with policy areas, ${stats.cosponsors} cosponsors)`);
 }
 
 /**
@@ -223,7 +259,6 @@ async function ingestAllMembers(): Promise<void> {
   console.log(`\n👥 Fetching members from 118th and 119th Congress...`);
 
   const congresses = [118, 119];
-  const seenBioguideIds = new Set<string>();
 
   for (const congress of congresses) {
     console.log(`  Fetching members for ${congress}th Congress...`);
@@ -376,7 +411,8 @@ async function main() {
   console.log('✨ NEW FEATURES:');
   console.log('  - Fetches ALL members (not just current congress)');
   console.log('  - Stores FULL bill text (no truncation)');
-  console.log('  - Captures policy areas for bills\n');
+  console.log('  - Captures policy areas for bills');
+  console.log('  - Fetches and stores bill co-sponsors\n');
   console.log(`📊 Monitor progress at: ${ADMIN_DASHBOARD_URL}\n`);
   console.log('Starting ingestion for 118th and 119th Congress...\n');
 
@@ -407,6 +443,7 @@ async function main() {
   console.log(`   Bills:              ${stats.bills.toLocaleString()}`);
   console.log(`   Bills w/ Full Text: ${stats.billsWithText.toLocaleString()}`);
   console.log(`   Bills w/ Policy:    ${stats.billsWithPolicyArea.toLocaleString()}`);
+  console.log(`   Co-sponsors:        ${stats.cosponsors.toLocaleString()}`);
   console.log(`   Members:            ${stats.members.toLocaleString()}`);
   console.log(`   Committees:         ${stats.committees.toLocaleString()}`);
   console.log(`   Votes:              ${stats.votes.toLocaleString()}`);
@@ -416,6 +453,7 @@ async function main() {
   console.log('  SELECT COUNT(*) FROM bills;');
   console.log('  SELECT COUNT(*) FROM bills WHERE text IS NOT NULL;');
   console.log('  SELECT COUNT(*) FROM bills WHERE policy_area IS NOT NULL;');
+  console.log('  SELECT COUNT(*) FROM bill_cosponsors;');
   console.log('  SELECT * FROM bills WHERE text IS NOT NULL LIMIT 5;');
   console.log('  SELECT title, policy_area FROM bills WHERE policy_area IS NOT NULL LIMIT 10;');
   console.log('  SELECT COUNT(*) FROM members;');
