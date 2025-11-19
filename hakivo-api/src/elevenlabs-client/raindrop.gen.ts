@@ -24,6 +24,7 @@ export interface Env {
   DASHBOARD_SERVICE: ServiceStub<import('../dashboard-service/index.js').default>;
   DB_ADMIN: ServiceStub<import('../db-admin/index.js').default>;
   DISTRICT_CACHE: KvCache;
+  EXA_API_KEY: string;
   EXA_CLIENT: ServiceStub<import('../exa-client/index.js').default>;
   GEOCODIO_API_KEY: string;
   GEOCODIO_CLIENT: ServiceStub<import('../geocodio-client/index.js').default>;

@@ -48,11 +48,27 @@ const routes = [
 export function DashboardHeader() {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, logout } = useAuth()
+  const { user, logout, sessionId } = useAuth()
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      // Call backend WorkOS logout endpoint to clear WorkOS session
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+      if (sessionId) {
+        await fetch(`${API_BASE_URL}/auth/workos/logout?sessionId=${sessionId}`, {
+          method: 'GET',
+          redirect: 'manual' // Don't follow redirect
+        }).catch(err => console.warn('WorkOS logout failed:', err))
+      }
+    } catch (error) {
+      console.warn('Error during WorkOS logout:', error)
+    }
+
+    // Clear local storage and state
     logout()
-    router.push('/auth/signin')
+
+    // Redirect to home/landing page
+    router.push('/')
   }
 
   // Generate user initials for avatar fallback

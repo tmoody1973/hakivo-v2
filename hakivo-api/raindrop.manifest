@@ -21,6 +21,10 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "EXA_API_KEY" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -110,6 +114,11 @@ application "hakivo-new" {
   task "congress-sync-scheduler" {
     type = "cron"
     cron = "0 2 * * *"
+  }
+
+  task "news-sync-scheduler" {
+    type = "cron"
+    cron = "0 6,18 * * *"
   }
 
   // Message queues

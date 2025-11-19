@@ -10,7 +10,7 @@ export default class extends Service<Env> {
    */
   private getExaClient(): Exa {
     if (!this.exa) {
-      const apiKey = process.env.EXA_API_KEY;
+      const apiKey = this.env.EXA_API_KEY;
 
       if (!apiKey) {
         throw new Error('EXA_API_KEY environment variable is not set');
@@ -43,32 +43,37 @@ export default class extends Service<Env> {
     author: string | null;
     publishedDate: string;
     summary: string;
+    text: string;
     imageUrl: string | null;
     score: number;
   }>> {
     const client = this.getExaClient();
 
-    // Build search query from interests
-    const query = interests.length > 0
-      ? `${interests.join(' OR ')} legislation Congress`
-      : 'US Congress legislation news';
-
-    const end = endDate || new Date();
+    // Build search query following Exa integration strategy
+    const keywordQuery = interests.length > 0 ? interests.join(' OR ') : 'Congress legislation';
+    const contextQuery = '(news headline OR article OR bill OR legislation OR law OR congress OR act) site:news headline OR site:article';
+    const query = `${keywordQuery} ${contextQuery}`;
 
     try {
       const response = await client.searchAndContents(query, {
         numResults: limit,
-        startPublishedDate: startDate.toISOString(),
-        endPublishedDate: end.toISOString(),
-        type: 'neural',
-        text: {
-          maxCharacters: 500  // Get summary text
-        },
-        highlights: {
-          highlightsPerUrl: 1,
-          numSentences: 3
-        },
-        category: 'news'
+        text: true,
+        type: 'auto',
+        category: 'news',
+        userLocation: 'US',
+        context: true,
+        includeDomains: [
+          'politico.com',
+          'cnn.com',
+          'npr.org',
+          'ap.com',
+          'nytimes.com',
+          'rollcall.com',
+          'abcnews.com',
+          'theguardian.com',
+          'punchbowl.news'
+        ],
+        summary: true
       });
 
       console.log(`✓ Exa news search: ${response.results.length} articles found`);
@@ -78,7 +83,8 @@ export default class extends Service<Env> {
         url: result.url,
         author: result.author || null,
         publishedDate: result.publishedDate || new Date().toISOString(),
-        summary: result.text || result.highlights?.[0] || 'No summary available',
+        summary: result.summary || 'No summary available',
+        text: result.text || '',
         imageUrl: result.image || null,
         score: result.score || 0
       }));

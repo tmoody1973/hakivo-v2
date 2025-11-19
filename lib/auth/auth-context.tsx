@@ -119,14 +119,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Logout function - clears everything
+  // Logout function - clears everything and ends WorkOS session
   const logout = () => {
     try {
+      const sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
+
+      // Clear localStorage
       localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
       localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       localStorage.removeItem(STORAGE_KEYS.SESSION_ID);
       localStorage.removeItem(STORAGE_KEYS.USER);
 
+      // Clear React state
       setAuthState({
         accessToken: null,
         refreshToken: null,
@@ -135,8 +139,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: false,
         isLoading: false,
       });
+
+      // Redirect to WorkOS logout to end SSO session
+      // NOTE: This requires http://localhost:3000 to be added to
+      // WorkOS dashboard Redirect URIs
+      if (sessionId) {
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        window.location.href = `${API_URL}/auth/workos/logout?sessionId=${sessionId}`;
+      } else {
+        window.location.href = '/';
+      }
     } catch (error) {
       console.error('Error clearing auth state:', error);
+      window.location.href = '/';
     }
   };
 

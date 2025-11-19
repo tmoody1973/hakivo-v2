@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
+import policyInterestMapping from '../../docs/architecture/policy_interest_mapping.json';
 
 // State abbreviation to full name mapping
 const STATE_ABBREVIATIONS: Record<string, string> = {
@@ -43,19 +44,25 @@ app.use('*', cors({
   maxAge: 86400, // 24 hours
 }));
 
+// Explicit OPTIONS handler for all routes (handle preflight)
+app.options('*', (c) => {
+  return new Response(null, { status: 204 });
+});
+
 /**
  * Verify JWT token from auth header
  */
-async function verifyAuth(authHeader: string | undefined): Promise<{ userId: string } | null> {
+async function verifyAuth(authHeader: string | undefined, jwtSecret: string): Promise<{ userId: string } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('[verifyAuth] Invalid auth header format');
     return null;
   }
 
   const token = authHeader.substring(7);
 
   try {
-    const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
+      console.error('[verifyAuth] JWT_SECRET not configured');
       throw new Error('JWT_SECRET not configured');
     }
 
@@ -64,11 +71,14 @@ async function verifyAuth(authHeader: string | undefined): Promise<{ userId: str
     const { payload } = await jwtVerify(token, secret);
 
     if (typeof payload.userId !== 'string') {
+      console.log('[verifyAuth] No userId in token payload');
       return null;
     }
 
+    console.log('[verifyAuth] Token verified successfully for userId:', payload.userId);
     return { userId: payload.userId };
   } catch (error) {
+    console.error('[verifyAuth] Token verification failed:', error);
     return null;
   }
 }
@@ -78,7 +88,14 @@ async function verifyAuth(authHeader: string | undefined): Promise<{ userId: str
  */
 async function requireAuth(c: any): Promise<{ userId: string } | Response> {
   const authHeader = c.req.header('Authorization');
-  const auth = await verifyAuth(authHeader);
+  const jwtSecret = c.env.JWT_SECRET;
+
+  if (!jwtSecret) {
+    console.error('[requireAuth] JWT_SECRET not available in environment');
+    return c.json({ error: 'Server configuration error' }, 500);
+  }
+
+  const auth = await verifyAuth(authHeader, jwtSecret);
 
   if (!auth) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -488,6 +505,271 @@ app.post('/dashboard/refresh-cache', async (c) => {
 });
 
 /**
+ * GET /dashboard/news
+ * Get personalized news articles from shared pool filtered by user's policy interests (requires auth)
+ * Accepts token from query parameter or Authorization header to avoid CORS preflight
+ */
+app.get('/dashboard/news', async (c) => {
+  try {
+    console.log('[/dashboard/news] Request received');
+
+    // Check for token in query parameter first (to avoid CORS preflight)
+    const tokenParam = c.req.query('token');
+    let auth;
+
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('[/dashboard/news] JWT_SECRET not available in environment');
+      return c.json({ error: 'Server configuration error' }, 500);
+    }
+
+    if (tokenParam) {
+      console.log('[/dashboard/news] Using token from query parameter');
+      auth = await verifyAuth(`Bearer ${tokenParam}`, jwtSecret);
+      if (!auth) {
+        console.log('[/dashboard/news] Token verification failed');
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+    } else {
+      console.log('[/dashboard/news] Using token from Authorization header');
+      auth = await requireAuth(c);
+      if (auth instanceof Response) return auth;
+    }
+
+    const db = c.env.APP_DB;
+    const limit = Number(c.req.query('limit')) || 20;
+
+    // Get user's policy interests from user_preferences
+    const userPrefs = await db
+      .prepare('SELECT policy_interests FROM user_preferences WHERE user_id = ?')
+      .bind(auth.userId)
+      .first();
+
+    if (!userPrefs?.policy_interests) {
+      return c.json({
+        success: true,
+        articles: [],
+        message: 'No policy interests set. Please update your preferences.'
+      });
+    }
+
+    // Parse policy interests (stored as JSON string)
+    const policyInterests = JSON.parse(userPrefs.policy_interests as string) as string[];
+
+    if (policyInterests.length === 0) {
+      return c.json({
+        success: true,
+        articles: [],
+        message: 'No policy interests selected'
+      });
+    }
+
+    // Build WHERE clause for interests filter
+    const placeholders = policyInterests.map(() => '?').join(',');
+
+    // Query news articles filtered by user interests, excluding already-seen articles
+    const articles = await db
+      .prepare(`
+        SELECT
+          na.id, na.interest, na.title, na.url, na.author, na.summary,
+          na.image_url, na.published_date, na.fetched_at, na.score, na.source_domain
+        FROM news_articles na
+        LEFT JOIN user_article_views uav
+          ON na.id = uav.article_id AND uav.user_id = ?
+        WHERE na.interest IN (${placeholders})
+          AND uav.article_id IS NULL  -- Exclude articles user has already seen
+        ORDER BY na.published_date DESC, na.score DESC
+        LIMIT ?
+      `)
+      .bind(auth.userId, ...policyInterests, limit)
+      .all();
+
+    const formattedArticles = articles.results?.map((article: any) => ({
+      id: article.id,
+      interest: article.interest,
+      title: article.title,
+      url: article.url,
+      author: article.author,
+      summary: article.summary,
+      imageUrl: article.image_url,
+      publishedDate: article.published_date,
+      fetchedAt: article.fetched_at,
+      score: article.score,
+      sourceDomain: article.source_domain
+    })) || [];
+
+    // Mark articles as viewed (async, don't wait for completion)
+    if (formattedArticles.length > 0) {
+      const viewedAt = Date.now();
+      const viewRecords = formattedArticles.map(article => ({
+        user_id: auth.userId,
+        article_id: article.id,
+        viewed_at: viewedAt
+      }));
+
+      // Batch insert view records (fire and forget)
+      Promise.all(
+        viewRecords.map(record =>
+          db.prepare(
+            'INSERT OR IGNORE INTO user_article_views (user_id, article_id, viewed_at) VALUES (?, ?, ?)'
+          ).bind(record.user_id, record.article_id, record.viewed_at).run()
+        )
+      ).catch(error => {
+        console.warn('Failed to track article views:', error);
+      });
+    }
+
+    return c.json({
+      success: true,
+      articles: formattedArticles,
+      count: formattedArticles.length,
+      interests: policyInterests
+    });
+  } catch (error) {
+    console.error('Get news error:', error);
+    return c.json({
+      error: 'Failed to get news articles',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /dashboard/news/bookmark
+ * Save an article to user's bookmarks (requires auth)
+ */
+app.post('/dashboard/news/bookmark', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json();
+    const { articleUrl, title, summary, imageUrl, interest } = body;
+
+    if (!articleUrl || !title || !interest) {
+      return c.json({
+        error: 'Missing required fields: articleUrl, title, interest'
+      }, 400);
+    }
+
+    const db = c.env.APP_DB;
+
+    // Insert bookmark (ignore if duplicate)
+    await db
+      .prepare(`
+        INSERT OR IGNORE INTO user_bookmarks (
+          id, user_id, article_url, title, summary, image_url, interest, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        crypto.randomUUID(),
+        auth.userId,
+        articleUrl,
+        title,
+        summary || null,
+        imageUrl || null,
+        interest,
+        Date.now()
+      )
+      .run();
+
+    console.log(`✓ Bookmark saved for user ${auth.userId}: ${title}`);
+
+    return c.json({
+      success: true,
+      message: 'Article bookmarked successfully'
+    });
+  } catch (error) {
+    console.error('Bookmark article error:', error);
+    return c.json({
+      error: 'Failed to bookmark article',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /dashboard/news/bookmark/:id
+ * Remove a bookmark (requires auth)
+ */
+app.delete('/dashboard/news/bookmark/:id', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const bookmarkId = c.req.param('id');
+    const db = c.env.APP_DB;
+
+    // Delete bookmark (only if owned by user)
+    await db
+      .prepare('DELETE FROM user_bookmarks WHERE id = ? AND user_id = ?')
+      .bind(bookmarkId, auth.userId)
+      .run();
+
+    console.log(`✓ Bookmark removed for user ${auth.userId}: ${bookmarkId}`);
+
+    return c.json({
+      success: true,
+      message: 'Bookmark removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove bookmark error:', error);
+    return c.json({
+      error: 'Failed to remove bookmark',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /dashboard/news/bookmarks
+ * Get user's saved bookmarks (requires auth)
+ */
+app.get('/dashboard/news/bookmarks', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const limit = Number(c.req.query('limit')) || 50;
+
+    const bookmarks = await db
+      .prepare(`
+        SELECT
+          id, article_url, title, summary, image_url, interest, created_at
+        FROM user_bookmarks
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+      `)
+      .bind(auth.userId, limit)
+      .all();
+
+    const formattedBookmarks = bookmarks.results?.map((bookmark: any) => ({
+      id: bookmark.id,
+      articleUrl: bookmark.article_url,
+      title: bookmark.title,
+      summary: bookmark.summary,
+      imageUrl: bookmark.image_url,
+      interest: bookmark.interest,
+      createdAt: bookmark.created_at
+    })) || [];
+
+    return c.json({
+      success: true,
+      bookmarks: formattedBookmarks,
+      count: formattedBookmarks.length
+    });
+  } catch (error) {
+    console.error('Get bookmarks error:', error);
+    return c.json({
+      error: 'Failed to get bookmarks',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * GET /dashboard/representatives
  * Get user's congressional representatives based on their state and district (requires auth)
  * Accepts token from query parameter to avoid CORS preflight
@@ -647,6 +929,154 @@ app.get('/dashboard/representatives', async (c) => {
     console.error('Representatives error:', error);
     return c.json({
       error: 'Failed to get representatives',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /admin/sync-news
+ * Manual trigger to sync news articles from Exa.ai
+ * (Temporary endpoint for immediate database population)
+ */
+app.post('/admin/sync-news', async (c) => {
+  console.log('📰 Manual News Sync: Starting...');
+  const startTime = Date.now();
+
+  try {
+    const db = c.env.APP_DB;
+    const exaClient = c.env.EXA_CLIENT;
+
+    let totalArticles = 0;
+    let successfulSyncs = 0;
+    const errors: Array<{ interest: string; error: string }> = [];
+
+    // Define date range (last 24 hours for fresh news)
+    const endDate = new Date();
+    const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    console.log(`📅 Fetching news from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+    // Iterate through all 12 policy interests
+    for (const mapping of policyInterestMapping) {
+      const { interest, keywords } = mapping;
+
+      console.log(`🔍 Syncing: ${interest}`);
+      console.log(`   Keywords: ${keywords.slice(0, 3).join(', ')}...`);
+
+      try {
+        // Call Exa.ai search with keywords from mapping
+        const results = await exaClient.searchNews(
+          keywords,
+          startDate,
+          endDate,
+          15 // Fetch 15 articles per interest
+        );
+
+        console.log(`   Found ${results.length} articles`);
+
+        // Store each article in news_articles table
+        for (const article of results) {
+          try {
+            // Extract domain from URL
+            const url = new URL(article.url);
+            const sourceDomain = url.hostname.replace('www.', '');
+
+            // Insert article (ignore if duplicate URL for this interest)
+            await db
+              .prepare(`
+                INSERT OR IGNORE INTO news_articles (
+                  id, interest, title, url, author, summary, text,
+                  image_url, published_date, fetched_at, score, source_domain
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `)
+              .bind(
+                crypto.randomUUID(),
+                interest,
+                article.title,
+                article.url,
+                article.author,
+                article.summary,
+                article.text,
+                article.imageUrl,
+                article.publishedDate,
+                Date.now(),
+                article.score,
+                sourceDomain
+              )
+              .run();
+
+            totalArticles++;
+          } catch (error) {
+            console.warn(`   ⚠️ Failed to store article: ${article.title}`, error);
+          }
+        }
+
+        successfulSyncs++;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`   ❌ Failed to sync ${interest}:`, errorMsg);
+        errors.push({ interest, error: errorMsg });
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    console.log('✅ Manual news sync completed');
+    console.log(`   Total articles stored: ${totalArticles}`);
+    console.log(`   Successful syncs: ${successfulSyncs}/${policyInterestMapping.length}`);
+    console.log(`   Failed syncs: ${errors.length}`);
+    console.log(`   Duration: ${(duration / 1000).toFixed(2)}s`);
+
+    return c.json({
+      success: true,
+      message: 'News sync completed',
+      stats: {
+        totalArticles,
+        successfulSyncs,
+        totalInterests: policyInterestMapping.length,
+        failedSyncs: errors.length,
+        duration: `${(duration / 1000).toFixed(2)}s`,
+        errors: errors.length > 0 ? errors : undefined
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Manual news sync failed:', error);
+    return c.json({
+      error: 'News sync failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /admin/clear-news
+ * Clear all news articles from database
+ * (Admin endpoint for testing)
+ */
+app.post('/admin/clear-news', async (c) => {
+  console.log('🗑️  Clearing news articles...');
+
+  try {
+    const db = c.env.APP_DB;
+
+    const result = await db
+      .prepare('DELETE FROM news_articles')
+      .run();
+
+    console.log(`✅ Cleared ${result.meta.changes} articles`);
+
+    return c.json({
+      success: true,
+      message: 'News articles cleared',
+      deletedCount: result.meta.changes
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to clear news articles:', error);
+    return c.json({
+      error: 'Clear failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

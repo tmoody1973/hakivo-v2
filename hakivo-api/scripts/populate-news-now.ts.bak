@@ -1,0 +1,76 @@
+/**
+ * Manually populate news database
+ * Calls the news-sync-scheduler logic directly to populate the database now
+ */
+
+import Exa from 'exa-js';
+import policyInterestMapping from '../docs/architecture/policy_interest_mapping.json';
+
+async function populateNews() {
+  console.log('📰 Manual News Population: Starting...\n');
+
+  const EXA_API_KEY = process.env.EXA_API_KEY || '5032f9e2-d99d-46ca-9e92-918122bb7dfb';
+
+  if (!EXA_API_KEY || EXA_API_KEY === '...') {
+    console.error('❌ Valid EXA_API_KEY required');
+    process.exit(1);
+  }
+
+  console.log(`✓ Using API key: ${EXA_API_KEY.substring(0, 15)}...`);
+
+  const exa = new Exa(EXA_API_KEY);
+
+  // Test with just ONE interest first to verify it works
+  const testInterest = policyInterestMapping[0]; // Economy & Finance
+  if (!testInterest) {
+    console.error('❌ No policy interests found');
+    process.exit(1);
+  }
+  console.log(`\n🔍 Testing with: ${testInterest.interest}`);
+  console.log(`   Keywords: ${testInterest.keywords.slice(0, 3).join(', ')}...\n`);
+
+  const endDate = new Date();
+  const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
+
+  try {
+    const query = `${testInterest.keywords.join(' OR ')} legislation Congress`;
+
+    const response = await exa.searchAndContents(query, {
+      numResults: 5,
+      startPublishedDate: startDate.toISOString(),
+      endPublishedDate: endDate.toISOString(),
+      type: 'neural',
+      text: {
+        maxCharacters: 500
+      },
+      highlights: {
+        highlightsPerUrl: 1,
+        numSentences: 3
+      },
+      category: 'news'
+    });
+
+    console.log(`✅ Found ${response.results.length} articles for ${testInterest.interest}\n`);
+
+    response.results.forEach((article, idx) => {
+      console.log(`Article ${idx + 1}:`);
+      console.log(`  Title: ${article.title}`);
+      console.log(`  URL: ${article.url}`);
+      console.log(`  Published: ${article.publishedDate || 'Unknown'}`);
+      console.log();
+    });
+
+    console.log('\n✅ Exa API is working! Now restart your services to populate the full database:');
+    console.log('   npm run restart\n');
+    console.log('Then the news-sync-scheduler will populate all 12 interests at 6 AM and 6 PM daily.');
+
+  } catch (error) {
+    console.error('❌ Error:', error);
+    if (error instanceof Error) {
+      console.error('   Message:', error.message);
+    }
+    process.exit(1);
+  }
+}
+
+populateNews();

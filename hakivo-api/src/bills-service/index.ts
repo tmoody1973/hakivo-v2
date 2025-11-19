@@ -840,7 +840,7 @@ app.get('/members/search', async (c) => {
 
     if (params.state) {
       conditions.push('state = ?');
-      bindings.push(params.state.toUpperCase());
+      bindings.push(params.state);
     }
 
     if (params.chamber) {

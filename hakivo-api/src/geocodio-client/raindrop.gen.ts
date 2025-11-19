@@ -25,6 +25,7 @@ export interface Env {
   DB_ADMIN: ServiceStub<import('../db-admin/index.js').default>;
   DISTRICT_CACHE: KvCache;
   ELEVENLABS_CLIENT: ServiceStub<import('../elevenlabs-client/index.js').default>;
+  EXA_API_KEY: string;
   EXA_CLIENT: ServiceStub<import('../exa-client/index.js').default>;
   GEOCODIO_API_KEY: string;
   IMAGE_CACHE: KvCache;

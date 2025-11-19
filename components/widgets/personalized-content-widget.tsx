@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { ExternalLink, Newspaper, FileText, Filter } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ExternalLink, Newspaper, FileText, Filter, Bookmark, BookmarkCheck, Loader2 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useAuth } from "@/lib/auth/auth-context"
+import { getPersonalizedNews, bookmarkArticle } from "@/lib/api/backend"
 
 // Policy interests matching onboarding
 export const POLICY_INTERESTS = [
@@ -30,121 +32,19 @@ export const POLICY_INTERESTS = [
   'Immigration & Indigenous Issues',
 ]
 
-// Mock news data
-const newsArticles = [
-  {
-    title: "Senate Debates Infrastructure Bill Amendments",
-    source: "The Hill",
-    time: "2 hours ago",
-    category: "Environment & Energy",
-    excerpt: "Key amendments proposed to the infrastructure package as debate continues on the Senate floor.",
-    url: "#",
-  },
-  {
-    title: "New Healthcare Legislation Introduced in House",
-    source: "Politico",
-    time: "5 hours ago",
-    category: "Health & Social Welfare",
-    excerpt: "Bipartisan group introduces comprehensive healthcare reform bill addressing prescription costs.",
-    url: "#",
-  },
-  {
-    title: "Climate Policy Updates from EPA",
-    source: "Reuters",
-    time: "8 hours ago",
-    category: "Environment & Energy",
-    excerpt: "Environmental Protection Agency announces new emissions standards for power plants.",
-    url: "#",
-  },
-  {
-    title: "Education Funding Bill Passes Committee",
-    source: "NPR",
-    time: "1 day ago",
-    category: "Education & Science",
-    excerpt: "House Education Committee approves increased funding for public schools and student aid programs.",
-    url: "#",
-  },
-  {
-    title: "Federal Reserve Announces Interest Rate Decision",
-    source: "Bloomberg",
-    time: "3 hours ago",
-    category: "Economy & Finance",
-    excerpt: "Central bank holds rates steady amid mixed economic signals and inflation concerns.",
-    url: "#",
-  },
-  {
-    title: "Supreme Court Hears Voting Rights Case",
-    source: "CNN",
-    time: "6 hours ago",
-    category: "Civil Rights & Law",
-    excerpt: "Landmark case challenges state restrictions on ballot access and early voting procedures.",
-    url: "#",
-  },
-]
-
-// Mock legislation data
-const legislationItems = [
-  {
-    billNumber: "H.R. 3684",
-    title: "Infrastructure Investment and Jobs Act",
-    sponsor: "Rep. DeFazio",
-    status: "Passed House",
-    category: "Environment & Energy",
-    summary: "A $1.2 trillion bipartisan infrastructure package investing in roads, bridges, broadband, and clean energy.",
-    lastAction: "Referred to Senate Committee",
-    lastActionDate: "2 days ago",
-  },
-  {
-    billNumber: "S. 1932",
-    title: "Build Back Better Act",
-    sponsor: "Sen. Sanders",
-    status: "In Committee",
-    category: "Health & Social Welfare",
-    summary: "Expands Medicare, lowers prescription drug costs, and invests in home and community-based care.",
-    lastAction: "Committee hearing scheduled",
-    lastActionDate: "1 day ago",
-  },
-  {
-    billNumber: "H.R. 5376",
-    title: "Clean Energy Innovation Act",
-    sponsor: "Rep. Ocasio-Cortez",
-    status: "Introduced",
-    category: "Environment & Energy",
-    summary: "Accelerates clean energy deployment through tax incentives and research funding.",
-    lastAction: "Introduced in House",
-    lastActionDate: "5 hours ago",
-  },
-  {
-    billNumber: "S. 2089",
-    title: "Education Equity Act",
-    sponsor: "Sen. Warren",
-    status: "Passed Senate",
-    category: "Education & Science",
-    summary: "Increases federal funding for Title I schools and expands access to early childhood education.",
-    lastAction: "Passed Senate by voice vote",
-    lastActionDate: "3 days ago",
-  },
-  {
-    billNumber: "H.R. 4567",
-    title: "Small Business Recovery Act",
-    sponsor: "Rep. Jeffries",
-    status: "In Committee",
-    category: "Economy & Finance",
-    summary: "Provides grants and loans to small businesses impacted by economic downturn.",
-    lastAction: "Markup session held",
-    lastActionDate: "1 week ago",
-  },
-  {
-    billNumber: "S. 1776",
-    title: "Voting Rights Advancement Act",
-    sponsor: "Sen. Klobuchar",
-    status: "On Senate Floor",
-    category: "Civil Rights & Law",
-    summary: "Restores and strengthens the Voting Rights Act to protect ballot access.",
-    lastAction: "Debate opened on Senate floor",
-    lastActionDate: "4 hours ago",
-  },
-]
+interface NewsArticle {
+  id: string
+  interest: string
+  title: string
+  url: string
+  author: string | null
+  summary: string
+  imageUrl: string | null
+  publishedDate: string
+  fetchedAt: number
+  score: number
+  sourceDomain: string
+}
 
 interface PersonalizedContentWidgetProps {
   userInterests?: string[]
@@ -152,29 +52,101 @@ interface PersonalizedContentWidgetProps {
 
 export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedContentWidgetProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set())
+  const [bookmarkingId, setBookmarkingId] = useState<string | null>(null)
 
-  // Filter items based on selected category and user interests
-  const getFilteredItems = (items: typeof newsArticles | typeof legislationItems) => {
-    let filtered = items
+  const { accessToken } = useAuth()
 
-    // If user has interests, filter to show only those categories
-    if (userInterests.length > 0) {
-      filtered = filtered.filter(item => userInterests.includes(item.category))
+  // Fetch personalized news on mount
+  useEffect(() => {
+    const fetchNews = async () => {
+      if (!accessToken) {
+        setError('Please sign in to view personalized news')
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError(null)
+
+        const response = await getPersonalizedNews(accessToken, 20)
+
+        if (response.success && response.data) {
+          setNewsArticles(response.data.articles)
+        } else {
+          setError(response.error?.message || 'Failed to load news')
+        }
+      } catch (err) {
+        console.error('[PersonalizedContentWidget] Error fetching news:', err)
+        setError('Failed to load personalized news')
+      } finally {
+        setLoading(false)
+      }
     }
 
-    // If a specific category is selected (not "all"), filter further
-    if (selectedCategory !== "all") {
-      filtered = filtered.filter(item => item.category === selectedCategory)
-    }
+    fetchNews()
+  }, [accessToken])
 
-    return filtered
+  // Filter news based on selected category
+  const getFilteredNews = () => {
+    if (selectedCategory === "all") {
+      return newsArticles
+    }
+    return newsArticles.filter(article => article.interest === selectedCategory)
   }
 
-  const filteredNews = getFilteredItems(newsArticles)
-  const filteredLegislation = getFilteredItems(legislationItems)
+  const filteredNews = getFilteredNews()
 
   // Get categories to show in dropdown (either user's interests or all)
   const availableCategories = userInterests.length > 0 ? userInterests : POLICY_INTERESTS
+
+  // Handle bookmark toggle
+  const handleBookmark = async (article: NewsArticle) => {
+    if (!accessToken) {
+      console.error('[PersonalizedContentWidget] No access token - sign in required')
+      return
+    }
+
+    try {
+      setBookmarkingId(article.id)
+
+      const response = await bookmarkArticle(accessToken, {
+        articleUrl: article.url,
+        title: article.title,
+        summary: article.summary,
+        imageUrl: article.imageUrl || undefined,
+        interest: article.interest
+      })
+
+      if (response.success) {
+        setBookmarkedIds(prev => new Set([...prev, article.id]))
+        console.log('[PersonalizedContentWidget] Article bookmarked successfully:', article.title)
+      } else {
+        console.error('[PersonalizedContentWidget] Failed to bookmark:', response.error?.message)
+      }
+    } catch (err) {
+      console.error('[PersonalizedContentWidget] Error bookmarking:', err)
+    } finally {
+      setBookmarkingId(null)
+    }
+  }
+
+  // Format relative time
+  const formatRelativeTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const days = Math.floor(hours / 24)
+
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`
+    return 'Just now'
+  }
 
   return (
     <Card>
@@ -182,7 +154,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
         <div className="flex items-center justify-between mb-2">
           <div>
             <CardTitle>Personalized Content</CardTitle>
-            <CardDescription>Content matching your interests</CardDescription>
+            <CardDescription>News matching your interests</CardDescription>
           </div>
         </div>
 
@@ -220,89 +192,110 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
 
           {/* News Tab */}
           <TabsContent value="news" className="mt-4">
-            {filteredNews.length > 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : error ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Newspaper className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm font-medium">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => window.location.reload()}
+                >
+                  Try Again
+                </Button>
+              </div>
+            ) : filteredNews.length > 0 ? (
               <div className="space-y-4">
-                {filteredNews.map((article, index) => (
-                  <div key={index} className="group pb-4 border-b last:border-b-0 last:pb-0">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <Badge variant="secondary" className="text-xs">
-                        {article.category}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{article.time}</span>
+                {filteredNews.map((article) => {
+                  const isBookmarked = bookmarkedIds.has(article.id)
+                  const isBookmarking = bookmarkingId === article.id
+
+                  return (
+                    <div key={article.id} className="group pb-4 border-b last:border-b-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {article.interest}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {formatRelativeTime(article.publishedDate)}
+                        </span>
+                      </div>
+                      <h4 className="font-semibold text-sm mb-1 group-hover:text-primary transition-colors">
+                        {article.title}
+                      </h4>
+                      <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                        {article.summary}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {article.sourceDomain}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleBookmark(article)}
+                            disabled={isBookmarking || isBookmarked}
+                          >
+                            {isBookmarking ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : isBookmarked ? (
+                              <>
+                                <BookmarkCheck className="mr-1 h-3 w-3" />
+                                Saved
+                              </>
+                            ) : (
+                              <>
+                                <Bookmark className="mr-1 h-3 w-3" />
+                                Save
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            asChild
+                          >
+                            <a href={article.url} target="_blank" rel="noopener noreferrer">
+                              Read
+                              <ExternalLink className="ml-1 h-3 w-3" />
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                    <h4 className="font-semibold text-sm mb-1 group-hover:text-primary transition-colors">
-                      {article.title}
-                    </h4>
-                    <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                      {article.excerpt}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-muted-foreground">{article.source}</span>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs">
-                        Read More
-                        <ExternalLink className="ml-1 h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <Newspaper className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No news articles found for selected category</p>
-                <p className="text-xs mt-1">Try selecting a different category</p>
+                <p className="text-sm">No news articles found</p>
+                <p className="text-xs mt-1">
+                  {selectedCategory !== "all"
+                    ? "Try selecting a different category"
+                    : "Check back soon for new articles"}
+                </p>
               </div>
             )}
-            <Button variant="outline" className="w-full mt-4 bg-transparent" size="sm">
-              View All News
-            </Button>
           </TabsContent>
 
-          {/* Legislation Tab */}
+          {/* Legislation Tab - Coming Soon */}
           <TabsContent value="legislation" className="mt-4">
-            {filteredLegislation.length > 0 ? (
-              <div className="space-y-4">
-                {filteredLegislation.map((bill, index) => (
-                  <div key={index} className="group pb-4 border-b last:border-b-0 last:pb-0">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <Badge variant="secondary" className="text-xs">
-                        {bill.category}
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        {bill.status}
-                      </Badge>
-                    </div>
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-xs font-mono text-muted-foreground">{bill.billNumber}</span>
-                      <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">
-                        {bill.title}
-                      </h4>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                      {bill.summary}
-                    </p>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">
-                        Sponsor: <span className="font-medium">{bill.sponsor}</span>
-                      </span>
-                      <span className="text-muted-foreground">{bill.lastActionDate}</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Latest: {bill.lastAction}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No legislation found for selected category</p>
-                <p className="text-xs mt-1">Try selecting a different category</p>
-              </div>
-            )}
-            <Button variant="outline" className="w-full mt-4 bg-transparent" size="sm">
-              View All Legislation
-            </Button>
+            <div className="text-center py-12 text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p className="text-sm font-medium">Legislation tracking coming soon</p>
+              <p className="text-xs mt-1">
+                We're working on bringing you personalized bill tracking
+              </p>
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>

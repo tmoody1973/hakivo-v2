@@ -949,3 +949,254 @@ export async function searchMembers(params: {
     };
   }
 }
+
+// ============================================================================
+// Personalized News & Bookmarks
+// ============================================================================
+
+/**
+ * Get personalized news articles filtered by user's policy interests
+ */
+export async function getPersonalizedNews(
+  accessToken: string,
+  limit?: number
+): Promise<APIResponse<{
+  articles: Array<{
+    id: string;
+    interest: string;
+    title: string;
+    url: string;
+    author: string | null;
+    summary: string;
+    imageUrl: string | null;
+    publishedDate: string;
+    fetchedAt: number;
+    score: number;
+    sourceDomain: string;
+  }>;
+  count: number;
+  interests: string[];
+}>> {
+  try {
+    console.log('[getPersonalizedNews] Fetching personalized news...');
+    console.log('[getPersonalizedNews] DASHBOARD_API_URL:', DASHBOARD_API_URL);
+    console.log('[getPersonalizedNews] Access token present:', !!accessToken);
+
+    if (!DASHBOARD_API_URL) {
+      throw new Error('DASHBOARD_API_URL is not configured');
+    }
+
+    const queryParams = new URLSearchParams();
+    queryParams.append('token', accessToken); // Use token in query param to avoid CORS preflight
+    if (limit) queryParams.append('limit', String(limit));
+
+    const url = `${DASHBOARD_API_URL}/dashboard/news?${queryParams.toString()}`;
+    console.log('[getPersonalizedNews] Fetching from:', url);
+
+    // No headers - avoid CORS preflight (Content-Type triggers preflight)
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getPersonalizedNews] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getPersonalizedNews] Error response:', errorText);
+      let errorMessage = 'Failed to fetch personalized news';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch personalized news';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getPersonalizedNews] Success, found:', result.count || 0, 'articles');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getPersonalizedNews] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch personalized news',
+      },
+    };
+  }
+}
+
+/**
+ * Bookmark an article to user's profile
+ */
+export async function bookmarkArticle(
+  accessToken: string,
+  article: {
+    articleUrl: string;
+    title: string;
+    summary?: string;
+    imageUrl?: string;
+    interest: string;
+  }
+): Promise<APIResponse<{ message: string }>> {
+  try {
+    console.log('[bookmarkArticle] Bookmarking article:', article.title);
+
+    const url = `${DASHBOARD_API_URL}/dashboard/news/bookmark`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: getHeaders(accessToken),
+      body: JSON.stringify(article),
+    });
+
+    console.log('[bookmarkArticle] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[bookmarkArticle] Error response:', errorText);
+      let errorMessage = 'Failed to bookmark article';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to bookmark article';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[bookmarkArticle] Success');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[bookmarkArticle] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to bookmark article',
+      },
+    };
+  }
+}
+
+/**
+ * Remove a bookmark
+ */
+export async function removeBookmark(
+  accessToken: string,
+  bookmarkId: string
+): Promise<APIResponse<{ message: string }>> {
+  try {
+    console.log('[removeBookmark] Removing bookmark:', bookmarkId);
+
+    const url = `${DASHBOARD_API_URL}/dashboard/news/bookmark/${bookmarkId}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: getHeaders(accessToken),
+    });
+
+    console.log('[removeBookmark] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[removeBookmark] Error response:', errorText);
+      let errorMessage = 'Failed to remove bookmark';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to remove bookmark';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[removeBookmark] Success');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[removeBookmark] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to remove bookmark',
+      },
+    };
+  }
+}
+
+/**
+ * Get user's saved bookmarks
+ */
+export async function getUserBookmarks(
+  accessToken: string,
+  limit?: number
+): Promise<APIResponse<{
+  bookmarks: Array<{
+    id: string;
+    articleUrl: string;
+    title: string;
+    summary: string | null;
+    imageUrl: string | null;
+    interest: string;
+    createdAt: number;
+  }>;
+  count: number;
+}>> {
+  try {
+    console.log('[getUserBookmarks] Fetching user bookmarks...');
+
+    const queryParams = new URLSearchParams();
+    if (limit) queryParams.append('limit', String(limit));
+
+    const url = `${DASHBOARD_API_URL}/dashboard/news/bookmarks?${queryParams.toString()}`;
+    console.log('[getUserBookmarks] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: getHeaders(accessToken),
+    });
+
+    console.log('[getUserBookmarks] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getUserBookmarks] Error response:', errorText);
+      let errorMessage = 'Failed to fetch bookmarks';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch bookmarks';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getUserBookmarks] Success, found:', result.count || 0, 'bookmarks');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getUserBookmarks] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch bookmarks',
+      },
+    };
+  }
+}

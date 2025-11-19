@@ -109,9 +109,9 @@ export default function RepresentativeDetailPage({
         <div className="relative bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-6 md:p-8">
           <div className="flex flex-col md:flex-row gap-6 items-start">
             {/* Avatar */}
-            <Avatar className="w-24 h-24 md:w-32 md:h-32 border-4 border-background shadow-xl shrink-0">
-              <AvatarImage src={member.imageUrl || "/placeholder.svg"} alt={member.fullName} />
-              <AvatarFallback className="text-2xl md:text-3xl">{member.firstName?.[0]}{member.lastName?.[0]}</AvatarFallback>
+            <Avatar className="w-32 h-32 md:w-48 md:h-48 border-4 border-background shadow-xl shrink-0 rounded-xl">
+              <AvatarImage src={member.imageUrl || "/placeholder.svg"} alt={member.fullName} className="rounded-xl object-cover" />
+              <AvatarFallback className="text-2xl md:text-4xl rounded-xl">{member.firstName?.[0]}{member.lastName?.[0]}</AvatarFallback>
             </Avatar>
 
             {/* Info */}

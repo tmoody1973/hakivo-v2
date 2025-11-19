@@ -204,10 +204,20 @@ export default function RepresentativesPage() {
         setAllMembersLoading(true)
         setAllMembersError(null)
 
+        // Convert state code to full name for API
+        const stateFullName = stateFilter !== 'all'
+          ? US_STATES.find(s => s.code === stateFilter)?.name
+          : undefined
+
+        // Capitalize party for API (Democrat, Republican)
+        const partyCapitalized = partyFilter !== 'all'
+          ? partyFilter.charAt(0).toUpperCase() + partyFilter.slice(1)
+          : undefined
+
         const response = await searchMembers({
           query: debouncedSearchQuery || undefined,
-          party: partyFilter !== 'all' ? partyFilter : undefined,
-          state: stateFilter !== 'all' ? stateFilter : undefined,
+          party: partyCapitalized,
+          state: stateFullName,
           currentOnly: true,
           limit: LIMIT,
           offset: 0,
@@ -242,10 +252,20 @@ export default function RepresentativesPage() {
     try {
       setAllMembersLoading(true)
 
+      // Convert state code to full name for API
+      const stateFullName = stateFilter !== 'all'
+        ? US_STATES.find(s => s.code === stateFilter)?.name
+        : undefined
+
+      // Capitalize party for API (Democrat, Republican)
+      const partyCapitalized = partyFilter !== 'all'
+        ? partyFilter.charAt(0).toUpperCase() + partyFilter.slice(1)
+        : undefined
+
       const response = await searchMembers({
         query: debouncedSearchQuery || undefined,
-        party: partyFilter !== 'all' ? partyFilter : undefined,
-        state: stateFilter !== 'all' ? stateFilter : undefined,
+        party: partyCapitalized,
+        state: stateFullName,
         currentOnly: true,
         limit: LIMIT,
         offset: offset,
