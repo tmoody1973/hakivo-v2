@@ -876,3 +876,76 @@ export async function getRepresentatives(
     };
   }
 }
+
+/**
+ * Search all members of Congress
+ *
+ * API ENDPOINT: GET /members/search
+ * QUERY PARAMETERS: { query?: string, party?: string, state?: string, chamber?: 'house' | 'senate', currentOnly?: boolean, limit?: number, offset?: number }
+ * SUCCESS RESPONSE (200): {
+ *   success: true,
+ *   members: [...],
+ *   pagination: { total, limit, offset, hasMore }
+ * }
+ */
+export async function searchMembers(params: {
+  query?: string;
+  party?: string;
+  state?: string;
+  chamber?: 'house' | 'senate';
+  currentOnly?: boolean;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<APIResponse<any>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    if (params.query) queryParams.append('query', params.query);
+    if (params.party && params.party !== 'all') queryParams.append('party', params.party);
+    if (params.state && params.state !== 'all') queryParams.append('state', params.state);
+    if (params.chamber) queryParams.append('chamber', params.chamber);
+    if (params.currentOnly !== undefined) queryParams.append('currentOnly', String(params.currentOnly));
+    if (params.limit !== undefined) queryParams.append('limit', String(params.limit));
+    if (params.offset !== undefined) queryParams.append('offset', String(params.offset));
+
+    const url = `${BILLS_API_URL}/members/search?${queryParams.toString()}`;
+    console.log('[searchMembers] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[searchMembers] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[searchMembers] Error response:', errorText);
+      let errorMessage = 'Failed to search members';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to search members';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[searchMembers] Success, found:', result.members?.length || 0, 'members');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[searchMembers] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to search members',
+      },
+    };
+  }
+}

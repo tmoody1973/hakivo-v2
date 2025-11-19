@@ -10,8 +10,62 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Phone, Mail, MapPin, Building2, Search, CheckCircle, XCircle, Minus, Loader2, AlertCircle } from 'lucide-react'
 import Link from "next/link"
-import { getRepresentatives } from "@/lib/api/backend"
+import { getRepresentatives, searchMembers } from "@/lib/api/backend"
 import { useAuth } from "@/lib/auth/auth-context"
+
+// All 50 US states
+const US_STATES = [
+  { code: 'AL', name: 'Alabama' },
+  { code: 'AK', name: 'Alaska' },
+  { code: 'AZ', name: 'Arizona' },
+  { code: 'AR', name: 'Arkansas' },
+  { code: 'CA', name: 'California' },
+  { code: 'CO', name: 'Colorado' },
+  { code: 'CT', name: 'Connecticut' },
+  { code: 'DE', name: 'Delaware' },
+  { code: 'FL', name: 'Florida' },
+  { code: 'GA', name: 'Georgia' },
+  { code: 'HI', name: 'Hawaii' },
+  { code: 'ID', name: 'Idaho' },
+  { code: 'IL', name: 'Illinois' },
+  { code: 'IN', name: 'Indiana' },
+  { code: 'IA', name: 'Iowa' },
+  { code: 'KS', name: 'Kansas' },
+  { code: 'KY', name: 'Kentucky' },
+  { code: 'LA', name: 'Louisiana' },
+  { code: 'ME', name: 'Maine' },
+  { code: 'MD', name: 'Maryland' },
+  { code: 'MA', name: 'Massachusetts' },
+  { code: 'MI', name: 'Michigan' },
+  { code: 'MN', name: 'Minnesota' },
+  { code: 'MS', name: 'Mississippi' },
+  { code: 'MO', name: 'Missouri' },
+  { code: 'MT', name: 'Montana' },
+  { code: 'NE', name: 'Nebraska' },
+  { code: 'NV', name: 'Nevada' },
+  { code: 'NH', name: 'New Hampshire' },
+  { code: 'NJ', name: 'New Jersey' },
+  { code: 'NM', name: 'New Mexico' },
+  { code: 'NY', name: 'New York' },
+  { code: 'NC', name: 'North Carolina' },
+  { code: 'ND', name: 'North Dakota' },
+  { code: 'OH', name: 'Ohio' },
+  { code: 'OK', name: 'Oklahoma' },
+  { code: 'OR', name: 'Oregon' },
+  { code: 'PA', name: 'Pennsylvania' },
+  { code: 'RI', name: 'Rhode Island' },
+  { code: 'SC', name: 'South Carolina' },
+  { code: 'SD', name: 'South Dakota' },
+  { code: 'TN', name: 'Tennessee' },
+  { code: 'TX', name: 'Texas' },
+  { code: 'UT', name: 'Utah' },
+  { code: 'VT', name: 'Vermont' },
+  { code: 'VA', name: 'Virginia' },
+  { code: 'WA', name: 'Washington' },
+  { code: 'WV', name: 'West Virginia' },
+  { code: 'WI', name: 'Wisconsin' },
+  { code: 'WY', name: 'Wyoming' },
+]
 
 const userRepresentatives = [
   {
@@ -80,37 +134,35 @@ const userRepresentatives = [
   },
 ]
 
-const allMembers = [
-  ...userRepresentatives,
-  {
-    id: "4",
-    name: "Marco Rubio",
-    role: "U.S. Senator",
-    party: "Republican",
-    state: "FL",
-    image: "/placeholder.svg?height=100&width=100",
-    initials: "MR",
-  },
-  {
-    id: "5",
-    name: "Alexandria Ocasio-Cortez",
-    role: "U.S. Representative",
-    party: "Democrat",
-    state: "NY",
-    district: "14th District",
-    image: "/placeholder.svg?height=100&width=100",
-    initials: "AOC",
-  },
-]
-
 export default function RepresentativesPage() {
   const { accessToken, refreshToken, updateAccessToken } = useAuth()
-  const [searchQuery, setSearchQuery] = useState("")
-  const [stateFilter, setStateFilter] = useState("all")
-  const [partyFilter, setPartyFilter] = useState("all")
+
+  // User's representatives state
   const [myRepresentatives, setMyRepresentatives] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // All members search/filter state
+  const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
+  const [stateFilter, setStateFilter] = useState("all")
+  const [partyFilter, setPartyFilter] = useState("all")
+  const [allMembers, setAllMembers] = useState<any[]>([])
+  const [allMembersLoading, setAllMembersLoading] = useState(false)
+  const [allMembersError, setAllMembersError] = useState<string | null>(null)
+  const [totalMembers, setTotalMembers] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
+  const LIMIT = 20
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   // Fetch user's representatives
   useEffect(() => {
@@ -145,18 +197,77 @@ export default function RepresentativesPage() {
     fetchRepresentatives()
   }, [accessToken, refreshToken, updateAccessToken])
 
+  // Fetch all members when filters change
+  useEffect(() => {
+    async function fetchAllMembers() {
+      try {
+        setAllMembersLoading(true)
+        setAllMembersError(null)
+
+        const response = await searchMembers({
+          query: debouncedSearchQuery || undefined,
+          party: partyFilter !== 'all' ? partyFilter : undefined,
+          state: stateFilter !== 'all' ? stateFilter : undefined,
+          currentOnly: true,
+          limit: LIMIT,
+          offset: 0,
+        })
+
+        if (response.success && response.data) {
+          console.log('[RepresentativesPage] Fetched members:', response.data.members?.length, 'members')
+          console.log('[RepresentativesPage] First member:', JSON.stringify(response.data.members?.[0], null, 2))
+          console.log('[RepresentativesPage] First member keys:', Object.keys(response.data.members?.[0] || {}))
+          setAllMembers(response.data.members || [])
+          setTotalMembers(response.data.pagination?.total || 0)
+          setHasMore(response.data.pagination?.hasMore || false)
+          setOffset(LIMIT)
+        } else {
+          setAllMembersError(response.error?.message || 'Failed to load members')
+        }
+      } catch (err) {
+        console.error('Failed to fetch all members:', err)
+        setAllMembersError('Failed to load members')
+      } finally {
+        setAllMembersLoading(false)
+      }
+    }
+
+    fetchAllMembers()
+  }, [debouncedSearchQuery, partyFilter, stateFilter])
+
+  // Load more members
+  const loadMore = async () => {
+    if (!hasMore || allMembersLoading) return
+
+    try {
+      setAllMembersLoading(true)
+
+      const response = await searchMembers({
+        query: debouncedSearchQuery || undefined,
+        party: partyFilter !== 'all' ? partyFilter : undefined,
+        state: stateFilter !== 'all' ? stateFilter : undefined,
+        currentOnly: true,
+        limit: LIMIT,
+        offset: offset,
+      })
+
+      if (response.success && response.data) {
+        setAllMembers(prev => [...prev, ...(response.data.members || [])])
+        setHasMore(response.data.pagination?.hasMore || false)
+        setOffset(prev => prev + LIMIT)
+      }
+    } catch (err) {
+      console.error('Failed to load more members:', err)
+    } finally {
+      setAllMembersLoading(false)
+    }
+  }
+
   const getVoteIcon = (vote: string) => {
     if (vote === "yes") return <CheckCircle className="h-4 w-4 text-green-500" />
     if (vote === "no") return <XCircle className="h-4 w-4 text-red-500" />
     return <Minus className="h-4 w-4 text-muted-foreground" />
   }
-
-  const filteredMembers = allMembers.filter((member) => {
-    const matchesSearch = member.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesState = stateFilter === "all" || member.state === stateFilter
-    const matchesParty = partyFilter === "all" || member.party.toLowerCase() === partyFilter.toLowerCase()
-    return matchesSearch && matchesState && matchesParty
-  })
 
   // Determine what state name to show
   const userState = myRepresentatives[0]?.state || "Your"
@@ -307,9 +418,11 @@ export default function RepresentativesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All States</SelectItem>
-                    <SelectItem value="MA">Massachusetts</SelectItem>
-                    <SelectItem value="NY">New York</SelectItem>
-                    <SelectItem value="FL">Florida</SelectItem>
+                    {US_STATES.map(state => (
+                      <SelectItem key={state.code} value={state.code}>
+                        {state.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Select value={partyFilter} onValueChange={setPartyFilter}>
@@ -325,35 +438,97 @@ export default function RepresentativesPage() {
               </div>
 
               {/* Members Grid */}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {filteredMembers.map((member) => (
-                  <Link key={member.id} href={`/representatives/${member.id}`}>
-                    <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <Avatar className="h-12 w-12">
-                            <AvatarImage src={member.image || "/placeholder.svg"} alt={member.name} />
-                            <AvatarFallback>{member.initials}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-sm truncate">{member.name}</h4>
-                            <p className="text-xs text-muted-foreground">{member.role}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge variant="outline" className="text-xs">
-                                {member.state}
-                                {member.district && `-${member.district}`}
-                              </Badge>
-                              <Badge variant={member.party === "Democrat" ? "default" : "secondary"} className="text-xs">
-                                {member.party.charAt(0)}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
+              {allMembersLoading && allMembers.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <span className="ml-3 text-muted-foreground">Loading members...</span>
+                </div>
+              ) : allMembersError ? (
+                <Card className="border-red-200 bg-red-50">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-2 text-red-800">
+                      <AlertCircle className="h-5 w-5" />
+                      <span>{allMembersError}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : !allMembersLoading && allMembers.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Search className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No members found matching your filters</p>
+                </div>
+              ) : (
+                <>
+                  {/* Debug info */}
+                  {console.log('[RepresentativesPage] Rendering members, count:', allMembers.length)}
+                  {console.log('[RepresentativesPage] Filtered members:', allMembers.filter(m => m.bioguideId).length)}
+
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {allMembers.filter(m => m.bioguideId).map((member, index) => {
+                      // Generate initials from first and last name
+                      const initials = `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`.toUpperCase()
+                      const fullName = member.fullName || `${member.firstName || ''} ${member.middleName || ''} ${member.lastName || ''}`.trim()
+                      const role = member.district ? `U.S. Representative` : `U.S. Senator`
+
+                      return (
+                        <Link key={`${member.bioguideId}-${index}`} href={`/representatives/${member.bioguideId}`}>
+                          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <Avatar className="h-12 w-12">
+                                  <AvatarImage src={member.imageUrl || "/placeholder.svg"} alt={fullName} />
+                                  <AvatarFallback>{initials}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-semibold text-sm truncate">{fullName}</h4>
+                                  <p className="text-xs text-muted-foreground">{role}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge variant="outline" className="text-xs">
+                                      {member.state}
+                                      {member.district && ` - ${member.district}`}
+                                    </Badge>
+                                    <Badge variant={member.party === "Democrat" ? "default" : "secondary"} className="text-xs">
+                                      {member.party?.charAt(0) || '?'}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </Link>
+                      )
+                    })}
+                  </div>
+
+                  {/* Load More Button */}
+                  {hasMore && (
+                    <div className="mt-6 text-center">
+                      <Button
+                        onClick={loadMore}
+                        disabled={allMembersLoading}
+                        variant="outline"
+                        className="w-full sm:w-auto"
+                      >
+                        {allMembersLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Loading more...
+                          </>
+                        ) : (
+                          <>Load More ({allMembers.length} of {totalMembers})</>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Results count */}
+                  {!hasMore && allMembers.length > 0 && (
+                    <div className="mt-6 text-center text-sm text-muted-foreground">
+                      Showing all {allMembers.length} member{allMembers.length !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </section>
