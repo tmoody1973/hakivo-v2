@@ -29,8 +29,10 @@ export interface UserPreferences {
   userId: string;
   policyInterests: string[]; // e.g., ['climate', 'healthcare', 'education']
   zipCode: string;
+  city?: string;
   state: string;
   district: number;
+  congressionalDistrict?: string; // e.g., "WI-4"
   briefingTime?: string; // Preferred daily briefing time (HH:mm format)
   emailNotifications: boolean;
   weeklyBriefing: boolean;

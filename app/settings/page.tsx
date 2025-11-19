@@ -1,38 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/lib/auth/auth-context';
+import { getUserPreferences, updateUserProfile, updateUserPreferences } from '@/lib/api/backend';
 
 const POLICY_INTERESTS = [
-  { id: 'environment-energy', label: 'Environment & Energy', icon: '🌱' },
-  { id: 'health-welfare', label: 'Health & Social Welfare', icon: '🏥' },
-  { id: 'economy-finance', label: 'Economy & Finance', icon: '💰' },
-  { id: 'education-science', label: 'Education & Science', icon: '🎓' },
-  { id: 'civil-rights-law', label: 'Civil Rights & Law', icon: '⚖️' },
-  { id: 'commerce-labor', label: 'Commerce & Labor', icon: '🏭' },
-  { id: 'government-politics', label: 'Government & Politics', icon: '🏛️' },
-  { id: 'foreign-policy-defense', label: 'Foreign Policy & Defense', icon: '🌍' },
-  { id: 'housing-urban', label: 'Housing & Urban Development', icon: '🏘️' },
-  { id: 'agriculture-food', label: 'Agriculture & Food', icon: '🌾' },
-  { id: 'sports-arts-culture', label: 'Sports, Arts & Culture', icon: '🎨' },
-  { id: 'immigration-indigenous', label: 'Immigration & Indigenous Issues', icon: '🗽' },
+  { name: 'Environment & Energy', icon: '🌱' },
+  { name: 'Health & Social Welfare', icon: '🏥' },
+  { name: 'Economy & Finance', icon: '💰' },
+  { name: 'Education & Science', icon: '🎓' },
+  { name: 'Civil Rights & Law', icon: '⚖️' },
+  { name: 'Commerce & Labor', icon: '🏭' },
+  { name: 'Government & Politics', icon: '🏛️' },
+  { name: 'Foreign Policy & Defense', icon: '🌍' },
+  { name: 'Housing & Urban Development', icon: '🏘️' },
+  { name: 'Agriculture & Food', icon: '🌾' },
+  { name: 'Sports, Arts & Culture', icon: '🎨' },
+  { name: 'Immigration & Indigenous Issues', icon: '🗽' },
 ];
 
 export default function SettingsPage() {
+  const { accessToken, refreshToken, user, updateAccessToken } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Profile state
-  const [firstName, setFirstName] = useState('Jane');
-  const [lastName, setLastName] = useState('Doe');
-  const [email, setEmail] = useState('jane@example.com');
-  const [zipCode, setZipCode] = useState('02108');
-  const [city, setCity] = useState('Boston');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [zipCode, setZipCode] = useState('');
+  const [city, setCity] = useState('');
+  const [congressionalDistrict, setCongressionalDistrict] = useState('');
 
-  // Policy interests state - TODO: Load from backend
-  const [selectedInterests, setSelectedInterests] = useState<string[]>([
-    'health-welfare',
-    'education-science',
-    'climate-environment',
-  ]);
+  // Policy interests state
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
   // Preferences state
   const [briefingTime, setBriefingTime] = useState('08:00');
@@ -40,30 +42,125 @@ export default function SettingsPage() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [autoplay, setAutoplay] = useState(false);
 
-  const handleInterestToggle = (interestId: string) => {
+  // Load user data on mount
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!accessToken) return;
+
+      try {
+        console.log('[Settings] Loading user preferences...');
+        console.log('[Settings] Access token:', accessToken ? 'present' : 'missing');
+        console.log('[Settings] Refresh token:', refreshToken ? 'present' : 'missing');
+
+        // Pass refresh token and callback to update access token if it expires
+        const response = await getUserPreferences(
+          accessToken,
+          refreshToken || undefined,
+          (newAccessToken) => {
+            console.log('[Settings] Access token refreshed, updating auth context');
+            updateAccessToken(newAccessToken);
+          }
+        );
+
+        console.log('[Settings] Response:', response);
+        if (response.success && response.data) {
+          console.log('[Settings] User preferences loaded:', response.data);
+
+          // Set user profile data
+          setFirstName(user?.firstName || '');
+          setLastName(user?.lastName || '');
+          setEmail(user?.email || '');
+          setCity(response.data.city || '');
+          setZipCode(response.data.zipCode || '');
+          setCongressionalDistrict(
+            response.data.congressionalDistrict ||
+            (response.data.state && response.data.district
+              ? `${response.data.state}-${response.data.district}`
+              : '')
+          );
+
+          // Set policy interests
+          setSelectedInterests(response.data.policyInterests || []);
+
+          // Set other preferences
+          setBriefingTime(response.data.briefingTime || '08:00');
+          setEmailNotifications(response.data.emailNotifications !== false);
+          setPlaybackSpeed(response.data.playbackSpeed || 1.0);
+          setAutoplay(response.data.autoPlay || false);
+        }
+      } catch (error) {
+        console.error('[Settings] Error loading preferences:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadUserData();
+  }, [accessToken, refreshToken, user, updateAccessToken]);
+
+  const handleInterestToggle = (interestName: string) => {
     setSelectedInterests((prev) =>
-      prev.includes(interestId)
-        ? prev.filter((id) => id !== interestId)
-        : [...prev, interestId]
+      prev.includes(interestName)
+        ? prev.filter((name) => name !== interestName)
+        : [...prev, interestName]
     );
   };
 
   const handleSaveProfile = async () => {
-    // TODO: Call saveUserProfile API
-    console.log('Saving profile:', { firstName, lastName, email, zipCode, city });
-    alert('Profile saved successfully!');
+    if (!accessToken) {
+      alert('Not authenticated');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Update user profile (name only)
+      await updateUserProfile(accessToken, {
+        firstName,
+        lastName,
+      });
+
+      // Update preferences (includes zipCode if changed)
+      await updateUserPreferences(accessToken, {
+        policyInterests: selectedInterests,
+        zipCode,
+        briefingTime,
+        emailNotifications,
+        playbackSpeed,
+        autoPlay: autoplay,
+      });
+
+      alert('Profile saved successfully!');
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      alert('Failed to save profile. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSavePreferences = async () => {
-    // TODO: Call saveUserPreferences API
-    console.log('Saving preferences:', {
-      policyInterests: selectedInterests,
-      briefingTime,
-      emailNotifications,
-      playbackSpeed,
-      autoplay,
-    });
-    alert('Preferences saved successfully!');
+    if (!accessToken) {
+      alert('Not authenticated');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await updateUserPreferences(accessToken, {
+        policyInterests: selectedInterests,
+        briefingTime,
+        emailNotifications,
+        playbackSpeed,
+        autoPlay: autoplay,
+      });
+      alert('Preferences saved successfully!');
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+      alert('Failed to save preferences. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -200,7 +297,7 @@ export default function SettingsPage() {
                   <label className="text-sm font-medium">Congressional District</label>
                   <input
                     type="text"
-                    defaultValue="MA-08"
+                    value={congressionalDistrict || 'Not set'}
                     disabled
                     className="w-full px-3 py-2 bg-muted border rounded-md text-muted-foreground"
                   />
@@ -237,10 +334,10 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {POLICY_INTERESTS.map((interest) => (
                   <button
-                    key={interest.id}
-                    onClick={() => handleInterestToggle(interest.id)}
+                    key={interest.name}
+                    onClick={() => handleInterestToggle(interest.name)}
                     className={`p-4 rounded-lg border-2 transition-all text-left ${
-                      selectedInterests.includes(interest.id)
+                      selectedInterests.includes(interest.name)
                         ? 'border-primary bg-primary/10'
                         : 'border-border hover:border-primary/50'
                     }`}
@@ -248,9 +345,9 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{interest.icon}</span>
                       <div className="flex-1">
-                        <div className="font-medium text-sm">{interest.label}</div>
+                        <div className="font-medium text-sm">{interest.name}</div>
                       </div>
-                      {selectedInterests.includes(interest.id) && (
+                      {selectedInterests.includes(interest.name) && (
                         <svg
                           className="w-5 h-5 text-primary"
                           fill="none"

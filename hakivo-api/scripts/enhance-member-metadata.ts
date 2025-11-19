@@ -12,7 +12,7 @@
  * - legislators-social-media.json: Social media accounts
  */
 
-const ADMIN_DASHBOARD_URL = 'https://svc-01ka747hjpq5r2qk4ct00r3yyd.01k66gey30f48fys2tv4e412yt.lmapp.run';
+const ADMIN_DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const LEGISLATORS_URL = 'https://unitedstates.github.io/congress-legislators/legislators-current.json';
 const SOCIAL_MEDIA_URL = 'https://unitedstates.github.io/congress-legislators/legislators-social-media.json';
 
@@ -157,6 +157,10 @@ async function main() {
           if (currentTerm.district !== undefined) updates.push(`current_term_district = ${currentTerm.district}`);
           if (currentTerm.class !== undefined) updates.push(`current_term_class = ${currentTerm.class}`);
           if (currentTerm.state_rank) updates.push(`current_term_state_rank = ${escapeSQLString(currentTerm.state_rank)}`);
+          // Website URLs are in the term data, not social media data
+          if (currentTerm.url) updates.push(`website_url = ${escapeSQLString(currentTerm.url)}`);
+          if (currentTerm.contact_form) updates.push(`contact_form_url = ${escapeSQLString(currentTerm.contact_form)}`);
+          if (currentTerm.rss_url) updates.push(`rss_url = ${escapeSQLString(currentTerm.rss_url)}`);
         }
 
         stats.bioDataAdded++;
@@ -168,9 +172,6 @@ async function main() {
         if (social.facebook) updates.push(`facebook_url = ${escapeSQLString(`https://facebook.com/${social.facebook}`)}`);
         if (social.youtube) updates.push(`youtube_url = ${escapeSQLString(`https://youtube.com/${social.youtube}`)}`);
         if (social.instagram) updates.push(`instagram_handle = ${escapeSQLString(social.instagram)}`);
-        if (social.website) updates.push(`website_url = ${escapeSQLString(social.website)}`);
-        if (social.contact_form) updates.push(`contact_form_url = ${escapeSQLString(social.contact_form)}`);
-        if (social.rss) updates.push(`rss_url = ${escapeSQLString(social.rss)}`);
 
         stats.socialMediaAdded++;
       }

@@ -1,10 +1,15 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { getMemberById } from '@/lib/api/backend'
+import { Loader2, Phone, Mail, Globe, ExternalLink } from 'lucide-react'
 
-const representativesData: Record<string, any> = {
+const representativesDataOLD: Record<string, any> = {
   '1': {
     id: '1',
     name: 'Elizabeth Warren',
@@ -85,24 +90,68 @@ const representativesData: Record<string, any> = {
   }
 }
 
-export default async function RepresentativeDetailPage({
+export default function RepresentativeDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
-  const { id } = await params
-  const rep = representativesData[id]
+  const [bioguideId, setBioguideId] = useState<string>('')
+  const [member, setMember] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  if (!rep) {
+  useEffect(() => {
+    params.then(p => setBioguideId(p.id))
+  }, [params])
+
+  useEffect(() => {
+    if (!bioguideId) return
+
+    async function fetchMember() {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await getMemberById(bioguideId)
+
+        if (response.success && response.data) {
+          setMember(response.data)
+        } else {
+          setError(response.error?.message || 'Failed to load representative')
+        }
+      } catch (err) {
+        console.error('Failed to fetch representative:', err)
+        setError('Failed to load representative')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchMember()
+  }, [bioguideId])
+
+  if (loading) {
+    return (
+      <div className="px-6 md:px-8 py-8 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading representative...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !member) {
     return (
       <div className="px-6 md:px-8 py-8">
         <Card className="p-8 text-center">
           <h1 className="text-2xl font-bold">Representative Not Found</h1>
-          <p className="text-muted-foreground mt-2">The representative you are looking for does not exist.</p>
+          <p className="text-muted-foreground mt-2">{error || 'The representative you are looking for does not exist.'}</p>
         </Card>
       </div>
     )
   }
+
+  const rep = member
 
   return (
     <div className="px-6 md:px-8 py-8 space-y-6">
@@ -110,45 +159,62 @@ export default async function RepresentativeDetailPage({
       <Card className="p-6">
         <div className="flex flex-col md:flex-row gap-6">
           <Avatar className="w-32 h-32">
-            <AvatarImage src={rep.image || "/placeholder.svg"} alt={rep.name} />
-            <AvatarFallback>{rep.name.split(' ').map((n: string) => n[0]).join('')}</AvatarFallback>
+            <AvatarImage src={rep.imageUrl || "/placeholder.svg"} alt={rep.fullName} />
+            <AvatarFallback>{rep.firstName?.[0]}{rep.lastName?.[0]}</AvatarFallback>
           </Avatar>
-          
+
           <div className="flex-1">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold">{rep.name}</h1>
+                <h1 className="text-3xl font-bold">{rep.fullName}</h1>
                 <p className="text-lg text-muted-foreground mt-1">
-                  {rep.title} • {rep.state} {rep.district && `- ${rep.district}`}
+                  U.S. {rep.chamber === 'House' ? 'Representative' : 'Senator'} • {rep.state} {rep.district !== null && rep.district !== undefined && `District ${rep.district}`}
                 </p>
-                <Badge className="mt-2" variant={rep.party === 'Democrat' ? 'default' : 'secondary'}>
+                <Badge className="mt-2" variant={rep.party === 'Democratic' || rep.party === 'Democrat' ? 'default' : 'secondary'}>
                   {rep.party}
                 </Badge>
               </div>
-              
+
               <div className="flex gap-2">
-                <Button>Contact</Button>
-                <Button variant="outline">Follow</Button>
+                {rep.url && (
+                  <Button asChild>
+                    <a href={rep.url} target="_blank" rel="noopener noreferrer">
+                      <Globe className="h-4 w-4 mr-2" />
+                      Website
+                    </a>
+                  </Button>
+                )}
               </div>
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              <div>
-                <p className="text-sm text-muted-foreground">Phone</p>
-                <p className="font-medium">{rep.phone}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Email</p>
-                <p className="font-medium">{rep.email}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Website</p>
-                <p className="font-medium">{rep.website}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Twitter</p>
-                <p className="font-medium">{rep.twitter}</p>
-              </div>
+              {rep.phoneNumber && (
+                <div>
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    Phone
+                  </p>
+                  <p className="font-medium">{rep.phoneNumber}</p>
+                </div>
+              )}
+              {rep.officeAddress && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Office</p>
+                  <p className="font-medium text-sm">{rep.officeAddress}</p>
+                </div>
+              )}
+              {rep.url && (
+                <div className="md:col-span-2">
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    Website
+                  </p>
+                  <a href={rep.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline flex items-center gap-1">
+                    {rep.url}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -156,35 +222,30 @@ export default async function RepresentativeDetailPage({
 
       {/* Tabs Section */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="votes">Voting Record</TabsTrigger>
           <TabsTrigger value="bills">Sponsored Bills</TabsTrigger>
-          <TabsTrigger value="committees">Committees</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Biography</h2>
-            <p className="text-muted-foreground leading-relaxed">{rep.bio}</p>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="votes" className="space-y-4">
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Recent Votes</h2>
-            <div className="space-y-4">
-              {rep.votes.map((vote: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
-                    <h3 className="font-medium">{vote.bill}</h3>
-                    <p className="text-sm text-muted-foreground mt-1">{vote.date}</p>
-                  </div>
-                  <Badge variant={vote.vote === 'Yes' ? 'default' : 'destructive'}>
-                    {vote.vote}
-                  </Badge>
+            <h2 className="text-xl font-semibold mb-4">About</h2>
+            <div className="space-y-4 text-muted-foreground">
+              {rep.birthDate && (
+                <div>
+                  <span className="font-semibold text-foreground">Born:</span> {new Date(rep.birthDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                 </div>
-              ))}
+              )}
+              {rep.gender && (
+                <div>
+                  <span className="font-semibold text-foreground">Gender:</span> {rep.gender}
+                </div>
+              )}
+              {rep.currentMember && (
+                <div>
+                  <Badge variant="outline">Current Member</Badge>
+                </div>
+              )}
             </div>
           </Card>
         </TabsContent>
@@ -192,37 +253,39 @@ export default async function RepresentativeDetailPage({
         <TabsContent value="bills" className="space-y-4">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Sponsored Legislation</h2>
-            <div className="space-y-4">
-              {rep.sponsored.map((bill: any, index: number) => (
-                <div key={index} className="p-4 border rounded-lg">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{bill.number}</Badge>
-                        <Badge>{bill.status}</Badge>
+            {rep.sponsoredBills && rep.sponsoredBills.length > 0 ? (
+              <div className="space-y-4">
+                {rep.sponsoredBills.map((bill: any, index: number) => (
+                  <div key={index} className="p-4 border rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline">
+                            {bill.billType?.toUpperCase()}. {bill.billNumber}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            Congress {bill.congress}
+                          </span>
+                        </div>
+                        <h3 className="font-medium">{bill.title}</h3>
+                        {bill.introducedDate && (
+                          <p className="text-sm text-muted-foreground mt-2">
+                            Introduced: {new Date(bill.introducedDate).toLocaleDateString()}
+                          </p>
+                        )}
+                        {bill.latestActionText && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Latest Action: {bill.latestActionText}
+                          </p>
+                        )}
                       </div>
-                      <h3 className="font-medium mt-2">{bill.title}</h3>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="committees" className="space-y-4">
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Committee Assignments</h2>
-            <div className="space-y-4">
-              {rep.committees.map((committee: any, index: number) => (
-                <div key={index} className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-medium">{committee.name}</h3>
-                    <Badge variant="secondary">{committee.role}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No sponsored bills available.</p>
+            )}
           </Card>
         </TabsContent>
       </Tabs>

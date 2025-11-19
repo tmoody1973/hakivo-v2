@@ -15,13 +15,13 @@ export default function HomePage() {
           </div>
           <nav className="flex items-center gap-4">
             <Link
-              href="/dashboard"
+              href="/auth/signin"
               className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
-              Dashboard
+              Sign In
             </Link>
             <Button asChild>
-              <Link href="/dashboard">Get Started</Link>
+              <Link href="/auth/signin">Get Started</Link>
             </Button>
           </nav>
         </div>
@@ -39,13 +39,13 @@ export default function HomePage() {
             </p>
             <div className="flex flex-wrap justify-center gap-4">
               <Button size="lg" asChild>
-                <Link href="/dashboard">
+                <Link href="/auth/signin">
                   Start Free Trial
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
               <Button size="lg" variant="outline" asChild>
-                <Link href="/dashboard">Listen to Sample Brief</Link>
+                <Link href="/auth/signin">Listen to Sample Brief</Link>
               </Button>
             </div>
           </div>

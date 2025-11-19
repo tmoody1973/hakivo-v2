@@ -6,8 +6,13 @@ import { SearchBar } from "./search-bar"
 
 export function ConditionalNav() {
   const pathname = usePathname()
-  
-  if (pathname === "/") {
+
+  // Hide navigation on landing page, auth pages, and onboarding
+  const hideNav = pathname === "/" ||
+                  pathname?.startsWith('/auth') ||
+                  pathname === '/onboarding'
+
+  if (hideNav) {
     return null
   }
 

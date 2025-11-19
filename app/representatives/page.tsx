@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -8,8 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Phone, Mail, MapPin, Building2, Search, CheckCircle, XCircle, Minus } from 'lucide-react'
+import { Phone, Mail, MapPin, Building2, Search, CheckCircle, XCircle, Minus, Loader2, AlertCircle } from 'lucide-react'
 import Link from "next/link"
+import { getRepresentatives } from "@/lib/api/backend"
+import { useAuth } from "@/lib/auth/auth-context"
 
 const userRepresentatives = [
   {
@@ -102,9 +104,46 @@ const allMembers = [
 ]
 
 export default function RepresentativesPage() {
+  const { accessToken, refreshToken, updateAccessToken } = useAuth()
   const [searchQuery, setSearchQuery] = useState("")
   const [stateFilter, setStateFilter] = useState("all")
   const [partyFilter, setPartyFilter] = useState("all")
+  const [myRepresentatives, setMyRepresentatives] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch user's representatives
+  useEffect(() => {
+    async function fetchRepresentatives() {
+      if (!accessToken) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await getRepresentatives(
+          accessToken,
+          refreshToken || undefined,
+          updateAccessToken
+        )
+
+        if (response.success && response.data) {
+          setMyRepresentatives(response.data)
+        } else {
+          setError(response.error?.message || 'Failed to load representatives')
+        }
+      } catch (err) {
+        console.error('Failed to fetch representatives:', err)
+        setError('Failed to load representatives')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchRepresentatives()
+  }, [accessToken, refreshToken, updateAccessToken])
 
   const getVoteIcon = (vote: string) => {
     if (vote === "yes") return <CheckCircle className="h-4 w-4 text-green-500" />
@@ -119,6 +158,18 @@ export default function RepresentativesPage() {
     return matchesSearch && matchesState && matchesParty
   })
 
+  // Determine what state name to show
+  const userState = myRepresentatives[0]?.state || "Your"
+  const stateNames: Record<string, string> = {
+    'WI': 'Wisconsin',
+    'MA': 'Massachusetts',
+    'NY': 'New York',
+    'FL': 'Florida',
+    'CA': 'California',
+    'TX': 'Texas'
+  }
+  const stateName = stateNames[userState] || userState
+
   return (
     <div className="min-h-screen px-6 md:px-8 py-8">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -132,54 +183,103 @@ export default function RepresentativesPage() {
 
         {/* Your Representatives Section */}
         <section>
-          <h2 className="text-xl font-semibold mb-4">Massachusetts Representatives</h2>
-          <div className="grid gap-6 md:grid-cols-3">
-            {userRepresentatives.map((rep) => (
-              <Card key={rep.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader className="text-center">
-                  <Avatar className="h-24 w-24 mx-auto mb-4">
-                    <AvatarImage src={rep.image || "/placeholder.svg"} alt={rep.name} />
-                    <AvatarFallback>{rep.initials}</AvatarFallback>
-                  </Avatar>
-                  <CardTitle className="text-lg">{rep.name}</CardTitle>
-                  <CardDescription>
-                    {rep.role}
-                    {rep.district && ` • ${rep.district}`}
-                  </CardDescription>
-                  <Badge variant={rep.party === "Democrat" ? "default" : "secondary"} className="mx-auto mt-2">
-                    {rep.party}
-                  </Badge>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2 text-center">
-                    <div className="p-2 rounded-lg bg-muted">
-                      <div className="text-2xl font-bold text-primary">{rep.yearsInOffice}</div>
-                      <div className="text-xs text-muted-foreground">Years</div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-muted">
-                      <div className="text-2xl font-bold text-primary">{rep.billsSponsored}</div>
-                      <div className="text-xs text-muted-foreground">Bills</div>
-                    </div>
+          <h2 className="text-xl font-semibold mb-4">{stateName} Representatives</h2>
+
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-3 text-muted-foreground">Loading your representatives...</span>
+            </div>
+          )}
+
+          {error && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-red-800">
+                  <AlertCircle className="h-5 w-5" />
+                  <div>
+                    {error}
+                    {error.includes('ZIP code') && (
+                      <Link href="/settings" className="ml-2 underline">
+                        Go to settings
+                      </Link>
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <Button className="w-full" variant="outline">
-                      <Phone className="h-4 w-4 mr-2" />
-                      {rep.phone}
-                    </Button>
-                    <Button className="w-full" variant="outline">
-                      <Mail className="h-4 w-4 mr-2" />
-                      Email
-                    </Button>
-                  </div>
-                  <Button className="w-full" asChild>
-                    <Link href={`/representatives/${rep.id}`}>
-                      View Full Profile
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!loading && !error && myRepresentatives.length === 0 && (
+            <Card className="border-yellow-200 bg-yellow-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-yellow-800">
+                  <AlertCircle className="h-5 w-5" />
+                  <div>
+                    No representatives found. Please update your ZIP code in{' '}
+                    <Link href="/settings" className="underline font-medium">
+                      settings
                     </Link>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    .
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!loading && !error && myRepresentatives.length > 0 && (
+            <div className="grid gap-6 md:grid-cols-3">
+              {myRepresentatives.map((rep) => (
+                <Card key={rep.bioguideId} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="text-center">
+                    <Avatar className="h-24 w-24 mx-auto mb-4">
+                      <AvatarImage src={rep.imageUrl || "/placeholder.svg"} alt={rep.fullName} />
+                      <AvatarFallback>{rep.initials}</AvatarFallback>
+                    </Avatar>
+                    <CardTitle className="text-lg">{rep.fullName}</CardTitle>
+                    <CardDescription>
+                      {rep.role}
+                      {rep.district && ` • District ${rep.district}`}
+                    </CardDescription>
+                    <Badge variant={rep.party === "Democrat" ? "default" : "secondary"} className="mx-auto mt-2">
+                      {rep.party}
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      {rep.phoneNumber && (
+                        <Button className="w-full" variant="outline" asChild>
+                          <a href={`tel:${rep.phoneNumber}`}>
+                            <Phone className="h-4 w-4 mr-2" />
+                            {rep.phoneNumber}
+                          </a>
+                        </Button>
+                      )}
+                      {rep.url && (
+                        <Button className="w-full" variant="outline" asChild>
+                          <a href={rep.url} target="_blank" rel="noopener noreferrer">
+                            <Mail className="h-4 w-4 mr-2" />
+                            Contact
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                    {rep.officeAddress && (
+                      <div className="text-sm text-muted-foreground text-center">
+                        <MapPin className="h-4 w-4 inline mr-1" />
+                        {rep.officeAddress}
+                      </div>
+                    )}
+                    <Button className="w-full" asChild>
+                      <Link href={`/representatives/${rep.bioguideId}`}>
+                        View Full Profile
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* All Members Directory */}

@@ -1,4 +1,25 @@
-application "hakivo-api" {
+application "hakivo-new" {
+
+  // Environment variables for API keys
+  env "WORKOS_API_KEY" {
+    secret = true
+  }
+
+  env "WORKOS_CLIENT_ID" {
+    secret = true
+  }
+
+  env "WORKOS_REDIRECT_URI" {
+    secret = true
+  }
+
+  env "GEOCODIO_API_KEY" {
+    secret = true
+  }
+
+  env "JWT_SECRET" {
+    secret = true
+  }
 
   // Public-facing HTTP services
   service "auth-service" {

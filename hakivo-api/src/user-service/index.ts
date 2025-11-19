@@ -243,11 +243,32 @@ export default class extends Service<Env> {
       };
     }
 
+    // Safely parse JSON fields with fallbacks
+    let policyInterests = [];
+    if (result.policy_interests) {
+      try {
+        policyInterests = JSON.parse(result.policy_interests as string);
+      } catch (e) {
+        console.error('Failed to parse policy_interests:', e);
+        policyInterests = [];
+      }
+    }
+
+    let briefingDays = ['Monday', 'Wednesday', 'Friday'];
+    if (result.briefing_days) {
+      try {
+        briefingDays = JSON.parse(result.briefing_days as string);
+      } catch (e) {
+        console.error('Failed to parse briefing_days:', e);
+        briefingDays = ['Monday', 'Wednesday', 'Friday'];
+      }
+    }
+
     return {
-      policyInterests: JSON.parse(result.policy_interests as string),
-      briefingTime: result.briefing_time as string,
-      briefingDays: JSON.parse(result.briefing_days as string),
-      playbackSpeed: result.playback_speed as number,
+      policyInterests,
+      briefingTime: result.briefing_time as string || '08:00',
+      briefingDays,
+      playbackSpeed: result.playback_speed as number || 1.0,
       autoplay: Boolean(result.autoplay),
       emailNotifications: Boolean(result.email_notifications)
     };

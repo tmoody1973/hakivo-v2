@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from 'next/navigation'
-import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, MessageSquare } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, MessageSquare, LogOut } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { useAuth } from "@/lib/auth/auth-context"
 
 const routes = [
   {
@@ -46,6 +47,18 @@ const routes = [
 
 export function DashboardHeader() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { user, logout } = useAuth()
+
+  const handleLogout = () => {
+    logout()
+    router.push('/auth/signin')
+  }
+
+  // Generate user initials for avatar fallback
+  const userInitials = user?.firstName && user?.lastName
+    ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`
+    : 'JD'
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
@@ -88,15 +101,19 @@ export function DashboardHeader() {
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
                   <AvatarImage src="/abstract-geometric-shapes.png" alt="User" />
-                  <AvatarFallback>JD</AvatarFallback>
+                  <AvatarFallback>{userInitials}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">Jane Doe</p>
-                  <p className="text-xs text-muted-foreground">jane@example.com</p>
+                  <p className="text-sm font-medium">
+                    {user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : 'Guest'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {user?.email || 'Not logged in'}
+                  </p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -109,7 +126,10 @@ export function DashboardHeader() {
               <DropdownMenuItem>Profile</DropdownMenuItem>
               <DropdownMenuItem>Preferences</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Log out</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 dark:text-red-400">
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

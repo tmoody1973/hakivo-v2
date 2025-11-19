@@ -8,7 +8,7 @@ export default class extends Service<Env> {
    * Get Geocodio API key from environment
    */
   private getApiKey(): string {
-    const apiKey = process.env.GEOCODIO_API_KEY;
+    const apiKey = this.env.GEOCODIO_API_KEY;
 
     if (!apiKey) {
       throw new Error('GEOCODIO_API_KEY environment variable is not set');

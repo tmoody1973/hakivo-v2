@@ -1,31 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { updateUserProfile, saveOnboardingPreferences } from '@/lib/api/backend';
+import { saveOnboardingPreferences } from '@/lib/api/backend';
+import { useAuth } from '@/lib/auth/auth-context';
 
+// Interest categories matching backend USER_INTERESTS schema
 const POLICY_INTERESTS = [
-  { id: 'environment-energy', label: 'Environment & Energy', icon: '🌱' },
-  { id: 'health-welfare', label: 'Health & Social Welfare', icon: '🏥' },
-  { id: 'economy-finance', label: 'Economy & Finance', icon: '💰' },
-  { id: 'education-science', label: 'Education & Science', icon: '🎓' },
-  { id: 'civil-rights-law', label: 'Civil Rights & Law', icon: '⚖️' },
-  { id: 'commerce-labor', label: 'Commerce & Labor', icon: '🏭' },
-  { id: 'government-politics', label: 'Government & Politics', icon: '🏛️' },
-  { id: 'foreign-policy-defense', label: 'Foreign Policy & Defense', icon: '🌍' },
-  { id: 'housing-urban', label: 'Housing & Urban Development', icon: '🏘️' },
-  { id: 'agriculture-food', label: 'Agriculture & Food', icon: '🌾' },
-  { id: 'sports-arts-culture', label: 'Sports, Arts & Culture', icon: '🎨' },
-  { id: 'immigration-indigenous', label: 'Immigration & Indigenous Issues', icon: '🗽' },
+  { name: 'Environment & Energy', icon: '🌱' },
+  { name: 'Health & Social Welfare', icon: '🏥' },
+  { name: 'Economy & Finance', icon: '💰' },
+  { name: 'Education & Science', icon: '🎓' },
+  { name: 'Civil Rights & Law', icon: '⚖️' },
+  { name: 'Commerce & Labor', icon: '🏭' },
+  { name: 'Government & Politics', icon: '🏛️' },
+  { name: 'Foreign Policy & Defense', icon: '🌍' },
+  { name: 'Housing & Urban Development', icon: '🏘️' },
+  { name: 'Agriculture & Food', icon: '🌾' },
+  { name: 'Sports, Arts & Culture', icon: '🎨' },
+  { name: 'Immigration & Indigenous Issues', icon: '🗽' },
 ];
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { accessToken, isAuthenticated, isLoading, updateUser, user } = useAuth();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [representatives, setRepresentatives] = useState<any[] | null>(null);
+  const [district, setDistrict] = useState<any | null>(null);
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.push('/auth/signin');
+    }
+  }, [isAuthenticated, isLoading, router]);
 
   // Step 1: Personal Information
   const [firstName, setFirstName] = useState('');
@@ -36,11 +49,11 @@ export default function OnboardingPage() {
   // Step 2: Policy Interests
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
-  const handleInterestToggle = (interestId: string) => {
+  const handleInterestToggle = (interestName: string) => {
     setSelectedInterests((prev) =>
-      prev.includes(interestId)
-        ? prev.filter((id) => id !== interestId)
-        : [...prev, interestId]
+      prev.includes(interestName)
+        ? prev.filter((name) => name !== interestName)
+        : [...prev, interestName]
     );
   };
 
@@ -59,32 +72,38 @@ export default function OnboardingPage() {
   };
 
   const handleComplete = async () => {
+    console.log('[OnboardingPage] handleComplete called');
+    console.log('[OnboardingPage] selectedInterests:', selectedInterests);
+    console.log('[OnboardingPage] accessToken exists:', !!accessToken);
+    console.log('[OnboardingPage] firstName:', firstName);
+    console.log('[OnboardingPage] lastName:', lastName);
+    console.log('[OnboardingPage] zipCode:', zipCode);
+    console.log('[OnboardingPage] city:', city);
+
     if (selectedInterests.length === 0) {
-      alert('Please select at least one policy interest');
+      setError('Please select at least one policy interest');
+      return;
+    }
+
+    if (!accessToken) {
+      setError('Not authenticated. Please sign in again.');
+      router.push('/auth/signin');
       return;
     }
 
     setIsSubmitting(true);
+    setError(null);
+
+    console.log('[OnboardingPage] About to call saveOnboardingPreferences...');
 
     try {
-      // TODO: Get actual access token from WorkOS session
-      const mockAccessToken = 'mock_access_token';
-
-      // Save user profile
-      const profileResponse = await updateUserProfile(mockAccessToken, {
+      // Call onboarding endpoint with all data
+      const response = await saveOnboardingPreferences(accessToken, {
+        policyInterests: selectedInterests,
         firstName,
         lastName,
         zipCode,
         city,
-      });
-
-      if (!profileResponse.success) {
-        throw new Error('Failed to save profile');
-      }
-
-      // Save onboarding preferences
-      const preferencesResponse = await saveOnboardingPreferences(mockAccessToken, {
-        policyInterests: selectedInterests,
         briefingTime: '08:00', // Default to 8 AM
         briefingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], // Default weekdays
         playbackSpeed: 1.0,
@@ -92,15 +111,46 @@ export default function OnboardingPage() {
         emailNotifications: true,
       });
 
-      if (!preferencesResponse.success) {
-        throw new Error('Failed to save preferences');
+      console.log('[OnboardingPage] saveOnboardingPreferences returned:', response);
+
+      if (!response.success) {
+        console.error('[OnboardingPage] Response not successful:', response.error);
+        throw new Error(response.error?.message || 'Failed to save preferences');
       }
 
-      // Redirect to dashboard
-      router.push('/dashboard');
+      console.log('[OnboardingPage] Response successful, data:', response.data);
+
+      // Store representatives and district info from response
+      // The backend returns representatives and district at the root level of response.data
+      const responseData = response.data as any;
+      if (responseData?.representatives) {
+        console.log('[OnboardingPage] Found representatives:', responseData.representatives);
+        setRepresentatives(responseData.representatives);
+      }
+      if (responseData?.district) {
+        console.log('[OnboardingPage] Found district:', responseData.district);
+        setDistrict(responseData.district);
+      }
+
+      // Update user in auth context to mark onboarding as completed
+      updateUser({
+        firstName,
+        lastName,
+        email: user?.email || '',
+        id: user?.id || '',
+        emailVerified: user?.emailVerified || false,
+        onboardingCompleted: true,
+      } as any);
+
+      // Move to step 3 to show representatives, or redirect if none found
+      if (responseData?.representatives && responseData.representatives.length > 0) {
+        setStep(3);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (error) {
       console.error('Onboarding error:', error);
-      alert('Failed to complete onboarding. Please try again.');
+      setError(error instanceof Error ? error.message : 'Failed to complete onboarding. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -119,14 +169,22 @@ export default function OnboardingPage() {
           <div className="flex items-center gap-2 mt-4">
             <div className={`h-2 flex-1 rounded-full ${step >= 1 ? 'bg-blue-600' : 'bg-gray-200'}`} />
             <div className={`h-2 flex-1 rounded-full ${step >= 2 ? 'bg-blue-600' : 'bg-gray-200'}`} />
+            <div className={`h-2 flex-1 rounded-full ${step >= 3 ? 'bg-blue-600' : 'bg-gray-200'}`} />
           </div>
           <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mt-1">
             <span>Personal Info</span>
             <span>Policy Interests</span>
+            <span>Your Representatives</span>
           </div>
         </CardHeader>
 
         <CardContent>
+          {/* Error Message */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
           {/* Step 1: Personal Information */}
           {step === 1 && (
             <div className="space-y-6">
@@ -206,10 +264,10 @@ export default function OnboardingPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {POLICY_INTERESTS.map((interest) => (
                   <button
-                    key={interest.id}
-                    onClick={() => handleInterestToggle(interest.id)}
+                    key={interest.name}
+                    onClick={() => handleInterestToggle(interest.name)}
                     className={`p-4 rounded-lg border-2 transition-all text-left ${
-                      selectedInterests.includes(interest.id)
+                      selectedInterests.includes(interest.name)
                         ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20'
                         : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                     }`}
@@ -217,9 +275,9 @@ export default function OnboardingPage() {
                     <div className="flex items-center gap-3">
                       <span className="text-2xl">{interest.icon}</span>
                       <div className="flex-1">
-                        <div className="font-medium text-sm">{interest.label}</div>
+                        <div className="font-medium text-sm">{interest.name}</div>
                       </div>
-                      {selectedInterests.includes(interest.id) && (
+                      {selectedInterests.includes(interest.name) && (
                         <svg
                           className="w-5 h-5 text-blue-600"
                           fill="none"
@@ -254,6 +312,64 @@ export default function OnboardingPage() {
                   disabled={isSubmitting || selectedInterests.length === 0}
                 >
                   {isSubmitting ? 'Saving...' : 'Complete Setup'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Your Representatives */}
+          {step === 3 && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-xl font-semibold mb-2">Meet Your Representatives</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6">
+                  Based on your ZIP code {zipCode}, we found your Congressional representatives. We'll keep you informed about their voting activity and legislation they sponsor.
+                </p>
+                {district && (
+                  <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-4">
+                    Your Congressional District: {district.congressionalDistrict}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-4">
+                {representatives && representatives.map((rep) => (
+                  <div key={rep.bioguideId} className="border rounded-lg p-4 flex items-start gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h4 className="font-semibold text-lg">{rep.name}</h4>
+                        <span className="text-sm px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                          {rep.party}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                        {rep.chamber === 'Senate' ? 'U.S. Senator' : 'U.S. Representative'} from {rep.state}
+                        {rep.district !== null && ` - District ${rep.district}`}
+                      </p>
+                      {rep.officeAddress && (
+                        <p className="text-sm text-gray-500 dark:text-gray-500">
+                          📍 {rep.officeAddress}
+                        </p>
+                      )}
+                      {rep.phoneNumber && (
+                        <p className="text-sm text-gray-500 dark:text-gray-500">
+                          📞 {rep.phoneNumber}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  ✓ Your preferences have been saved! We'll use this information to personalize your legislative briefings.
+                </p>
+              </div>
+
+              <div className="flex justify-end pt-4">
+                <Button onClick={() => router.push('/dashboard')} size="lg">
+                  Go to Dashboard
                 </Button>
               </div>
             </div>

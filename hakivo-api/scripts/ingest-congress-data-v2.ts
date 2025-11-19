@@ -14,7 +14,7 @@
  */
 
 const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY;
-const ADMIN_DASHBOARD_URL = 'https://svc-01ka747hjpq5r2qk4ct00r3yyd.01k66gey30f48fys2tv4e412yt.lmapp.run';
+const ADMIN_DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 if (!CONGRESS_API_KEY) {
   console.error('❌ CONGRESS_API_KEY environment variable is required');
@@ -217,21 +217,26 @@ async function ingestBills(congress: number): Promise<void> {
 }
 
 /**
- * Ingest ALL members (not just for a specific congress)
- * This fetches from the complete member database
+ * Ingest members from 118th and 119th Congress only
  */
 async function ingestAllMembers(): Promise<void> {
-  console.log(`\n👥 Fetching ALL members from Congress database...`);
+  console.log(`\n👥 Fetching members from 118th and 119th Congress...`);
 
-  let offset = 0;
-  const limit = 250;
-  let hasMore = true;
+  const congresses = [118, 119];
+  const seenBioguideIds = new Set<string>();
 
-  while (hasMore) {
-    try {
-      // Fetch members with pagination - this gets ALL members, not just current congress
-      const data = await fetchCongressAPI(`/member?offset=${offset}&limit=${limit}`);
-      const members = data.members || [];
+  for (const congress of congresses) {
+    console.log(`  Fetching members for ${congress}th Congress...`);
+
+    let offset = 0;
+    const limit = 250;
+    let hasMore = true;
+
+    while (hasMore) {
+      try {
+        // Fetch members for specific congress
+        const data = await fetchCongressAPI(`/member/congress/${congress}?offset=${offset}&limit=${limit}`);
+        const members = data.members || [];
 
       if (members.length === 0) {
         hasMore = false;
@@ -298,9 +303,10 @@ async function ingestAllMembers(): Promise<void> {
         hasMore = false;
       }
 
-    } catch (error) {
-      console.error(`  ✗ Failed to fetch members batch at offset ${offset}:`, error);
-      hasMore = false;
+      } catch (error) {
+        console.error(`  ✗ Failed to fetch members batch at offset ${offset}:`, error);
+        hasMore = false;
+      }
     }
   }
 

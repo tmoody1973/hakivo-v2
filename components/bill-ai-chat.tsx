@@ -15,10 +15,15 @@ const suggestedQuestions = [
   "What's the bipartisan support?",
 ]
 
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export function BillAIChat() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
-      role: "assistant" as const,
+      role: "assistant",
       content:
         "Hi! I'm here to help you understand this bill. Ask me anything about its provisions, impact, or legislative process.",
     },
@@ -28,7 +33,7 @@ export function BillAIChat() {
   const handleSend = () => {
     if (!input.trim()) return
 
-    setMessages([...messages, { role: "user" as const, content: input }])
+    setMessages([...messages, { role: "user", content: input }])
     setInput("")
 
     // Simulate AI response
@@ -36,7 +41,7 @@ export function BillAIChat() {
       setMessages((prev) => [
         ...prev,
         {
-          role: "assistant" as const,
+          role: "assistant",
           content:
             "This is a simulated response. In production, this would use Cerebras AI to provide detailed analysis of the bill.",
         },

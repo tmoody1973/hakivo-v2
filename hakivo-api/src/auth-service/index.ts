@@ -6,6 +6,24 @@ import { Env } from './raindrop.gen';
 import * as jose from 'jose';
 import * as bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { WorkOS } from '@workos-inc/node';
+import { USER_INTERESTS, getInterestNames } from '../config/user-interests';
+
+// State abbreviation to full name mapping
+const STATE_ABBREVIATIONS: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri',
+  MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+  OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  DC: 'District of Columbia', AS: 'American Samoa', GU: 'Guam', MP: 'Northern Mariana Islands',
+  PR: 'Puerto Rico', VI: 'Virgin Islands'
+};
 
 // Validation schemas
 const RegisterSchema = z.object({
@@ -38,23 +56,46 @@ const VerifyEmailSchema = z.object({
   token: z.string()
 });
 
+const OnboardingSchema = z.object({
+  interests: z.array(z.string()).min(1, 'At least one interest required'),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  zipCode: z.string().regex(/^\d{5}$/).optional(),
+  city: z.string().optional()
+});
+
+const UpdateInterestsSchema = z.object({
+  interests: z.array(z.string()).min(1, 'At least one interest required')
+});
+
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: 'http://localhost:3000',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  credentials: false, // Changed to false to avoid preflight
+  exposeHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 600
 }));
+
+// Handle preflight OPTIONS requests explicitly
+app.options('*', (c) => {
+  c.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  c.header('Access-Control-Max-Age', '600');
+  return c.text('', 200);
+});
 
 /**
  * Generate JWT access token
  */
-async function generateAccessToken(userId: string, email: string): Promise<string> {
-  const jwtSecret = process.env.JWT_SECRET;
+async function generateAccessToken(userId: string, email: string, env: any): Promise<string> {
+  const jwtSecret = env.JWT_SECRET;
   if (!jwtSecret) {
     throw new Error('JWT_SECRET environment variable is not set');
   }
@@ -155,25 +196,42 @@ async function generatePasswordResetToken(
 /**
  * Verify JWT token
  */
-async function verifyAccessToken(token: string): Promise<{ userId: string; email: string } | null> {
+async function verifyAccessToken(token: string, env: any): Promise<{ userId: string; email: string } | null> {
   try {
-    const jwtSecret = process.env.JWT_SECRET;
+    console.log('[verifyAccessToken] Starting token verification');
+    console.log('[verifyAccessToken] Token (first 50 chars):', token?.substring(0, 50));
+
+    const jwtSecret = env.JWT_SECRET;
     if (!jwtSecret) {
+      console.error('[verifyAccessToken] JWT_SECRET not configured');
       throw new Error('JWT_SECRET not configured');
     }
 
+    console.log('[verifyAccessToken] JWT_SECRET exists:', !!jwtSecret);
+    console.log('[verifyAccessToken] JWT_SECRET length:', jwtSecret.length);
+
     const secret = new TextEncoder().encode(jwtSecret);
+    console.log('[verifyAccessToken] About to verify JWT...');
+
     const { payload } = await jose.jwtVerify(token, secret);
 
+    console.log('[verifyAccessToken] JWT verified successfully');
+    console.log('[verifyAccessToken] Payload:', payload);
+
     if (typeof payload.userId !== 'string' || typeof payload.email !== 'string') {
+      console.error('[verifyAccessToken] Invalid payload shape:', payload);
       return null;
     }
 
+    console.log('[verifyAccessToken] Token is valid, returning user info');
     return {
       userId: payload.userId,
       email: payload.email
     };
   } catch (error) {
+    console.error('[verifyAccessToken] Error verifying token:', error);
+    console.error('[verifyAccessToken] Error name:', error instanceof Error ? error.name : 'unknown');
+    console.error('[verifyAccessToken] Error message:', error instanceof Error ? error.message : 'unknown');
     return null;
   }
 }
@@ -313,7 +371,7 @@ app.post('/auth/register', async (c) => {
     console.log(`✓ User registered: ${email} (verification token: ${verificationToken})`);
 
     // Generate tokens
-    const accessToken = await generateAccessToken(userId, email);
+    const accessToken = await generateAccessToken(userId, email, c.env);
     const refreshToken = await generateRefreshToken(db, userId);
 
     return c.json({
@@ -386,7 +444,7 @@ app.post('/auth/login', async (c) => {
     const userId = result.id as string;
 
     // Generate tokens
-    const accessToken = await generateAccessToken(userId, email);
+    const accessToken = await generateAccessToken(userId, email, c.env);
     const refreshToken = await generateRefreshToken(db, userId);
 
     console.log(`✓ User logged in: ${email}`);
@@ -416,20 +474,35 @@ app.post('/auth/login', async (c) => {
 /**
  * POST /auth/refresh
  * Refresh access token using refresh token
+ * Accepts refresh token from query parameter or request body (to avoid CORS preflight)
  */
 app.post('/auth/refresh', async (c) => {
   try {
     const db = c.env.APP_DB;
 
-    // Validate input
-    const body = await c.req.json();
-    const validation = RefreshSchema.safeParse(body);
+    // Get refresh token from query parameter (preferred to avoid CORS preflight) or body
+    const refreshTokenFromQuery = c.req.query('refreshToken');
+    let refreshToken = refreshTokenFromQuery;
 
-    if (!validation.success) {
-      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    // If not in query, try to get from body
+    if (!refreshToken) {
+      try {
+        const body = await c.req.json();
+        const validation = RefreshSchema.safeParse(body);
+
+        if (!validation.success) {
+          return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+        }
+
+        refreshToken = validation.data.refreshToken;
+      } catch (e) {
+        return c.json({ error: 'No refresh token provided' }, 400);
+      }
     }
 
-    const { refreshToken } = validation.data;
+    if (!refreshToken) {
+      return c.json({ error: 'No refresh token provided' }, 400);
+    }
 
     // Get all refresh tokens (we need to check hash)
     const tokens = await db
@@ -468,7 +541,7 @@ app.post('/auth/refresh', async (c) => {
     }
 
     // Generate new access token
-    const accessToken = await generateAccessToken(userId, user.email as string);
+    const accessToken = await generateAccessToken(userId, user.email as string, c.env);
 
     console.log(`✓ Token refreshed for user: ${userId}`);
 
@@ -500,7 +573,7 @@ app.post('/auth/logout', async (c) => {
     }
 
     const token = authHeader.substring(7);
-    const payload = await verifyAccessToken(token);
+    const payload = await verifyAccessToken(token, c.env);
 
     if (!payload) {
       return c.json({ error: 'Invalid token' }, 401);
@@ -753,7 +826,7 @@ app.get('/auth/me', async (c) => {
     }
 
     const token = authHeader.substring(7);
-    const payload = await verifyAccessToken(token);
+    const payload = await verifyAccessToken(token, c.env);
 
     if (!payload) {
       return c.json({ error: 'Invalid or expired token' }, 401);
@@ -774,6 +847,968 @@ app.get('/auth/me', async (c) => {
     console.error('Get user error:', error);
     return c.json({
       error: 'Failed to get user',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// ============================================================================
+// WorkOS AuthKit Integration
+// ============================================================================
+
+/**
+ * GET /auth/workos/login
+ * Redirect to WorkOS AuthKit for authentication
+ */
+app.get('/auth/workos/login', async (c) => {
+  try {
+    const workosApiKey = c.env.WORKOS_API_KEY;
+    const workosClientId = c.env.WORKOS_CLIENT_ID;
+    const workosRedirectUri = c.env.WORKOS_REDIRECT_URI;
+
+    if (!workosApiKey || !workosClientId || !workosRedirectUri) {
+      return c.json({
+        error: 'WorkOS configuration missing',
+        message: 'WORKOS_API_KEY, WORKOS_CLIENT_ID, and WORKOS_REDIRECT_URI must be set'
+      }, 500);
+    }
+
+    const workos = new WorkOS(workosApiKey);
+
+    // Generate authorization URL
+    const authorizationUrl = workos.userManagement.getAuthorizationUrl({
+      provider: 'authkit',
+      clientId: workosClientId,
+      redirectUri: workosRedirectUri,
+    });
+
+    console.log(`✓ Redirecting to WorkOS AuthKit: ${authorizationUrl}`);
+
+    return c.redirect(authorizationUrl);
+  } catch (error) {
+    console.error('WorkOS login error:', error);
+    return c.json({
+      error: 'WorkOS login failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /auth/workos/callback
+ * Handle WorkOS callback and create user session
+ */
+app.get('/auth/workos/callback', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const workosApiKey = c.env.WORKOS_API_KEY;
+    const workosClientId = c.env.WORKOS_CLIENT_ID;
+
+    if (!workosApiKey || !workosClientId) {
+      return c.json({
+        error: 'WorkOS configuration missing'
+      }, 500);
+    }
+
+    // Get authorization code from query params
+    const code = c.req.query('code');
+    if (!code) {
+      return c.json({ error: 'Missing authorization code' }, 400);
+    }
+
+    const workos = new WorkOS(workosApiKey);
+
+    // Exchange code for user profile
+    const { user } = await workos.userManagement.authenticateWithCode({
+      code,
+      clientId: workosClientId,
+    });
+
+    console.log(`✓ WorkOS user authenticated: ${user.email}`);
+
+    // Check if user exists in database
+    let existingUser = await db
+      .prepare('SELECT * FROM users WHERE email = ?')
+      .bind(user.email)
+      .first();
+
+    console.log('[WorkOS Callback] Existing user check:', {
+      email: user.email,
+      existingUserFound: !!existingUser,
+      onboardingCompleted: existingUser ? existingUser.onboarding_completed : null,
+      userId: existingUser ? existingUser.id : null
+    });
+
+    let userId: string;
+
+    if (!existingUser) {
+      // Create new user from WorkOS profile
+      userId = crypto.randomUUID();
+      const now = Date.now();
+
+      await db
+        .prepare(
+          `INSERT INTO users (
+            id, email, first_name, last_name, workos_user_id,
+            email_verified, onboarding_completed, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          userId,
+          user.email,
+          user.firstName || '',
+          user.lastName || '',
+          user.id,
+          user.emailVerified ? 1 : 0,
+          0,
+          now,
+          now
+        )
+        .run();
+
+      console.log(`✓ Created new user from WorkOS: ${user.email}`);
+    } else {
+      userId = existingUser.id as string;
+
+      // Update WorkOS user ID if not set
+      if (!existingUser.workos_user_id) {
+        await db
+          .prepare('UPDATE users SET workos_user_id = ?, updated_at = ? WHERE id = ?')
+          .bind(user.id, Date.now(), userId)
+          .run();
+      }
+
+      console.log(`✓ Existing user logged in via WorkOS: ${user.email}`);
+    }
+
+    // Generate tokens
+    const accessToken = await generateAccessToken(userId, user.email, c.env);
+    const refreshToken = await generateRefreshToken(db, userId);
+
+    // Store session in session-cache KV
+    const sessionId = crypto.randomUUID();
+    await c.env.SESSION_CACHE.put(
+      `session:${sessionId}`,
+      JSON.stringify({
+        userId,
+        email: user.email,
+        workosUserId: user.id,
+        createdAt: Date.now()
+      }),
+      { expirationTtl: 30 * 24 * 60 * 60 } // 30 days
+    );
+
+    // Return tokens and redirect info
+    // In production, you'd redirect to your frontend with tokens in secure cookies
+    const onboardingStatus = existingUser ? Boolean(existingUser.onboarding_completed) : false;
+
+    console.log('[WorkOS Callback] Returning user data:', {
+      userId,
+      email: user.email,
+      existingUserFound: !!existingUser,
+      rawOnboardingValue: existingUser ? existingUser.onboarding_completed : null,
+      onboardingCompleted: onboardingStatus
+    });
+
+    return c.json({
+      success: true,
+      message: 'Authentication successful',
+      accessToken,
+      refreshToken,
+      sessionId,
+      user: {
+        id: userId,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        emailVerified: user.emailVerified,
+        onboardingCompleted: onboardingStatus
+      }
+    });
+  } catch (error) {
+    console.error('WorkOS callback error:', error);
+    return c.json({
+      error: 'WorkOS callback failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /auth/workos/logout
+ * End WorkOS session
+ */
+app.get('/auth/workos/logout', async (c) => {
+  try {
+    const workosApiKey = c.env.WORKOS_API_KEY;
+
+    if (!workosApiKey) {
+      return c.json({ error: 'WorkOS not configured' }, 500);
+    }
+
+    const workos = new WorkOS(workosApiKey);
+
+    // Get session ID from query or header
+    const sessionId = c.req.query('sessionId') || c.req.header('X-Session-ID');
+
+    if (!sessionId) {
+      return c.json({ error: 'Session ID required' }, 400);
+    }
+
+    // Delete session from KV cache
+    await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
+    console.log(`✓ Deleted session: ${sessionId}`);
+
+    // Get WorkOS logout URL with session ID
+    const logoutUrl = workos.userManagement.getLogoutUrl({
+      sessionId: sessionId
+    });
+
+    console.log(`✓ Redirecting to WorkOS logout`);
+
+    return c.redirect(logoutUrl);
+  } catch (error) {
+    console.error('WorkOS logout error:', error);
+    return c.json({
+      error: 'Logout failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /auth/onboarding
+ * Get available interest categories for onboarding
+ */
+app.get('/auth/onboarding', async (c) => {
+  try {
+    // Return all available interest categories
+    const interests = USER_INTERESTS.map(interest => ({
+      name: interest.interest,
+      policyAreas: interest.policy_areas,
+      keywords: interest.keywords
+    }));
+
+    return c.json({
+      success: true,
+      interests
+    });
+  } catch (error) {
+    console.error('Get onboarding interests error:', error);
+    return c.json({
+      error: 'Failed to get interests',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/onboarding
+ * Complete onboarding with user interests and optional personal info
+ * Accepts token via query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS)
+ */
+app.post('/auth/onboarding', async (c) => {
+  try {
+    // Get token from query parameter (to avoid CORS preflight)
+    const tokenFromQuery = c.req.query('token');
+
+    // Also check Authorization header as fallback
+    const authHeader = c.req.header('Authorization');
+    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+    const token = tokenFromQuery || tokenFromHeader;
+
+    if (!token) {
+      return c.json({ error: 'Unauthorized - No token provided' }, 401);
+    }
+
+    const user = await verifyAccessToken(token, c.env);
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized - Invalid token' }, 401);
+    }
+
+    // Parse request body (handle both text/plain and application/json Content-Type)
+    const bodyText = await c.req.text();
+    let body;
+    try {
+      body = JSON.parse(bodyText);
+    } catch (e) {
+      return c.json({ error: 'Invalid JSON in request body' }, 400);
+    }
+
+    const validation = OnboardingSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({
+        error: 'Validation failed',
+        details: validation.error.issues
+      }, 400);
+    }
+
+    const { interests, firstName, lastName, zipCode, city } = validation.data;
+
+    // Validate interests against available categories
+    const validInterestNames = getInterestNames();
+    const invalidInterests = interests.filter(i => !validInterestNames.includes(i));
+
+    if (invalidInterests.length > 0) {
+      return c.json({
+        error: 'Invalid interests',
+        invalidInterests,
+        validInterests: validInterestNames
+      }, 400);
+    }
+
+    // Variables to store district and representative information
+    let stateCode: string | null = null;
+    let districtNumber: number | null = null;
+    let representatives: any[] = [];
+
+    // Update user personal info if provided
+    const db = c.env.APP_DB;
+
+    // Look up district information first if zipCode is provided
+    if (zipCode) {
+      try {
+        const districtInfo = await c.env.GEOCODIO_CLIENT.lookupDistrict(zipCode);
+        if (districtInfo) {
+
+            // Store state and district for representatives lookup
+            stateCode = districtInfo.state;
+            districtNumber = parseInt(districtInfo.district, 10);
+
+            console.log(`✓ Geocodio lookup: ${zipCode} → ${districtInfo.state}-${districtInfo.district}`);
+
+            // Convert state abbreviation to full name for database query
+            const stateFullName = STATE_ABBREVIATIONS[stateCode] || stateCode;
+            console.log(`✓ Converting state: ${stateCode} → ${stateFullName}`);
+
+            // Query members table to find user's representatives
+            // Get 2 senators (district is NULL)
+            const senators = await db
+              .prepare('SELECT * FROM members WHERE state = ? AND district IS NULL AND current_member = 1 LIMIT 2')
+              .bind(stateFullName)
+              .all();
+
+            // Get 1 house representative
+            const houseRep = await db
+              .prepare('SELECT * FROM members WHERE state = ? AND district = ? AND current_member = 1 LIMIT 1')
+              .bind(stateFullName, districtNumber)
+              .first();
+
+            // Build representatives array
+            if (senators.results && senators.results.length > 0) {
+              representatives.push(...senators.results.map((sen: any) => ({
+                bioguideId: sen.bioguide_id,
+                name: `${sen.first_name} ${sen.last_name}`,
+                firstName: sen.first_name,
+                lastName: sen.last_name,
+                party: sen.party,
+                state: sen.state,
+                chamber: 'Senate',
+                district: null,
+                imageUrl: sen.image_url,
+                officeAddress: sen.office_address,
+                phoneNumber: sen.phone_number,
+                url: sen.url
+              })));
+            }
+
+            if (houseRep) {
+              representatives.push({
+                bioguideId: houseRep.bioguide_id,
+                name: `${houseRep.first_name} ${houseRep.last_name}`,
+                firstName: houseRep.first_name,
+                lastName: houseRep.last_name,
+                party: houseRep.party,
+                state: houseRep.state,
+                chamber: 'House',
+                district: houseRep.district,
+                imageUrl: houseRep.image_url,
+                officeAddress: houseRep.office_address,
+                phoneNumber: houseRep.phone_number,
+                url: houseRep.url
+              });
+            }
+
+            console.log(`✓ Found ${representatives.length} representatives for ${stateCode}-${districtNumber}`);
+        }
+      } catch (error) {
+        console.warn('Failed to lookup district:', error);
+        // Continue without district info
+      }
+    }
+
+    // Update users table with personal info, city, zipCode, and congressional district
+    const userUpdates: string[] = [];
+    const userBinds: any[] = [];
+
+    if (firstName) {
+      userUpdates.push('first_name = ?');
+      userBinds.push(firstName);
+    }
+    if (lastName) {
+      userUpdates.push('last_name = ?');
+      userBinds.push(lastName);
+    }
+    if (city) {
+      userUpdates.push('city = ?');
+      userBinds.push(city);
+    }
+    if (zipCode) {
+      userUpdates.push('zip_code = ?');
+      userBinds.push(zipCode);
+    }
+    if (stateCode && districtNumber !== null) {
+      userUpdates.push('congressional_district = ?');
+      userBinds.push(`${stateCode}-${districtNumber}`);
+    }
+
+    if (userUpdates.length > 0) {
+      userUpdates.push('updated_at = ?');
+      userBinds.push(Date.now());
+      userBinds.push(user.userId);
+
+      await db
+        .prepare(`UPDATE users SET ${userUpdates.join(', ')} WHERE id = ?`)
+        .bind(...userBinds)
+        .run();
+
+      console.log(`✓ Updated user info for ${user.userId}:`, { firstName, lastName, city, zipCode, congressionalDistrict: stateCode && districtNumber !== null ? `${stateCode}-${districtNumber}` : null });
+    }
+
+    // Update user preferences with interests, state, and district
+    // Check if preferences exist
+    const existingPrefs = await db
+      .prepare('SELECT * FROM user_preferences WHERE user_id = ?')
+      .bind(user.userId)
+      .first();
+
+    if (existingPrefs) {
+      // Update existing preferences
+      const updates: string[] = ['policy_interests = ?'];
+      const binds: any[] = [JSON.stringify(interests)];
+
+      if (zipCode) {
+        updates.push('zipcode = ?');
+        binds.push(zipCode);
+      }
+      if (stateCode) {
+        updates.push('state = ?');
+        binds.push(stateCode);
+      }
+      if (districtNumber !== null) {
+        updates.push('district = ?');
+        binds.push(districtNumber);
+      }
+
+      binds.push(user.userId);
+      await db
+        .prepare(`UPDATE user_preferences SET ${updates.join(', ')} WHERE user_id = ?`)
+        .bind(...binds)
+        .run();
+    } else {
+      // Create new preferences
+      await db
+        .prepare(
+          `INSERT INTO user_preferences (user_id, policy_interests, zipcode, state, district, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          user.userId,
+          JSON.stringify(interests),
+          zipCode || null,
+          stateCode,
+          districtNumber,
+          Date.now(),
+          Date.now()
+        )
+        .run();
+    }
+
+    // Mark onboarding as completed
+    await db
+      .prepare('UPDATE users SET onboarding_completed = ?, updated_at = ? WHERE id = ?')
+      .bind(1, Date.now(), user.userId)
+      .run();
+
+    console.log(`✓ Onboarding completed for user: ${user.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'Onboarding completed successfully',
+      interests,
+      representatives: representatives.length > 0 ? representatives : undefined,
+      district: stateCode && districtNumber !== null ? {
+        state: stateCode,
+        district: districtNumber,
+        congressionalDistrict: `${stateCode}-${districtNumber}`
+      } : undefined
+    });
+  } catch (error) {
+    console.error('Onboarding error:', error);
+    return c.json({
+      error: 'Onboarding failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /auth/settings
+ * Get current user preferences
+ * Accepts token via query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS)
+ */
+app.get('/auth/settings', async (c) => {
+  try {
+    // Get token from query parameter (to avoid CORS preflight)
+    const tokenFromQuery = c.req.query('token');
+
+    // Also check Authorization header as fallback
+    const authHeader = c.req.header('Authorization');
+    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+    const token = tokenFromQuery || tokenFromHeader;
+
+    if (!token) {
+      return c.json({ error: 'Unauthorized - No token provided' }, 401);
+    }
+
+    const user = await verifyAccessToken(token, c.env);
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized - Invalid token' }, 401);
+    }
+
+    // Get preferences from user-service
+    console.log('[auth-service] Getting preferences for user:', user.userId);
+    const preferences = await c.env.USER_SERVICE.getPreferences(user.userId);
+    console.log('[auth-service] Got preferences:', preferences);
+
+    // Get user details
+    console.log('[auth-service] Getting user details for user:', user.userId);
+    const userDetails = await c.env.USER_SERVICE.getUserById(user.userId);
+    console.log('[auth-service] Got user details:', userDetails);
+
+    return c.json({
+      success: true,
+      preferences,
+      user: userDetails ? {
+        firstName: userDetails.firstName,
+        lastName: userDetails.lastName,
+        zipCode: userDetails.zipCode,
+        city: userDetails.city,
+        congressionalDistrict: userDetails.congressionalDistrict
+      } : null
+    });
+  } catch (error) {
+    console.error('Get settings error:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+    return c.json({
+      error: 'Failed to get settings',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * PUT /auth/settings/interests
+ * Update user interests
+ */
+app.put('/auth/settings/interests', async (c) => {
+  try {
+    // Verify JWT token
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return c.json({ error: 'Unauthorized - No token provided' }, 401);
+    }
+
+    const token = authHeader.substring(7);
+    const user = await verifyAccessToken(token, c.env);
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized - Invalid token' }, 401);
+    }
+
+    // Validate request body
+    const body = await c.req.json();
+    const validation = UpdateInterestsSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({
+        error: 'Validation failed',
+        details: validation.error.issues
+      }, 400);
+    }
+
+    const { interests } = validation.data;
+
+    // Validate interests against available categories
+    const validInterestNames = getInterestNames();
+    const invalidInterests = interests.filter(i => !validInterestNames.includes(i));
+
+    if (invalidInterests.length > 0) {
+      return c.json({
+        error: 'Invalid interests',
+        invalidInterests,
+        validInterests: validInterestNames
+      }, 400);
+    }
+
+    // Update preferences
+    await c.env.USER_SERVICE.updatePreferences(user.userId, {
+      policyInterests: interests
+    });
+
+    console.log(`✓ Updated interests for user: ${user.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'Interests updated successfully',
+      interests
+    });
+  } catch (error) {
+    console.error('Update interests error:', error);
+    return c.json({
+      error: 'Failed to update interests',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/backfill-location
+ * Backfill missing city, zip_code, and congressional_district for current user
+ * Uses zipcode from user_preferences to lookup and populate users table
+ * Accepts token via query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS)
+ */
+app.post('/auth/backfill-location', async (c) => {
+  try {
+    // Get token from query parameter (to avoid CORS preflight)
+    const tokenFromQuery = c.req.query('token');
+
+    // Also check Authorization header as fallback
+    const authHeader = c.req.header('Authorization');
+    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+    const token = tokenFromQuery || tokenFromHeader;
+
+    // Debug logging
+    console.log('[Backfill] Query token exists:', !!tokenFromQuery);
+    console.log('[Backfill] Header token exists:', !!tokenFromHeader);
+    console.log('[Backfill] Final token exists:', !!token);
+    console.log('[Backfill] Token preview:', token ? `${token.substring(0, 20)}...` : 'null');
+
+    if (!token) {
+      console.error('[Backfill] No token provided - tokenFromQuery:', tokenFromQuery, 'tokenFromHeader:', tokenFromHeader);
+      return c.json({ error: 'Unauthorized - No token provided' }, 401);
+    }
+
+    const user = await verifyAccessToken(token, c.env);
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized - Invalid token' }, 401);
+    }
+
+    const db = c.env.APP_DB;
+
+    // Get user's current data
+    const userRecord = await db
+      .prepare('SELECT * FROM users WHERE id = ?')
+      .bind(user.userId)
+      .first();
+
+    if (!userRecord) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    // Check if user already has location data
+    if (userRecord.zip_code && userRecord.city && userRecord.congressional_district) {
+      return c.json({
+        success: true,
+        message: 'User already has complete location data',
+        data: {
+          zipCode: userRecord.zip_code,
+          city: userRecord.city,
+          congressionalDistrict: userRecord.congressional_district
+        }
+      });
+    }
+
+    // Get zipcode from user_preferences
+    const prefs = await db
+      .prepare('SELECT zipcode, state, district FROM user_preferences WHERE user_id = ?')
+      .bind(user.userId)
+      .first();
+
+    if (!prefs || !prefs.zipcode) {
+      return c.json({
+        error: 'No zipcode found in user preferences',
+        message: 'Please complete onboarding first or update your profile with a ZIP code'
+      }, 400);
+    }
+
+    const zipCode = prefs.zipcode as string;
+
+    // Look up district information
+    const districtInfo = await c.env.GEOCODIO_CLIENT.lookupDistrict(zipCode);
+
+    if (!districtInfo) {
+      return c.json({
+        error: 'Failed to lookup congressional district',
+        message: `Could not find district information for ZIP code ${zipCode}`
+      }, 400);
+    }
+
+    const congressionalDistrict = `${districtInfo.state}-${districtInfo.district}`;
+
+    // Update users table
+    await db
+      .prepare(`
+        UPDATE users
+        SET
+          zip_code = ?,
+          city = ?,
+          congressional_district = ?,
+          updated_at = ?
+        WHERE id = ?
+      `)
+      .bind(
+        zipCode,
+        districtInfo.city || '',
+        congressionalDistrict,
+        Date.now(),
+        user.userId
+      )
+      .run();
+
+    console.log(`✓ Backfilled location for user ${user.userId}: ${zipCode}, ${districtInfo.city}, ${congressionalDistrict}`);
+
+    return c.json({
+      success: true,
+      message: 'Location data backfilled successfully',
+      data: {
+        zipCode,
+        city: districtInfo.city,
+        congressionalDistrict
+      }
+    });
+  } catch (error) {
+    console.error('Backfill location error:', error);
+    return c.json({
+      error: 'Failed to backfill location',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /auth/preferences
+ * Update user preferences (handles ZIP code changes properly)
+ * Accepts token via query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS)
+ * Uses POST instead of PUT to avoid CORS preflight (PUT always triggers OPTIONS)
+ */
+app.post('/auth/preferences', async (c) => {
+  try {
+    // Get token from query parameter (to avoid CORS preflight)
+    const tokenFromQuery = c.req.query('token');
+
+    // Also check Authorization header as fallback
+    const authHeader = c.req.header('Authorization');
+    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+
+    const token = tokenFromQuery || tokenFromHeader;
+
+    if (!token) {
+      return c.json({ error: 'Unauthorized - No token provided' }, 401);
+    }
+
+    const user = await verifyAccessToken(token, c.env);
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized - Invalid token' }, 401);
+    }
+
+    const db = c.env.APP_DB;
+    const body = await c.req.json();
+
+    const {
+      zipCode,
+      policyInterests,
+      briefingTime,
+      emailNotifications,
+      playbackSpeed,
+      autoPlay
+    } = body;
+
+    // Get current preferences
+    const currentPrefs = await db
+      .prepare('SELECT * FROM user_preferences WHERE user_id = ?')
+      .bind(user.userId)
+      .first();
+
+    // Check if ZIP code is changing
+    const isZipCodeChanged = zipCode && currentPrefs && zipCode !== currentPrefs.zipcode;
+
+    let districtInfo = null;
+    if (isZipCodeChanged) {
+      // Look up new congressional district
+      districtInfo = await c.env.GEOCODIO_CLIENT.lookupDistrict(zipCode);
+
+      if (!districtInfo) {
+        return c.json({
+          error: 'Invalid ZIP code',
+          message: `Could not find congressional district for ZIP code ${zipCode}`
+        }, 400);
+      }
+
+      // Update users table with new location data
+      const congressionalDistrict = `${districtInfo.state}-${districtInfo.district}`;
+
+      await db
+        .prepare(`
+          UPDATE users
+          SET
+            zip_code = ?,
+            city = ?,
+            congressional_district = ?,
+            updated_at = ?
+          WHERE id = ?
+        `)
+        .bind(
+          zipCode,
+          districtInfo.city || '',
+          congressionalDistrict,
+          Date.now(),
+          user.userId
+        )
+        .run();
+
+      console.log(`✓ Updated location for user ${user.userId}: ${zipCode}, ${districtInfo.city}, ${congressionalDistrict}`);
+    }
+
+    // Update user_preferences table (only columns that exist)
+    const updates: string[] = [];
+    const binds: any[] = [];
+
+    if (policyInterests !== undefined) {
+      updates.push('policy_interests = ?');
+      binds.push(JSON.stringify(policyInterests));
+    }
+
+    if (zipCode !== undefined) {
+      updates.push('zipcode = ?');
+      binds.push(zipCode);
+
+      if (districtInfo) {
+        updates.push('state = ?');
+        binds.push(districtInfo.state);
+
+        updates.push('district = ?');
+        binds.push(districtInfo.district);
+      }
+    }
+
+    // Note: Only updating zipcode, state, district, and policy_interests
+    // Other fields (briefingTime, emailNotifications, playbackSpeed, autoPlay)
+    // don't exist in current schema
+
+    if (updates.length > 0) {
+      updates.push('updated_at = ?');
+      binds.push(Date.now());
+      binds.push(user.userId);
+
+      await db
+        .prepare(`UPDATE user_preferences SET ${updates.join(', ')} WHERE user_id = ?`)
+        .bind(...binds)
+        .run();
+
+      console.log(`✓ Updated preferences for user ${user.userId}`);
+    }
+
+    return c.json({
+      success: true,
+      message: 'Preferences updated successfully',
+      districtUpdated: isZipCodeChanged,
+      newDistrict: districtInfo ? {
+        state: districtInfo.state,
+        district: districtInfo.district,
+        city: districtInfo.city,
+        congressionalDistrict: `${districtInfo.state}-${districtInfo.district}`
+      } : undefined
+    });
+  } catch (error) {
+    console.error('Update preferences error:', error);
+    return c.json({
+      error: 'Failed to update preferences',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /auth/debug/env
+ * Debug endpoint to check environment variables
+ */
+app.get('/auth/debug/env', async (c) => {
+  return c.json({
+    JWT_SECRET_EXISTS: !!c.env.JWT_SECRET,
+    JWT_SECRET_LENGTH: c.env.JWT_SECRET?.length || 0,
+    WORKOS_API_KEY_EXISTS: !!c.env.WORKOS_API_KEY,
+    WORKOS_CLIENT_ID_EXISTS: !!c.env.WORKOS_CLIENT_ID,
+    GEOCODIO_API_KEY_EXISTS: !!c.env.GEOCODIO_API_KEY,
+  });
+});
+
+/**
+ * GET /auth/debug/user
+ * Debug endpoint to check user onboarding status
+ * Query params: email or userId
+ */
+app.get('/auth/debug/user', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const email = c.req.query('email');
+    const userId = c.req.query('userId');
+
+    if (!email && !userId) {
+      return c.json({ error: 'Please provide email or userId query parameter' }, 400);
+    }
+
+    let user;
+    if (email) {
+      user = await db
+        .prepare('SELECT id, email, first_name, last_name, onboarding_completed, email_verified, workos_user_id, created_at FROM users WHERE email = ?')
+        .bind(email)
+        .first();
+    } else {
+      user = await db
+        .prepare('SELECT id, email, first_name, last_name, onboarding_completed, email_verified, workos_user_id, created_at FROM users WHERE id = ?')
+        .bind(userId)
+        .first();
+    }
+
+    if (!user) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    return c.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        onboardingCompleted: user.onboarding_completed,
+        onboardingCompletedBoolean: Boolean(user.onboarding_completed),
+        emailVerified: user.email_verified,
+        workosUserId: user.workos_user_id,
+        createdAt: user.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Debug user error:', error);
+    return c.json({
+      error: 'Failed to fetch user',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   playback_speed REAL DEFAULT 1.0,
   autoplay BOOLEAN DEFAULT TRUE,
   email_notifications BOOLEAN DEFAULT TRUE,
+  state TEXT,
+  district INTEGER,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 

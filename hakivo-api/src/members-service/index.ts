@@ -433,6 +433,157 @@ app.get('/members/parties', async (c) => {
   }
 });
 
+/**
+ * GET /members/my-representatives
+ * Get the current user's representatives (2 senators + 1 house rep)
+ * Requires authentication
+ */
+app.get('/members/my-representatives', async (c) => {
+  try {
+    // Verify authentication
+    const authHeader = c.req.header('Authorization');
+    const user = await verifyAuth(authHeader);
+
+    if (!user) {
+      return c.json({
+        error: 'Unauthorized',
+        message: 'Valid authentication required'
+      }, 401);
+    }
+
+    const db = c.env.APP_DB;
+
+    // Get user's congressional district from users table
+    const userRecord = await db
+      .prepare('SELECT congressional_district, zip_code FROM users WHERE id = ?')
+      .bind(user.userId)
+      .first() as any;
+
+    if (!userRecord || !userRecord.congressional_district) {
+      return c.json({
+        error: 'Location not set',
+        message: 'Please update your ZIP code in settings to see your representatives'
+      }, 400);
+    }
+
+    // Parse congressional_district (format: "WI-4" or "WI-04")
+    const [state, districtStr] = userRecord.congressional_district.split('-');
+    const district = districtStr; // Keep as string (can be "4" or "04")
+
+    // Get senators (no district, from this state)
+    const senatorsResult = await db
+      .prepare(`
+        SELECT
+          bioguide_id,
+          first_name,
+          middle_name,
+          last_name,
+          party,
+          state,
+          district,
+          image_url,
+          current_member,
+          current_term_type,
+          current_term_start,
+          current_term_end,
+          phone_number,
+          url,
+          office_address
+        FROM members
+        WHERE state = ?
+          AND district IS NULL
+          AND current_member = 1
+        ORDER BY last_name
+      `)
+      .bind(state)
+      .all();
+
+    // Get house representative (from this state + district)
+    const houseResult = await db
+      .prepare(`
+        SELECT
+          bioguide_id,
+          first_name,
+          middle_name,
+          last_name,
+          party,
+          state,
+          district,
+          image_url,
+          current_member,
+          current_term_type,
+          current_term_start,
+          current_term_end,
+          phone_number,
+          url,
+          office_address
+        FROM members
+        WHERE state = ?
+          AND (district = ? OR district = ?)
+          AND current_member = 1
+        LIMIT 1
+      `)
+      .bind(state, district, district.padStart(2, '0')) // Try both "4" and "04"
+      .first() as any;
+
+    // Format members
+    const formatMember = (m: any) => ({
+      bioguideId: m.bioguide_id,
+      firstName: m.first_name,
+      middleName: m.middle_name,
+      lastName: m.last_name,
+      fullName: [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' '),
+      party: m.party,
+      state: m.state,
+      district: m.district,
+      chamber: m.district !== null ? 'House' : 'Senate',
+      role: m.district !== null ? 'U.S. Representative' : 'U.S. Senator',
+      imageUrl: m.image_url,
+      currentMember: m.current_member === 1,
+      phoneNumber: m.phone_number,
+      url: m.url,
+      officeAddress: m.office_address,
+      currentTerm: m.current_term_type ? {
+        type: m.current_term_type,
+        start: m.current_term_start,
+        end: m.current_term_end
+      } : null
+    });
+
+    const senators = (senatorsResult.results || []).map(formatMember);
+    const representative = houseResult ? formatMember(houseResult) : null;
+
+    // Combine all representatives
+    const allRepresentatives = [...senators];
+    if (representative) {
+      allRepresentatives.push(representative);
+    }
+
+    return c.json({
+      success: true,
+      location: {
+        state,
+        district,
+        congressionalDistrict: userRecord.congressional_district,
+        zipCode: userRecord.zip_code
+      },
+      representatives: allRepresentatives,
+      count: {
+        senators: senators.length,
+        houseRep: representative ? 1 : 0,
+        total: allRepresentatives.length
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Failed to get my representatives:', error);
+    return c.json({
+      error: 'Failed to get representatives',
+      message: error.message
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

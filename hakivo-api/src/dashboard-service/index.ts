@@ -5,6 +5,22 @@ import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
 
+// State abbreviation to full name mapping
+const STATE_ABBREVIATIONS: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri',
+  MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+  OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  DC: 'District of Columbia', AS: 'American Samoa', GU: 'Guam', MP: 'Northern Mariana Islands',
+  PR: 'Puerto Rico', VI: 'Virgin Islands'
+};
+
 // Validation schemas
 const DateRangeSchema = z.object({
   startDate: z.string().optional(),
@@ -16,11 +32,15 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use('*', logger());
+
+// CORS middleware - allow all origins for development
 app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: (origin) => origin || '*', // Allow any origin
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposeHeaders: ['Content-Length', 'Content-Type'],
+  credentials: true,
+  maxAge: 86400, // 24 hours
 }));
 
 /**
@@ -462,6 +482,171 @@ app.post('/dashboard/refresh-cache', async (c) => {
     console.error('Cache refresh error:', error);
     return c.json({
       error: 'Failed to refresh cache',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /dashboard/representatives
+ * Get user's congressional representatives based on their state and district (requires auth)
+ * Accepts token from query parameter to avoid CORS preflight
+ */
+app.get('/dashboard/representatives', async (c) => {
+  try {
+    // Get token from query parameter to avoid CORS preflight
+    const tokenFromQuery = c.req.query('token');
+    const authHeader = c.req.header('Authorization');
+    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    const token = tokenFromQuery || tokenFromHeader;
+
+    if (!token) {
+      return c.json({ error: 'Unauthorized - no token provided' }, 401);
+    }
+
+    // Verify token
+    console.log('[Representatives] Starting token verification');
+    console.log('[Representatives] Token (first 50 chars):', token?.substring(0, 50));
+
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('[Representatives] JWT_SECRET not configured');
+      return c.json({ error: 'JWT_SECRET not configured' }, 500);
+    }
+
+    console.log('[Representatives] JWT_SECRET exists:', !!jwtSecret);
+    console.log('[Representatives] JWT_SECRET length:', jwtSecret.length);
+
+    const { jwtVerify } = await import('jose');
+    const secret = new TextEncoder().encode(jwtSecret);
+    let userId: string;
+
+    console.log('[Representatives] About to verify JWT...');
+
+    try {
+      const { payload } = await jwtVerify(token, secret);
+      console.log('[Representatives] JWT verified successfully');
+      console.log('[Representatives] Payload:', payload);
+
+      if (typeof payload.userId !== 'string') {
+        console.error('[Representatives] Invalid payload - userId not a string:', payload);
+        return c.json({ error: 'Unauthorized - invalid token' }, 401);
+      }
+      userId = payload.userId;
+      console.log('[Representatives] Token is valid, userId:', userId);
+    } catch (error) {
+      console.error('[Representatives] Token verification error:', error);
+      console.error('[Representatives] Error name:', error instanceof Error ? error.name : 'unknown');
+      console.error('[Representatives] Error message:', error instanceof Error ? error.message : 'unknown');
+      return c.json({
+        error: 'Unauthorized - token verification failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, 401);
+    }
+
+    const db = c.env.APP_DB;
+
+    // Get user's state and district from user_preferences
+    const userPrefs = await db
+      .prepare('SELECT state, district FROM user_preferences WHERE user_id = ?')
+      .bind(userId)
+      .first();
+
+    if (!userPrefs?.state) {
+      return c.json({
+        success: false,
+        error: 'User location not set. Please complete onboarding.'
+      }, 400);
+    }
+
+    const state = userPrefs.state as string;
+    const district = userPrefs.district as number | null;
+
+    // Convert state abbreviation to full name for database query
+    const stateFullName = STATE_ABBREVIATIONS[state] || state;
+    console.log(`[Representatives] Converting state: ${state} → ${stateFullName}`);
+
+    // Get senators (2 per state)
+    const senators = await db
+      .prepare(`
+        SELECT
+          bioguide_id,
+          first_name,
+          middle_name,
+          last_name,
+          party,
+          state,
+          image_url,
+          office_address,
+          phone_number,
+          url
+        FROM members
+        WHERE state = ? AND district IS NULL AND current_member = 1
+        ORDER BY last_name
+        LIMIT 2
+      `)
+      .bind(stateFullName)
+      .all();
+
+    // Get representative (1 per district)
+    let representative = null;
+    if (district !== null && district !== undefined) {
+      const rep = await db
+        .prepare(`
+          SELECT
+            bioguide_id,
+            first_name,
+            middle_name,
+            last_name,
+            party,
+            state,
+            district,
+            image_url,
+            office_address,
+            phone_number,
+            url
+          FROM members
+          WHERE state = ? AND district = ? AND current_member = 1
+          LIMIT 1
+        `)
+        .bind(stateFullName, district)
+        .first();
+
+      representative = rep;
+    }
+
+    const representatives = [
+      ...(senators.results || []),
+      ...(representative ? [representative] : [])
+    ].map((member: any) => ({
+      bioguideId: member.bioguide_id,
+      firstName: member.first_name,
+      middleName: member.middle_name,
+      lastName: member.last_name,
+      fullName: `${member.first_name}${member.middle_name ? ' ' + member.middle_name : ''} ${member.last_name}`,
+      party: member.party,
+      state: member.state,
+      district: member.district,
+      role: member.district !== null && member.district !== undefined ? 'U.S. Representative' : 'U.S. Senator',
+      imageUrl: member.image_url,
+      officeAddress: member.office_address,
+      phoneNumber: member.phone_number,
+      url: member.url,
+      initials: `${member.first_name?.charAt(0) || ''}${member.last_name?.charAt(0) || ''}`
+    }));
+
+    return c.json({
+      success: true,
+      representatives,
+      userLocation: {
+        state,
+        district
+      }
+    });
+  } catch (error) {
+    console.error('Representatives error:', error);
+    return c.json({
+      error: 'Failed to get representatives',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

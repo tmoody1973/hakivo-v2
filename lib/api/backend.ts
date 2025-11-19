@@ -33,7 +33,8 @@ import { APIResponse } from '../api-specs/common.types';
 // Configuration
 // ============================================================================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // Helper to get auth headers
 function getHeaders(accessToken?: string): HeadersInit {
@@ -47,6 +48,59 @@ function getHeaders(accessToken?: string): HeadersInit {
     headers['X-API-Key'] = process.env.BACKEND_API_KEY;
   }
   return headers;
+}
+
+// ============================================================================
+// Auth Token Management
+// ============================================================================
+
+/**
+ * Refresh access token using refresh token
+ *
+ * API ENDPOINT: POST {API_URL}/auth/refresh
+ * BODY: { refreshToken: string }
+ * SUCCESS RESPONSE (200): { success: true, accessToken: string }
+ * ERROR RESPONSES:
+ *   401: { error: 'Invalid or expired refresh token' }
+ *   500: { error: 'Token refresh failed' }
+ */
+export async function refreshAccessToken(refreshToken: string): Promise<{
+  success: boolean;
+  accessToken?: string;
+  error?: string;
+}> {
+  try {
+    console.log('[refreshAccessToken] Refreshing access token...');
+
+    // Use query parameter to avoid CORS preflight (same pattern as getUserPreferences)
+    const url = `${API_BASE_URL}/auth/refresh?refreshToken=${encodeURIComponent(refreshToken)}`;
+    const response = await fetch(url, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[refreshAccessToken] Refresh failed:', errorData);
+      return {
+        success: false,
+        error: errorData.error || 'Failed to refresh token',
+      };
+    }
+
+    const data = await response.json();
+    console.log('[refreshAccessToken] Token refreshed successfully');
+
+    return {
+      success: true,
+      accessToken: data.accessToken,
+    };
+  } catch (error) {
+    console.error('[refreshAccessToken] Error refreshing token:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
 
 // ============================================================================
@@ -114,41 +168,109 @@ export async function updateUserProfile(
 /**
  * Get user preferences
  *
- * API ENDPOINT: GET {API_URL}/users/me/preferences
- * SUCCESS RESPONSE (200): {
- *   id: string,
- *   userId: string,
- *   policyInterests: string[],
- *   zipCode: string,
- *   state: string,
- *   district: number,
- *   briefingTime: string,
- *   emailNotifications: boolean,
- *   weeklyBriefing: boolean,
- *   autoPlay: boolean,
- *   playbackSpeed: number
- * }
+ * ACTUAL BACKEND: GET /auth/settings
+ * Returns: { success: true, preferences: {...}, user: {...} }
  */
-export async function getUserPreferences(accessToken: string): Promise<UserPreferencesResponse> {
-  // API ENDPOINT: GET {API_BASE_URL}/users/me/preferences
-  // TODO: Replace with actual API call
-  return {
-    success: true,
-    data: {
-      id: 'pref_123',
-      userId: 'user_123',
-      policyInterests: ['climate', 'healthcare', 'education'],
-      zipCode: '94102',
-      state: 'CA',
-      district: 12,
-      briefingTime: '08:00',
-      emailNotifications: true,
-      weeklyBriefing: true,
-      autoPlay: false,
-      playbackSpeed: 1.0,
-      updatedAt: new Date().toISOString(),
-    },
-  };
+export async function getUserPreferences(
+  accessToken: string,
+  refreshToken?: string,
+  onTokenRefreshed?: (newAccessToken: string) => void
+): Promise<UserPreferencesResponse> {
+  try {
+    // Pass token as query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS requests)
+    const url = `${API_BASE_URL}/auth/settings?token=${encodeURIComponent(accessToken)}`;
+    console.log('[getUserPreferences] Calling API:', url);
+    console.log('[getUserPreferences] Token length:', accessToken?.length);
+    console.log('[getUserPreferences] API_BASE_URL:', API_BASE_URL);
+
+    let response;
+    try {
+      // Don't send Content-Type header to avoid CORS preflight
+      // GET requests don't need Content-Type since there's no body
+      response = await fetch(url, {
+        method: 'GET',
+      });
+    } catch (fetchError) {
+      console.error('[getUserPreferences] Fetch failed:', fetchError);
+      console.error('[getUserPreferences] Fetch error name:', (fetchError as Error)?.name);
+      console.error('[getUserPreferences] Fetch error message:', (fetchError as Error)?.message);
+      throw fetchError;
+    }
+
+    console.log('[getUserPreferences] Response status:', response.status);
+    console.log('[getUserPreferences] Response headers:', Object.fromEntries(response.headers.entries()));
+
+    // If 401 and we have a refresh token, try to refresh and retry
+    if (response.status === 401 && refreshToken) {
+      console.log('[getUserPreferences] Token expired, attempting refresh...');
+      const refreshResult = await refreshAccessToken(refreshToken);
+
+      if (refreshResult.success && refreshResult.accessToken) {
+        console.log('[getUserPreferences] Token refreshed, retrying request...');
+        // Notify caller of new token
+        if (onTokenRefreshed) {
+          onTokenRefreshed(refreshResult.accessToken);
+        }
+
+        // Retry with new token
+        const retryUrl = `${API_BASE_URL}/auth/settings?token=${encodeURIComponent(refreshResult.accessToken)}`;
+        response = await fetch(retryUrl, {
+          method: 'GET',
+        });
+
+        console.log('[getUserPreferences] Retry response status:', response.status);
+      } else {
+        console.error('[getUserPreferences] Token refresh failed:', refreshResult.error);
+        throw new Error('Token expired and refresh failed. Please sign in again.');
+      }
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getUserPreferences] API error response:', errorText);
+      let error;
+      try {
+        error = JSON.parse(errorText);
+      } catch (e) {
+        error = { error: errorText };
+      }
+      throw new Error(error.error || 'Failed to get user preferences');
+    }
+
+    const result = await response.json();
+    console.log('[getUserPreferences] API result:', result);
+    // Backend returns { preferences: {...}, user: {...} }
+    return {
+      success: true,
+      data: {
+        ...result.preferences,
+        ...result.user,
+      } as UserPreferences,
+    };
+  } catch (error) {
+    console.error('[getUserPreferences] Error getting user preferences:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get user preferences',
+      },
+      data: {
+        id: '',
+        userId: '',
+        policyInterests: [],
+        zipCode: '',
+        state: '',
+        district: 0,
+        briefingTime: '08:00',
+        emailNotifications: true,
+        weeklyBriefing: true,
+        autoPlay: false,
+        playbackSpeed: 1.0,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  }
 }
 
 /**
@@ -161,27 +283,120 @@ export async function updateUserPreferences(
   accessToken: string,
   preferences: Partial<UserPreferences>
 ): Promise<UserPreferencesResponse> {
-  // API ENDPOINT: PUT {API_BASE_URL}/users/me/preferences
-  // TODO: Replace with actual API call
-  return { success: true, data: {} as UserPreferences };
+  try {
+    // Pass token as query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS requests)
+    // Use POST instead of PUT because PUT always triggers CORS preflight
+    const url = `${API_BASE_URL}/auth/preferences?token=${encodeURIComponent(accessToken)}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain', // Avoid CORS preflight
+      },
+      body: JSON.stringify(preferences)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { success: data.success, data: preferences as UserPreferences };
+  } catch (error) {
+    console.error('Update preferences error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'UPDATE_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to update preferences'
+      }
+    };
+  }
 }
 
 /**
- * Save onboarding preferences (policy interests, zip code)
+ * Save onboarding preferences (policy interests, personal info)
+ *
+ * ACTUAL BACKEND: POST /auth/onboarding
+ * Body: { interests: string[], firstName?: string, lastName?: string, zipCode?: string, city?: string }
  */
 export async function saveOnboardingPreferences(
   accessToken: string,
   data: {
     policyInterests: string[];
-    zipCode: string;
-    state: string;
-    district: number;
+    firstName?: string;
+    lastName?: string;
+    zipCode?: string;
+    city?: string;
+    state?: string;
+    district?: number;
+    briefingTime?: string;
+    briefingDays?: string[];
+    playbackSpeed?: number;
+    autoplay?: boolean;
+    emailNotifications?: boolean;
   }
 ): Promise<UserPreferencesResponse> {
-  // API ENDPOINT: POST {API_BASE_URL}/users/me/onboarding
-  // Also marks user.onboardingCompleted = true
-  // TODO: Replace with actual API call
-  return { success: true, data: {} as UserPreferences };
+  console.log('[Onboarding] Function called');
+  console.log('[Onboarding] API_BASE_URL:', API_BASE_URL);
+  console.log('[Onboarding] typeof API_BASE_URL:', typeof API_BASE_URL);
+
+  try {
+    // Pass token as query parameter to avoid CORS preflight (Cloudflare blocks OPTIONS requests)
+    const url = `${API_BASE_URL}/auth/onboarding?token=${encodeURIComponent(accessToken)}`;
+    console.log('[Onboarding] Constructed URL:', url);
+    console.log('[Onboarding] Data:', {
+      interests: data.policyInterests,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      zipCode: data.zipCode,
+      city: data.city,
+    });
+    console.log('[Onboarding] About to call fetch...');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        // Use text/plain to avoid CORS preflight (application/json triggers preflight)
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({
+        interests: data.policyInterests,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        zipCode: data.zipCode,
+        city: data.city,
+      }),
+    });
+
+    console.log('[Onboarding] Response status:', response.status);
+    console.log('[Onboarding] Response ok:', response.ok);
+
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('[Onboarding] Error response:', error);
+      console.error('[Onboarding] Error details:', JSON.stringify(error, null, 2));
+      throw new Error(error.error || error.message || 'Failed to save onboarding preferences');
+    }
+
+    const result = await response.json();
+    console.log('[Onboarding] Success response:', result);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('[Onboarding] Caught error:', error);
+    console.error('[Onboarding] Error name:', error instanceof Error ? error.name : 'unknown');
+    console.error('[Onboarding] Error message:', error instanceof Error ? error.message : 'unknown');
+    console.error('[Onboarding] Error stack:', error instanceof Error ? error.stack : 'unknown');
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to save onboarding preferences',
+      },
+      data: {} as UserPreferences,
+    };
+  }
 }
 
 // ============================================================================
@@ -459,4 +674,155 @@ export async function getDashboardData(accessToken: string): Promise<DashboardRe
     success: true,
     data: {} as DashboardData,
   };
+}
+
+/**
+ * Get user's congressional representatives
+ *
+ * ACTUAL BACKEND: GET /dashboard/representatives
+ * Returns: { success: true, representatives: [...], userLocation: { state, district } }
+ */
+export interface Representative {
+  bioguideId: string;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  fullName: string;
+  party: string;
+  state: string;
+  district?: number;
+  role: string;
+  imageUrl?: string;
+  officeAddress?: string;
+  phoneNumber?: string;
+  url?: string;
+  initials: string;
+}
+
+/**
+ * Get a single member/representative by bioguide ID
+ */
+export async function getMemberById(bioguideId: string): Promise<APIResponse<any>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const url = `${BILLS_API_URL}/members/${encodeURIComponent(bioguideId)}`;
+    console.log('[getMemberById] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getMemberById] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getMemberById] Error response:', errorText);
+      let errorMessage = 'Failed to get member';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get member';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getMemberById] Success');
+    return {
+      success: true,
+      data: result.member,
+    };
+  } catch (error) {
+    console.error('[getMemberById] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get member',
+      },
+    };
+  }
+}
+
+export async function getRepresentatives(
+  accessToken: string,
+  refreshToken?: string,
+  onTokenRefreshed?: (newAccessToken: string) => void
+): Promise<APIResponse<Representative[]>> {
+  try {
+    // Pass token as query parameter to avoid CORS preflight
+    let url = `${DASHBOARD_API_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`;
+    console.log('[Representatives] Fetching from:', url.replace(accessToken, 'TOKEN_REDACTED'));
+    console.log('[Representatives] DASHBOARD_API_URL:', DASHBOARD_API_URL);
+
+    let response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'text/plain', // Avoid CORS preflight
+      },
+    });
+
+    console.log('[Representatives] Response status:', response.status);
+
+    // If 401 and we have a refresh token, try to refresh and retry
+    if (response.status === 401 && refreshToken) {
+      console.log('[Representatives] Token expired, attempting refresh...');
+      const refreshResult = await refreshAccessToken(refreshToken);
+
+      if (refreshResult.success && refreshResult.accessToken) {
+        console.log('[Representatives] Token refreshed, retrying request...');
+        // Notify caller of new token
+        if (onTokenRefreshed) {
+          onTokenRefreshed(refreshResult.accessToken);
+        }
+
+        // Retry with new token
+        url = `${DASHBOARD_API_URL}/dashboard/representatives?token=${encodeURIComponent(refreshResult.accessToken)}`;
+        response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'text/plain',
+          },
+        });
+
+        console.log('[Representatives] Retry response status:', response.status);
+      } else {
+        console.error('[Representatives] Token refresh failed:', refreshResult.error);
+        throw new Error('Token expired and refresh failed. Please sign in again.');
+      }
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Representatives] Error response:', errorText);
+      let errorMessage = 'Failed to get representatives';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get representatives';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[Representatives] Success, got', result.representatives?.length || 0, 'representatives');
+    return {
+      success: true,
+      data: result.representatives,
+    };
+  } catch (error) {
+    console.error('[Representatives] Caught error:', error);
+    console.error('[Representatives] Error name:', error instanceof Error ? error.name : 'unknown');
+    console.error('[Representatives] Error message:', error instanceof Error ? error.message : 'unknown');
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get representatives',
+      },
+      data: [],
+    };
+  }
 }

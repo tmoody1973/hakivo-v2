@@ -26,8 +26,10 @@ export interface Env {
   DISTRICT_CACHE: KvCache;
   ELEVENLABS_CLIENT: ServiceStub<import('../elevenlabs-client/index.js').default>;
   EXA_CLIENT: ServiceStub<import('../exa-client/index.js').default>;
+  GEOCODIO_API_KEY: string;
   GEOCODIO_CLIENT: ServiceStub<import('../geocodio-client/index.js').default>;
   IMAGE_CACHE: KvCache;
+  JWT_SECRET: string;
   logger: Logger;
   mem: KvCache;
   NEWS_CACHE: KvCache;
@@ -35,4 +37,7 @@ export interface Env {
   SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;
   VULTR_STORAGE_CLIENT: ServiceStub<import('../vultr-storage-client/index.js').default>;
+  WORKOS_API_KEY: string;
+  WORKOS_CLIENT_ID: string;
+  WORKOS_REDIRECT_URI: string;
 }
