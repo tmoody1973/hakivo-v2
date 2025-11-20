@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ExternalLink, Newspaper, FileText, Filter, Bookmark, BookmarkCheck, Loader2 } from "lucide-react"
+import { ExternalLink, Newspaper, FileText, Filter, Bookmark, BookmarkCheck, Loader2, RefreshCw } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,7 +14,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth/auth-context"
-import { getPersonalizedNews, bookmarkArticle } from "@/lib/api/backend"
+import { getPersonalizedNews, bookmarkArticle, getPersonalizedBills, bookmarkBill } from "@/lib/api/backend"
+import policyInterestMapping from "@/hakivo-api/docs/architecture/policy_interest_mapping.json"
 
 // Policy interests matching onboarding
 export const POLICY_INTERESTS = [
@@ -46,6 +47,26 @@ interface NewsArticle {
   sourceDomain: string
 }
 
+interface Bill {
+  id: string
+  congress: number
+  billType: string
+  billNumber: number
+  title: string
+  policyArea: string | null
+  introducedDate: string | null
+  latestActionDate: string | null
+  latestActionText: string | null
+  originChamber: string | null
+  updateDate: string | null
+  sponsor: {
+    firstName: string
+    lastName: string
+    party: string
+    state: string
+  } | null
+}
+
 interface PersonalizedContentWidgetProps {
   userInterests?: string[]
 }
@@ -53,10 +74,19 @@ interface PersonalizedContentWidgetProps {
 export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedContentWidgetProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([])
+  const [bills, setBills] = useState<Bill[]>([])
   const [loading, setLoading] = useState(true)
+  const [billsLoading, setBillsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [billsError, setBillsError] = useState<string | null>(null)
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set())
+  const [bookmarkedBillIds, setBookmarkedBillIds] = useState<Set<string>>(new Set())
   const [bookmarkingId, setBookmarkingId] = useState<string | null>(null)
+  const [bookmarkingBillId, setBookmarkingBillId] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [billsLastUpdated, setBillsLastUpdated] = useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>("news")
 
   const { accessToken } = useAuth()
 
@@ -77,6 +107,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
 
         if (response.success && response.data) {
           setNewsArticles(response.data.articles)
+          setLastUpdated(new Date())
         } else {
           setError(response.error?.message || 'Failed to load news')
         }
@@ -91,6 +122,60 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
     fetchNews()
   }, [accessToken])
 
+  // Manual refresh function
+  const handleRefresh = async () => {
+    if (!accessToken || isRefreshing) return
+
+    try {
+      setIsRefreshing(true)
+      setError(null)
+
+      const response = await getPersonalizedNews(accessToken, 20)
+
+      if (response.success && response.data) {
+        setNewsArticles(response.data.articles)
+        setLastUpdated(new Date())
+      } else {
+        setError(response.error?.message || 'Failed to refresh news')
+      }
+    } catch (err) {
+      console.error('[PersonalizedContentWidget] Error refreshing news:', err)
+      setError('Failed to refresh news')
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  // Fetch personalized bills when legislation tab is activated
+  useEffect(() => {
+    const fetchBills = async () => {
+      if (!accessToken || activeTab !== 'legislation' || bills.length > 0) {
+        return
+      }
+
+      try {
+        setBillsLoading(true)
+        setBillsError(null)
+
+        const response = await getPersonalizedBills(accessToken, 20)
+
+        if (response.success && response.data) {
+          setBills(response.data.bills)
+          setBillsLastUpdated(new Date())
+        } else {
+          setBillsError(response.error?.message || 'Failed to load bills')
+        }
+      } catch (err) {
+        console.error('[PersonalizedContentWidget] Error fetching bills:', err)
+        setBillsError('Failed to load personalized bills')
+      } finally {
+        setBillsLoading(false)
+      }
+    }
+
+    fetchBills()
+  }, [accessToken, activeTab, bills.length])
+
   // Filter news based on selected category
   const getFilteredNews = () => {
     if (selectedCategory === "all") {
@@ -99,7 +184,26 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
     return newsArticles.filter(article => article.interest === selectedCategory)
   }
 
+  // Filter bills based on selected category
+  const getFilteredBills = () => {
+    if (selectedCategory === "all") {
+      return bills
+    }
+
+    // Map user-friendly interest to Congress.gov policy_area values
+    const mapping = policyInterestMapping.find(m => m.interest === selectedCategory)
+    if (!mapping) {
+      return bills // If no mapping found, return all bills
+    }
+
+    // Filter bills whose policyArea matches any of the mapped policy_areas
+    return bills.filter(bill =>
+      bill.policyArea && mapping.policy_areas.includes(bill.policyArea)
+    )
+  }
+
   const filteredNews = getFilteredNews()
+  const filteredBills = getFilteredBills()
 
   // Get categories to show in dropdown (either user's interests or all)
   const availableCategories = userInterests.length > 0 ? userInterests : POLICY_INTERESTS
@@ -135,6 +239,37 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
     }
   }
 
+  // Handle bill bookmark toggle
+  const handleBookmarkBill = async (bill: Bill) => {
+    if (!accessToken) {
+      console.error('[PersonalizedContentWidget] No access token - sign in required')
+      return
+    }
+
+    try {
+      setBookmarkingBillId(bill.id)
+
+      const response = await bookmarkBill(accessToken, {
+        billId: bill.id,
+        title: bill.title,
+        policyArea: bill.policyArea || 'Unknown',
+        latestActionText: bill.latestActionText || undefined,
+        latestActionDate: bill.latestActionDate || undefined
+      })
+
+      if (response.success) {
+        setBookmarkedBillIds(prev => new Set([...prev, bill.id]))
+        console.log('[PersonalizedContentWidget] Bill bookmarked successfully:', bill.title)
+      } else {
+        console.error('[PersonalizedContentWidget] Failed to bookmark bill:', response.error?.message)
+      }
+    } catch (err) {
+      console.error('[PersonalizedContentWidget] Error bookmarking bill:', err)
+    } finally {
+      setBookmarkingBillId(null)
+    }
+  }
+
   // Format relative time
   const formatRelativeTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -154,8 +289,24 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
         <div className="flex items-center justify-between mb-2">
           <div>
             <CardTitle>Personalized Content</CardTitle>
-            <CardDescription>News matching your interests</CardDescription>
+            <CardDescription>
+              News matching your interests
+              {lastUpdated && (
+                <span className="text-xs ml-2">
+                  • Updated {formatRelativeTime(lastUpdated.toISOString())}
+                </span>
+              )}
+            </CardDescription>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing || loading}
+            className="h-8 px-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
 
         {/* Category Filter */}
@@ -178,7 +329,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
       </CardHeader>
 
       <CardContent>
-        <Tabs defaultValue="news" className="w-full">
+        <Tabs defaultValue="news" className="w-full" onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="news" className="flex items-center gap-2">
               <Newspaper className="h-4 w-4" />
@@ -287,15 +438,100 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
             )}
           </TabsContent>
 
-          {/* Legislation Tab - Coming Soon */}
+          {/* Legislation Tab */}
           <TabsContent value="legislation" className="mt-4">
-            <div className="text-center py-12 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p className="text-sm font-medium">Legislation tracking coming soon</p>
-              <p className="text-xs mt-1">
-                We're working on bringing you personalized bill tracking
-              </p>
-            </div>
+            {billsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : billsError ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm font-medium">{billsError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => window.location.reload()}
+                >
+                  Try Again
+                </Button>
+              </div>
+            ) : filteredBills.length > 0 ? (
+              <div className="space-y-4">
+                {filteredBills.map((bill) => {
+                  const isBookmarked = bookmarkedBillIds.has(bill.id)
+                  const isBookmarking = bookmarkingBillId === bill.id
+                  const billNumber = `${bill.billType.toUpperCase()} ${bill.billNumber}`
+
+                  return (
+                    <div key={bill.id} className="group pb-4 border-b last:border-b-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <Badge variant="secondary" className="text-xs">
+                          {bill.policyArea || 'General'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {bill.latestActionDate && formatRelativeTime(bill.latestActionDate)}
+                        </span>
+                      </div>
+                      <div className="flex items-start gap-2 mb-1">
+                        <span className="text-xs font-mono text-muted-foreground">{billNumber}</span>
+                        <h4 className="font-semibold text-sm group-hover:text-primary transition-colors flex-1">
+                          {bill.title}
+                        </h4>
+                      </div>
+                      {bill.latestActionText && (
+                        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                          Latest: {bill.latestActionText}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-muted-foreground">
+                          {bill.sponsor && (
+                            <span>
+                              Sponsor: {bill.sponsor.firstName} {bill.sponsor.lastName} ({bill.sponsor.party}-{bill.sponsor.state})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleBookmarkBill(bill)}
+                            disabled={isBookmarking || isBookmarked}
+                          >
+                            {isBookmarking ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : isBookmarked ? (
+                              <>
+                                <BookmarkCheck className="mr-1 h-3 w-3" />
+                                Saved
+                              </>
+                            ) : (
+                              <>
+                                <Bookmark className="mr-1 h-3 w-3" />
+                                Save
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No bills found</p>
+                <p className="text-xs mt-1">
+                  {selectedCategory !== "all"
+                    ? "Try selecting a different category"
+                    : "Check back soon for new legislation"}
+                </p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </CardContent>

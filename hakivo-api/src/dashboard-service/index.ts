@@ -1082,6 +1082,355 @@ app.post('/admin/clear-news', async (c) => {
   }
 });
 
+/**
+ * GET /latest-actions?limit=20
+ * Get latest bill actions from Congress.gov
+ * Returns recent legislative activity, updated twice daily
+ */
+app.get('/latest-actions', async (c) => {
+  console.log('📋 Fetching latest bill actions...');
+
+  try {
+    const db = c.env.APP_DB;
+
+    // Get limit from query params (default: 20)
+    const limit = parseInt(c.req.query('limit') || '20', 10);
+
+    if (isNaN(limit) || limit < 1 || limit > 100) {
+      return c.json({
+        error: 'Invalid limit parameter',
+        message: 'Limit must be between 1 and 100'
+      }, 400);
+    }
+
+    // Query latest actions, ordered by action date (most recent first)
+    const actions = await db
+      .prepare(`
+        SELECT
+          id, bill_congress, bill_type, bill_number, bill_title,
+          action_date, action_text, latest_action_status, chamber,
+          source_url, fetched_at
+        FROM latest_bill_actions
+        ORDER BY action_date DESC, fetched_at DESC
+        LIMIT ?
+      `)
+      .bind(limit)
+      .all();
+
+    if (!actions.results || actions.results.length === 0) {
+      console.log('⚠️  No bill actions found in database');
+      return c.json({
+        actions: [],
+        message: 'No actions available yet. Background sync will populate data at 6 AM and 6 PM.'
+      });
+    }
+
+    console.log(`✅ Found ${actions.results.length} bill actions`);
+
+    // Format the actions for frontend consumption
+    const formattedActions = actions.results.map((action: any) => ({
+      id: action.id,
+      bill: {
+        congress: action.bill_congress,
+        type: action.bill_type,
+        number: action.bill_number,
+        title: action.bill_title,
+        url: action.source_url
+      },
+      action: {
+        date: action.action_date,
+        text: action.action_text,
+        status: action.latest_action_status
+      },
+      chamber: action.chamber,
+      fetchedAt: action.fetched_at
+    }));
+
+    return c.json({
+      actions: formattedActions,
+      count: formattedActions.length,
+      lastUpdated: formattedActions[0]?.fetchedAt || null
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to fetch latest actions:', error);
+    return c.json({
+      error: 'Failed to fetch latest actions',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /dashboard/bills
+ * Get personalized bills based on user's policy interests (requires auth)
+ */
+app.get('/dashboard/bills', async (c) => {
+  try {
+    console.log('[/dashboard/bills] Request received');
+
+    // Check for token in query parameter first (to avoid CORS preflight)
+    const tokenParam = c.req.query('token');
+    let auth;
+
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('[/dashboard/bills] JWT_SECRET not available in environment');
+      return c.json({ error: 'Server configuration error' }, 500);
+    }
+
+    if (tokenParam) {
+      console.log('[/dashboard/bills] Using token from query parameter');
+      auth = await verifyAuth(`Bearer ${tokenParam}`, jwtSecret);
+      if (!auth) {
+        console.log('[/dashboard/bills] Token verification failed');
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+    } else {
+      console.log('[/dashboard/bills] Using token from Authorization header');
+      auth = await requireAuth(c);
+      if (auth instanceof Response) return auth;
+    }
+
+    const db = c.env.APP_DB;
+    const limit = Number(c.req.query('limit')) || 20;
+
+    // Get user's policy interests from user_preferences
+    const userPrefs = await db
+      .prepare('SELECT policy_interests FROM user_preferences WHERE user_id = ?')
+      .bind(auth.userId)
+      .first();
+
+    if (!userPrefs?.policy_interests) {
+      return c.json({
+        success: true,
+        bills: [],
+        message: 'No policy interests set. Please update your preferences.'
+      });
+    }
+
+    // Parse policy interests (stored as JSON string)
+    const userInterests = JSON.parse(userPrefs.policy_interests as string) as string[];
+
+    if (userInterests.length === 0) {
+      return c.json({
+        success: true,
+        bills: [],
+        message: 'No policy interests selected'
+      });
+    }
+
+    // Map user interests to actual Congress.gov policy_area values
+    const policyAreas: string[] = [];
+    for (const interest of userInterests) {
+      const mapping = policyInterestMapping.find(m => m.interest === interest);
+      if (mapping) {
+        policyAreas.push(...mapping.policy_areas);
+      }
+    }
+
+    if (policyAreas.length === 0) {
+      console.warn('[/dashboard/bills] No policy areas mapped for user interests:', userInterests);
+      return c.json({
+        success: true,
+        bills: [],
+        message: 'No matching policy areas found'
+      });
+    }
+
+    console.log(`[/dashboard/bills] User interests: ${userInterests.join(', ')}`);
+    console.log(`[/dashboard/bills] Mapped to ${policyAreas.length} policy areas: ${policyAreas.join(', ')}`);
+
+    // Build WHERE clause for policy areas filter
+    const placeholders = policyAreas.map(() => '?').join(',');
+
+    // Query bills filtered by user interests, excluding already-seen bills
+    const bills = await db
+      .prepare(`
+        SELECT
+          b.id, b.congress, b.bill_type, b.bill_number, b.title,
+          b.policy_area, b.introduced_date, b.latest_action_date,
+          b.latest_action_text, b.origin_chamber, b.update_date,
+          m.first_name as sponsor_first_name, m.last_name as sponsor_last_name,
+          m.party as sponsor_party, m.state as sponsor_state
+        FROM bills b
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        LEFT JOIN user_bill_views ubv
+          ON b.id = ubv.bill_id AND ubv.user_id = ?
+        WHERE b.policy_area IN (${placeholders})
+          AND ubv.bill_id IS NULL  -- Exclude bills user has already seen
+        ORDER BY b.latest_action_date DESC, b.update_date DESC
+        LIMIT ?
+      `)
+      .bind(auth.userId, ...policyAreas, limit)
+      .all();
+
+    const formattedBills = bills.results?.map((bill: any) => ({
+      id: bill.id,
+      congress: bill.congress,
+      billType: bill.bill_type,
+      billNumber: bill.bill_number,
+      title: bill.title,
+      policyArea: bill.policy_area,
+      introducedDate: bill.introduced_date,
+      latestActionDate: bill.latest_action_date,
+      latestActionText: bill.latest_action_text,
+      originChamber: bill.origin_chamber,
+      updateDate: bill.update_date,
+      sponsor: bill.sponsor_first_name && bill.sponsor_last_name ? {
+        firstName: bill.sponsor_first_name,
+        lastName: bill.sponsor_last_name,
+        party: bill.sponsor_party,
+        state: bill.sponsor_state
+      } : null
+    })) || [];
+
+    // Mark bills as viewed (async, don't wait for completion)
+    if (formattedBills.length > 0) {
+      const viewedAt = Date.now();
+      const viewRecords = formattedBills.map(bill => ({
+        user_id: auth.userId,
+        bill_id: bill.id,
+        viewed_at: viewedAt
+      }));
+
+      // Batch insert view records (fire and forget)
+      Promise.all(
+        viewRecords.map(record =>
+          db.prepare(
+            'INSERT OR IGNORE INTO user_bill_views (user_id, bill_id, viewed_at) VALUES (?, ?, ?)'
+          ).bind(record.user_id, record.bill_id, record.viewed_at).run()
+        )
+      ).catch(error => {
+        console.warn('Failed to track bill views:', error);
+      });
+    }
+
+    return c.json({
+      success: true,
+      bills: formattedBills,
+      count: formattedBills.length,
+      interests: userInterests
+    });
+  } catch (error) {
+    console.error('Get bills error:', error);
+    return c.json({
+      error: 'Failed to get bills',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /dashboard/bills/bookmark
+ * Save a bill to user's bookmarks (requires auth)
+ */
+app.post('/dashboard/bills/bookmark', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json();
+    const { billId, title, policyArea, latestActionText, latestActionDate } = body;
+
+    if (!billId || !title || !policyArea) {
+      return c.json({
+        error: 'Missing required fields: billId, title, policyArea'
+      }, 400);
+    }
+
+    const db = c.env.APP_DB;
+
+    // Generate unique ID for bookmark
+    const bookmarkId = `${auth.userId}-${billId}`;
+
+    // Insert bookmark (ignore if duplicate)
+    await db
+      .prepare(`
+        INSERT OR IGNORE INTO user_bill_bookmarks (
+          id, user_id, bill_id, title, policy_area,
+          latest_action_text, latest_action_date, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        bookmarkId,
+        auth.userId,
+        billId,
+        title,
+        policyArea,
+        latestActionText || null,
+        latestActionDate || null,
+        Date.now()
+      )
+      .run();
+
+    return c.json({
+      success: true,
+      message: 'Bill bookmarked successfully',
+      bookmarkId
+    });
+  } catch (error) {
+    console.error('Bookmark bill error:', error);
+    return c.json({
+      error: 'Failed to bookmark bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /dashboard/bills/bookmarks
+ * Get user's bookmarked bills (requires auth)
+ */
+app.get('/dashboard/bills/bookmarks', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    const bookmarks = await db
+      .prepare(`
+        SELECT
+          ubb.id, ubb.bill_id, ubb.title, ubb.policy_area,
+          ubb.latest_action_text, ubb.latest_action_date, ubb.created_at,
+          b.congress, b.bill_type, b.bill_number, b.origin_chamber
+        FROM user_bill_bookmarks ubb
+        LEFT JOIN bills b ON ubb.bill_id = b.id
+        WHERE ubb.user_id = ?
+        ORDER BY ubb.created_at DESC
+      `)
+      .bind(auth.userId)
+      .all();
+
+    const formattedBookmarks = bookmarks.results?.map((bookmark: any) => ({
+      id: bookmark.id,
+      billId: bookmark.bill_id,
+      title: bookmark.title,
+      policyArea: bookmark.policy_area,
+      latestActionText: bookmark.latest_action_text,
+      latestActionDate: bookmark.latest_action_date,
+      createdAt: bookmark.created_at,
+      congress: bookmark.congress,
+      billType: bookmark.bill_type,
+      billNumber: bookmark.bill_number,
+      originChamber: bookmark.origin_chamber
+    })) || [];
+
+    return c.json({
+      success: true,
+      bookmarks: formattedBookmarks,
+      count: formattedBookmarks.length
+    });
+  } catch (error) {
+    console.error('Get bill bookmarks error:', error);
+    return c.json({
+      error: 'Failed to get bookmarks',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

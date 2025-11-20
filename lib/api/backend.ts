@@ -1200,3 +1200,207 @@ export async function getUserBookmarks(
     };
   }
 }
+
+/**
+ * Get personalized bills based on user's policy interests
+ */
+export async function getPersonalizedBills(
+  accessToken: string,
+  limit?: number
+): Promise<APIResponse<{
+  bills: Array<{
+    id: string;
+    congress: number;
+    billType: string;
+    billNumber: number;
+    title: string;
+    policyArea: string | null;
+    introducedDate: string | null;
+    latestActionDate: string | null;
+    latestActionText: string | null;
+    originChamber: string | null;
+    updateDate: string | null;
+    sponsor: {
+      firstName: string;
+      lastName: string;
+      party: string;
+      state: string;
+    } | null;
+  }>;
+  count: number;
+  interests: string[];
+}>> {
+  try {
+    console.log('[getPersonalizedBills] Fetching personalized bills...');
+    console.log('[getPersonalizedBills] DASHBOARD_API_URL:', DASHBOARD_API_URL);
+    console.log('[getPersonalizedBills] Access token present:', !!accessToken);
+
+    if (!DASHBOARD_API_URL) {
+      throw new Error('DASHBOARD_API_URL is not configured');
+    }
+
+    const queryParams = new URLSearchParams();
+    queryParams.append('token', accessToken); // Use token in query param to avoid CORS preflight
+    if (limit) queryParams.append('limit', String(limit));
+
+    const url = `${DASHBOARD_API_URL}/dashboard/bills?${queryParams.toString()}`;
+    console.log('[getPersonalizedBills] Fetching from:', url);
+
+    // No headers - avoid CORS preflight (Content-Type triggers preflight)
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getPersonalizedBills] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getPersonalizedBills] Error response:', errorText);
+      let errorMessage = 'Failed to fetch personalized bills';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch personalized bills';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getPersonalizedBills] Success, found:', result.count || 0, 'bills');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getPersonalizedBills] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch personalized bills',
+      },
+    };
+  }
+}
+
+/**
+ * Bookmark a bill to user's profile
+ */
+export async function bookmarkBill(
+  accessToken: string,
+  bill: {
+    billId: string;
+    title: string;
+    policyArea: string;
+    latestActionText?: string;
+    latestActionDate?: string;
+  }
+): Promise<APIResponse<{ message: string; bookmarkId: string }>> {
+  try {
+    console.log('[bookmarkBill] Bookmarking bill:', bill.title);
+
+    const url = `${DASHBOARD_API_URL}/dashboard/bills/bookmark`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: getHeaders(accessToken),
+      body: JSON.stringify(bill),
+    });
+
+    console.log('[bookmarkBill] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[bookmarkBill] Error response:', errorText);
+      let errorMessage = 'Failed to bookmark bill';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to bookmark bill';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[bookmarkBill] Success');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[bookmarkBill] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to bookmark bill',
+      },
+    };
+  }
+}
+
+/**
+ * Get user's saved bill bookmarks
+ */
+export async function getUserBillBookmarks(
+  accessToken: string
+): Promise<APIResponse<{
+  bookmarks: Array<{
+    id: string;
+    billId: string;
+    title: string;
+    policyArea: string;
+    latestActionText: string | null;
+    latestActionDate: string | null;
+    createdAt: number;
+    congress: number;
+    billType: string;
+    billNumber: number;
+    originChamber: string | null;
+  }>;
+  count: number;
+}>> {
+  try {
+    console.log('[getUserBillBookmarks] Fetching user bill bookmarks...');
+
+    const url = `${DASHBOARD_API_URL}/dashboard/bills/bookmarks`;
+    console.log('[getUserBillBookmarks] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: getHeaders(accessToken),
+    });
+
+    console.log('[getUserBillBookmarks] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getUserBillBookmarks] Error response:', errorText);
+      let errorMessage = 'Failed to fetch bill bookmarks';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch bill bookmarks';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getUserBillBookmarks] Success, found:', result.count || 0, 'bookmarks');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getUserBillBookmarks] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch bill bookmarks',
+      },
+    };
+  }
+}
