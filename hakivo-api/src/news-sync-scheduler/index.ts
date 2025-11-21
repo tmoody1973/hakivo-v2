@@ -5,13 +5,13 @@ import policyInterestMapping from '../../docs/architecture/policy_interest_mappi
 /**
  * News Sync Scheduler
  *
- * Runs twice daily (6 AM and 6 PM) to fetch Congressional news from Exa.ai
+ * Runs 3x daily (8 AM, 2 PM, and 8 PM) to fetch Congressional news from Exa.ai
  * for all 12 policy interests. Stores results in shared news_articles pool
  * for efficient user filtering without per-user API calls.
  *
- * Schedule: 0 6,18 * * * (6 AM and 6 PM every day)
+ * Schedule: 0 8,14,20 * * * (8 AM, 2 PM, and 8 PM every day)
  *
- * Cost: 12 interests × 2 times/day = 24 Exa.ai API calls/day
+ * Cost: 12 interests × 3 times/day = 36 Exa.ai API calls/day
  */
 export default class extends Task<Env> {
   async handle(event: Event): Promise<void> {
@@ -103,6 +103,15 @@ export default class extends Task<Env> {
         .run();
 
       console.log(`🗑️  Cleaned up old articles (>7 days)`);
+
+      // Clean up old view records (keep last 7 days per user)
+      // This allows articles to reappear after a week without clearing everyone's history
+      await db
+        .prepare('DELETE FROM user_article_views WHERE viewed_at < ?')
+        .bind(sevenDaysAgo)
+        .run();
+
+      console.log(`🗑️  Cleaned up old view records (>7 days per user)`);
 
       const duration = Date.now() - startTime;
 

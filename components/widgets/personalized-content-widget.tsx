@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth/auth-context"
 import { getPersonalizedNews, bookmarkArticle, getPersonalizedBills, bookmarkBill } from "@/lib/api/backend"
+import { EnhancedNewsCard } from "@/components/widgets/enhanced-news-card"
+import { EnhancedBillCard } from "@/components/widgets/enhanced-bill-card"
 import policyInterestMapping from "@/hakivo-api/docs/architecture/policy_interest_mapping.json"
 
 // Policy interests matching onboarding
@@ -45,6 +47,15 @@ interface NewsArticle {
   fetchedAt: number
   score: number
   sourceDomain: string
+  enrichment: {
+    plainLanguageSummary: string
+    keyPoints: string[]
+    readingTimeMinutes: number
+    impactLevel: string
+    tags: string[]
+    enrichedAt: string
+    modelUsed: string
+  } | null
 }
 
 interface Bill {
@@ -64,6 +75,18 @@ interface Bill {
     lastName: string
     party: string
     state: string
+  } | null
+  enrichment: {
+    plainLanguageSummary: string
+    keyPoints: string[]
+    readingTimeMinutes: number
+    impactLevel: string
+    bipartisanScore: number
+    currentStage: string
+    progressPercentage: number
+    tags: string[]
+    enrichedAt: string
+    modelUsed: string
   } | null
 }
 
@@ -362,68 +385,9 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
               </div>
             ) : filteredNews.length > 0 ? (
               <div className="space-y-4">
-                {filteredNews.map((article) => {
-                  const isBookmarked = bookmarkedIds.has(article.id)
-                  const isBookmarking = bookmarkingId === article.id
-
-                  return (
-                    <div key={article.id} className="group pb-4 border-b last:border-b-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <Badge variant="secondary" className="text-xs">
-                          {article.interest}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(article.publishedDate)}
-                        </span>
-                      </div>
-                      <h4 className="font-semibold text-sm mb-1 group-hover:text-primary transition-colors">
-                        {article.title}
-                      </h4>
-                      <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                        {article.summary}
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {article.sourceDomain}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => handleBookmark(article)}
-                            disabled={isBookmarking || isBookmarked}
-                          >
-                            {isBookmarking ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : isBookmarked ? (
-                              <>
-                                <BookmarkCheck className="mr-1 h-3 w-3" />
-                                Saved
-                              </>
-                            ) : (
-                              <>
-                                <Bookmark className="mr-1 h-3 w-3" />
-                                Save
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            asChild
-                          >
-                            <a href={article.url} target="_blank" rel="noopener noreferrer">
-                              Read
-                              <ExternalLink className="ml-1 h-3 w-3" />
-                            </a>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                {filteredNews.map((article) => (
+                  <EnhancedNewsCard key={article.id} article={article} />
+                ))}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
@@ -459,67 +423,9 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
               </div>
             ) : filteredBills.length > 0 ? (
               <div className="space-y-4">
-                {filteredBills.map((bill) => {
-                  const isBookmarked = bookmarkedBillIds.has(bill.id)
-                  const isBookmarking = bookmarkingBillId === bill.id
-                  const billNumber = `${bill.billType.toUpperCase()} ${bill.billNumber}`
-
-                  return (
-                    <div key={bill.id} className="group pb-4 border-b last:border-b-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <Badge variant="secondary" className="text-xs">
-                          {bill.policyArea || 'General'}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {bill.latestActionDate && formatRelativeTime(bill.latestActionDate)}
-                        </span>
-                      </div>
-                      <div className="flex items-start gap-2 mb-1">
-                        <span className="text-xs font-mono text-muted-foreground">{billNumber}</span>
-                        <h4 className="font-semibold text-sm group-hover:text-primary transition-colors flex-1">
-                          {bill.title}
-                        </h4>
-                      </div>
-                      {bill.latestActionText && (
-                        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                          Latest: {bill.latestActionText}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-muted-foreground">
-                          {bill.sponsor && (
-                            <span>
-                              Sponsor: {bill.sponsor.firstName} {bill.sponsor.lastName} ({bill.sponsor.party}-{bill.sponsor.state})
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => handleBookmarkBill(bill)}
-                            disabled={isBookmarking || isBookmarked}
-                          >
-                            {isBookmarking ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : isBookmarked ? (
-                              <>
-                                <BookmarkCheck className="mr-1 h-3 w-3" />
-                                Saved
-                              </>
-                            ) : (
-                              <>
-                                <Bookmark className="mr-1 h-3 w-3" />
-                                Save
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                {filteredBills.map((bill) => (
+                  <EnhancedBillCard key={bill.id} bill={bill} />
+                ))}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">

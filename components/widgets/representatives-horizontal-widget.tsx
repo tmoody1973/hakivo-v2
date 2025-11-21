@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth/auth-context"
 import { getRepresentatives, Representative } from "@/lib/api/backend"
 
 export function RepresentativesHorizontalWidget() {
-  const { accessToken } = useAuth()
+  const { accessToken, refreshToken, updateAccessToken } = useAuth()
   const [representatives, setRepresentatives] = useState<Representative[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +23,11 @@ export function RepresentativesHorizontalWidget() {
       }
 
       try {
-        const response = await getRepresentatives(accessToken)
+        const response = await getRepresentatives(
+          accessToken,
+          refreshToken || undefined,
+          updateAccessToken
+        )
         if (response.success) {
           setRepresentatives(response.data || [])
         } else {
@@ -38,7 +42,7 @@ export function RepresentativesHorizontalWidget() {
     }
 
     fetchRepresentatives()
-  }, [accessToken])
+  }, [accessToken, refreshToken, updateAccessToken])
 
   if (loading) {
     return (

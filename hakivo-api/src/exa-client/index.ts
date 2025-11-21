@@ -27,14 +27,14 @@ export default class extends Service<Env> {
    * Used by brief-generator observer
    *
    * @param interests - User's policy interests
-   * @param startDate - Start date for news search
-   * @param endDate - End date for news search (default: now)
+   * @param startDate - Start date for news search (optional - defaults to 7 days ago)
+   * @param endDate - End date for news search (optional - defaults to now)
    * @param limit - Number of results (default: 10)
    * @returns News articles with summaries
    */
   async searchNews(
     interests: string[],
-    startDate: Date,
+    startDate?: Date,
     endDate?: Date,
     limit: number = 10
   ): Promise<Array<{
@@ -49,6 +49,13 @@ export default class extends Service<Env> {
   }>> {
     const client = this.getExaClient();
 
+    // Calculate dynamic date range - last 7 days by default
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const searchStartDate = startDate || sevenDaysAgo;
+    const searchEndDate = endDate || now;
+
     // Build search query following Exa integration strategy
     const keywordQuery = interests.length > 0 ? interests.join(' OR ') : 'Congress legislation';
     const contextQuery = '(news headline OR article OR bill OR legislation OR law OR congress OR act) site:news headline OR site:article';
@@ -57,23 +64,29 @@ export default class extends Service<Env> {
     try {
       const response = await client.searchAndContents(query, {
         numResults: limit,
-        text: true,
+        text: {
+          maxCharacters: 500
+        },
         type: 'auto',
         category: 'news',
         userLocation: 'US',
-        context: true,
+        summary: true,
+        startPublishedDate: searchStartDate.toISOString(),
+        endPublishedDate: searchEndDate.toISOString(),
         includeDomains: [
+          'punchbowl.news',
           'politico.com',
-          'cnn.com',
-          'npr.org',
-          'ap.com',
-          'nytimes.com',
-          'rollcall.com',
-          'abcnews.com',
           'theguardian.com',
-          'punchbowl.news'
-        ],
-        summary: true
+          'nytimes.com',
+          'cbsnews.com',
+          'abcnews.com',
+          'npr.org',
+          'washingtonpost.com',
+          'rollcall.com',
+          'thehill.com',
+          'ap.com',
+          'cnn.com'
+        ]
       });
 
       console.log(`✓ Exa news search: ${response.results.length} articles found`);

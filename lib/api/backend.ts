@@ -973,6 +973,15 @@ export async function getPersonalizedNews(
     fetchedAt: number;
     score: number;
     sourceDomain: string;
+    enrichment: {
+      plainLanguageSummary: string;
+      keyPoints: string[];
+      readingTimeMinutes: number;
+      impactLevel: string;
+      tags: string[];
+      enrichedAt: string;
+      modelUsed: string;
+    } | null;
   }>;
   count: number;
   interests: string[];
@@ -1226,6 +1235,18 @@ export async function getPersonalizedBills(
       party: string;
       state: string;
     } | null;
+    enrichment: {
+      plainLanguageSummary: string;
+      keyPoints: string[];
+      readingTimeMinutes: number;
+      impactLevel: string;
+      bipartisanScore: number;
+      currentStage: string;
+      progressPercentage: number;
+      tags: string[];
+      enrichedAt: string;
+      modelUsed: string;
+    } | null;
   }>;
   count: number;
   interests: string[];
@@ -1279,6 +1300,136 @@ export async function getPersonalizedBills(
       error: {
         code: 'FETCH_ERROR',
         message: error instanceof Error ? error.message : 'Failed to fetch personalized bills',
+      },
+    };
+  }
+}
+
+/**
+ * Get detailed information for a specific bill by ID
+ */
+export async function getBillById(
+  billId: string,
+  accessToken?: string
+): Promise<APIResponse<{
+  bill: {
+    id: string;
+    congress: number;
+    billType: string;
+    billNumber: number;
+    title: string;
+    policyArea: string | null;
+    introducedDate: string | null;
+    latestActionDate: string | null;
+    latestActionText: string | null;
+    originChamber: string | null;
+    updateDate: string | null;
+    sponsor: {
+      bioguideId: string;
+      firstName: string;
+      lastName: string;
+      fullName: string;
+      party: string;
+      state: string;
+    } | null;
+    enrichment: {
+      plainLanguageSummary: string;
+      keyPoints: string[];
+      readingTimeMinutes: number;
+      impactLevel: string;
+      bipartisanScore: number;
+      currentStage: string;
+      progressPercentage: number;
+      tags: string[];
+      enrichedAt: string;
+      modelUsed: string;
+    } | null;
+    analysis: {
+      executiveSummary: string;
+      statusQuoVsChange: string;
+      sectionBreakdown: Array<{
+        section: string;
+        summary: string;
+      }>;
+      mechanismOfAction: string;
+      agencyPowers: string[];
+      fiscalImpact: {
+        estimatedCost: string;
+        fundingSource: string;
+        timeframe: string;
+      };
+      stakeholderImpact: {
+        [key: string]: string;
+      };
+      unintendedConsequences: string[];
+      argumentsFor: string[];
+      argumentsAgainst: string[];
+      implementationChallenges: string[];
+      passageLikelihood: string;
+      passageReasoning: string;
+      recentDevelopments: Array<{
+        date: string;
+        event: string;
+      }>;
+      stateImpacts: {
+        [state: string]: string;
+      };
+      thinkingSummary: string;
+      analyzedAt: string;
+      modelUsed: string;
+    } | null;
+  };
+}>> {
+  try {
+    console.log('[getBillById] Fetching bill:', billId);
+    console.log('[getBillById] Access token present:', !!accessToken);
+
+    // Use Next.js API route to avoid CORS issues
+    const url = `/api/bills/${billId}`;
+    console.log('[getBillById] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: getHeaders(accessToken),
+    });
+
+    console.log('[getBillById] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      // 401 during initial load is expected (auth not ready yet)
+      if (response.status === 401) {
+        console.log('[getBillById] Auth not ready, will retry when token available');
+      } else {
+        console.error('[getBillById] Error response:', errorText);
+      }
+
+      return {
+        success: false,
+        error: {
+          code: response.status === 404 ? 'NOT_FOUND' : response.status === 401 ? 'UNAUTHORIZED' : 'API_ERROR',
+          message: response.status === 404 ? 'Bill not found' : response.status === 401 ? 'Authentication required' : `Failed to fetch bill: ${response.statusText}`,
+        },
+      };
+    }
+
+    const data = await response.json();
+    console.log('[getBillById] Received bill data');
+
+    return {
+      success: true,
+      data: {
+        bill: data.bill,
+      },
+    };
+  } catch (error) {
+    console.error('[getBillById] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch bill',
       },
     };
   }

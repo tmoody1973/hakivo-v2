@@ -568,12 +568,16 @@ app.get('/dashboard/news', async (c) => {
     const placeholders = policyInterests.map(() => '?').join(',');
 
     // Query news articles filtered by user interests, excluding already-seen articles
+    // JOIN with news_enrichment to include AI-generated summaries
     const articles = await db
       .prepare(`
         SELECT
           na.id, na.interest, na.title, na.url, na.author, na.summary,
-          na.image_url, na.published_date, na.fetched_at, na.score, na.source_domain
+          na.image_url, na.published_date, na.fetched_at, na.score, na.source_domain,
+          ne.plain_language_summary, ne.key_points, ne.reading_time_minutes,
+          ne.impact_level, ne.tags, ne.enriched_at, ne.model_used
         FROM news_articles na
+        LEFT JOIN news_enrichment ne ON na.id = ne.article_id
         LEFT JOIN user_article_views uav
           ON na.id = uav.article_id AND uav.user_id = ?
         WHERE na.interest IN (${placeholders})
@@ -595,8 +599,36 @@ app.get('/dashboard/news', async (c) => {
       publishedDate: article.published_date,
       fetchedAt: article.fetched_at,
       score: article.score,
-      sourceDomain: article.source_domain
+      sourceDomain: article.source_domain,
+      // AI enrichment data (null if not yet enriched)
+      enrichment: article.plain_language_summary ? {
+        plainLanguageSummary: article.plain_language_summary,
+        keyPoints: article.key_points ? JSON.parse(article.key_points as string) : [],
+        readingTimeMinutes: article.reading_time_minutes,
+        impactLevel: article.impact_level,
+        tags: article.tags ? JSON.parse(article.tags as string) : [],
+        enrichedAt: article.enriched_at,
+        modelUsed: article.model_used
+      } : null
     })) || [];
+
+    // Send unenriched articles to enrichment queue (fire and forget)
+    const unenrichedArticles = formattedArticles.filter(a => !a.enrichment);
+    if (unenrichedArticles.length > 0) {
+      const enrichmentQueue = c.env.ENRICHMENT_QUEUE;
+      Promise.all(
+        unenrichedArticles.map(article =>
+          enrichmentQueue.send({
+            type: 'enrich_news',
+            article_id: article.id,
+            timestamp: new Date().toISOString()
+          })
+        )
+      ).catch((error: any) => {
+        console.warn('Failed to queue article enrichment:', error);
+      });
+      console.log(`📤 Queued ${unenrichedArticles.length} articles for enrichment`);
+    }
 
     // Mark articles as viewed (async, don't wait for completion)
     if (formattedArticles.length > 0) {
@@ -1245,6 +1277,7 @@ app.get('/dashboard/bills', async (c) => {
     const placeholders = policyAreas.map(() => '?').join(',');
 
     // Query bills filtered by user interests, excluding already-seen bills
+    // JOIN with bill_enrichment to include AI-generated summaries
     const bills = await db
       .prepare(`
         SELECT
@@ -1252,9 +1285,13 @@ app.get('/dashboard/bills', async (c) => {
           b.policy_area, b.introduced_date, b.latest_action_date,
           b.latest_action_text, b.origin_chamber, b.update_date,
           m.first_name as sponsor_first_name, m.last_name as sponsor_last_name,
-          m.party as sponsor_party, m.state as sponsor_state
+          m.party as sponsor_party, m.state as sponsor_state,
+          be.plain_language_summary, be.key_points, be.reading_time_minutes,
+          be.impact_level, be.bipartisan_score, be.current_stage,
+          be.progress_percentage, be.tags, be.enriched_at, be.model_used
         FROM bills b
         LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        LEFT JOIN bill_enrichment be ON b.id = be.bill_id
         LEFT JOIN user_bill_views ubv
           ON b.id = ubv.bill_id AND ubv.user_id = ?
         WHERE b.policy_area IN (${placeholders})
@@ -1282,8 +1319,39 @@ app.get('/dashboard/bills', async (c) => {
         lastName: bill.sponsor_last_name,
         party: bill.sponsor_party,
         state: bill.sponsor_state
+      } : null,
+      // AI enrichment data (null if not yet enriched)
+      enrichment: bill.plain_language_summary ? {
+        plainLanguageSummary: bill.plain_language_summary,
+        keyPoints: bill.key_points ? JSON.parse(bill.key_points as string) : [],
+        readingTimeMinutes: bill.reading_time_minutes,
+        impactLevel: bill.impact_level,
+        bipartisanScore: bill.bipartisan_score,
+        currentStage: bill.current_stage,
+        progressPercentage: bill.progress_percentage,
+        tags: bill.tags ? JSON.parse(bill.tags as string) : [],
+        enrichedAt: bill.enriched_at,
+        modelUsed: bill.model_used
       } : null
     })) || [];
+
+    // Send unenriched bills to enrichment queue (fire and forget)
+    const unenrichedBills = formattedBills.filter(b => !b.enrichment);
+    if (unenrichedBills.length > 0) {
+      const enrichmentQueue = c.env.ENRICHMENT_QUEUE;
+      Promise.all(
+        unenrichedBills.map(bill =>
+          enrichmentQueue.send({
+            type: 'enrich_bill',
+            bill_id: bill.id,
+            timestamp: new Date().toISOString()
+          })
+        )
+      ).catch((error: any) => {
+        console.warn('Failed to queue bill enrichment:', error);
+      });
+      console.log(`📤 Queued ${unenrichedBills.length} bills for enrichment`);
+    }
 
     // Mark bills as viewed (async, don't wait for completion)
     if (formattedBills.length > 0) {
@@ -1426,6 +1494,172 @@ app.get('/dashboard/bills/bookmarks', async (c) => {
     console.error('Get bill bookmarks error:', error);
     return c.json({
       error: 'Failed to get bookmarks',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /bills/:id
+ * Get detailed bill information with AI analysis (requires auth optional for basic info)
+ */
+app.get('/bills/:id', async (c) => {
+  try {
+    // Require authentication
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) {
+      return auth;
+    }
+
+    const billId = c.req.param('id');
+    const db = c.env.APP_DB;
+
+    console.log(`[/bills/${billId}] Fetching bill details for user ${auth.userId}`);
+
+    // Get complete bill information with enrichment and deep analysis
+    const bill = await db
+      .prepare(`
+        SELECT
+          b.id, b.congress, b.bill_type, b.bill_number, b.title,
+          b.policy_area, b.introduced_date, b.latest_action_date,
+          b.latest_action_text, b.origin_chamber, b.update_date,
+          b.sponsor_bioguide_id,
+          m.first_name as sponsor_first_name, m.last_name as sponsor_last_name,
+          m.party as sponsor_party, m.state as sponsor_state,
+          be.plain_language_summary, be.key_points, be.reading_time_minutes,
+          be.impact_level, be.bipartisan_score, be.current_stage,
+          be.progress_percentage, be.tags as enrichment_tags, be.enriched_at, be.model_used,
+          be.status as enrichment_status, be.started_at as enrichment_started, be.completed_at as enrichment_completed,
+          ba.executive_summary, ba.status_quo_vs_change, ba.section_breakdown,
+          ba.mechanism_of_action, ba.agency_powers, ba.fiscal_impact,
+          ba.stakeholder_impact, ba.unintended_consequences, ba.arguments_for,
+          ba.arguments_against, ba.implementation_challenges, ba.passage_likelihood,
+          ba.passage_reasoning, ba.recent_developments, ba.state_impacts,
+          ba.thinking_summary, ba.analyzed_at, ba.model_used as analysis_model_used,
+          ba.status as analysis_status, ba.started_at as analysis_started, ba.completed_at as analysis_completed
+        FROM bills b
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        LEFT JOIN bill_enrichment be ON b.id = be.bill_id
+        LEFT JOIN bill_analysis ba ON b.id = ba.bill_id
+        WHERE b.id = ?
+        LIMIT 1
+      `)
+      .bind(billId)
+      .first();
+
+    if (!bill) {
+      return c.json({
+        error: 'Bill not found',
+        message: `No bill found with ID: ${billId}`
+      }, 404);
+    }
+
+    const response = {
+      success: true,
+      bill: {
+        id: bill.id,
+        congress: bill.congress,
+        billType: bill.bill_type,
+        billNumber: bill.bill_number,
+        title: bill.title,
+        policyArea: bill.policy_area,
+        introducedDate: bill.introduced_date,
+        latestActionDate: bill.latest_action_date,
+        latestActionText: bill.latest_action_text,
+        originChamber: bill.origin_chamber,
+        updateDate: bill.update_date,
+        sponsor: bill.sponsor_first_name && bill.sponsor_last_name ? {
+          bioguideId: bill.sponsor_bioguide_id,
+          firstName: bill.sponsor_first_name,
+          lastName: bill.sponsor_last_name,
+          fullName: `${bill.sponsor_first_name} ${bill.sponsor_last_name}`,
+          party: bill.sponsor_party,
+          state: bill.sponsor_state
+        } : null,
+        // Basic enrichment (for bill cards)
+        enrichment: bill.plain_language_summary ? {
+          plainLanguageSummary: bill.plain_language_summary,
+          keyPoints: bill.key_points ? JSON.parse(bill.key_points as string) : [],
+          readingTimeMinutes: bill.reading_time_minutes,
+          impactLevel: bill.impact_level,
+          bipartisanScore: bill.bipartisan_score,
+          currentStage: bill.current_stage,
+          progressPercentage: bill.progress_percentage,
+          tags: bill.enrichment_tags ? JSON.parse(bill.enrichment_tags as string) : [],
+          enrichedAt: bill.enriched_at,
+          modelUsed: bill.model_used,
+          status: bill.enrichment_status || 'pending',
+          startedAt: bill.enrichment_started,
+          completedAt: bill.enrichment_completed
+        } : bill.enrichment_status ? {
+          // Return status even if enrichment not complete yet
+          status: bill.enrichment_status,
+          startedAt: bill.enrichment_started,
+          completedAt: bill.enrichment_completed
+        } : null,
+        // Deep forensic analysis
+        analysis: bill.executive_summary ? {
+          executiveSummary: bill.executive_summary,
+          statusQuoVsChange: bill.status_quo_vs_change,
+          sectionBreakdown: bill.section_breakdown ? JSON.parse(bill.section_breakdown as string) : [],
+          mechanismOfAction: bill.mechanism_of_action,
+          agencyPowers: bill.agency_powers ? JSON.parse(bill.agency_powers as string) : [],
+          fiscalImpact: bill.fiscal_impact ? JSON.parse(bill.fiscal_impact as string) : null,
+          stakeholderImpact: bill.stakeholder_impact ? JSON.parse(bill.stakeholder_impact as string) : null,
+          unintendedConsequences: bill.unintended_consequences ? JSON.parse(bill.unintended_consequences as string) : [],
+          argumentsFor: bill.arguments_for ? JSON.parse(bill.arguments_for as string) : [],
+          argumentsAgainst: bill.arguments_against ? JSON.parse(bill.arguments_against as string) : [],
+          implementationChallenges: bill.implementation_challenges ? JSON.parse(bill.implementation_challenges as string) : [],
+          passageLikelihood: bill.passage_likelihood,
+          passageReasoning: bill.passage_reasoning,
+          recentDevelopments: bill.recent_developments ? JSON.parse(bill.recent_developments as string) : [],
+          stateImpacts: bill.state_impacts ? JSON.parse(bill.state_impacts as string) : null,
+          thinkingSummary: bill.thinking_summary,
+          analyzedAt: bill.analyzed_at,
+          modelUsed: bill.analysis_model_used,
+          status: bill.analysis_status || 'pending',
+          startedAt: bill.analysis_started,
+          completedAt: bill.analysis_completed
+        } : bill.analysis_status ? {
+          // Return status even if analysis not complete yet
+          status: bill.analysis_status,
+          startedAt: bill.analysis_started,
+          completedAt: bill.analysis_completed
+        } : null
+      }
+    };
+
+    // Queue enrichment if basic summary not available
+    if (!bill.plain_language_summary) {
+      const enrichmentQueue = c.env.ENRICHMENT_QUEUE;
+      enrichmentQueue.send({
+        type: 'enrich_bill',
+        bill_id: billId,
+        timestamp: new Date().toISOString()
+      }).catch((error: any) => {
+        console.warn('Failed to queue bill enrichment:', error);
+      });
+      console.log(`📤 Queued bill ${billId} for enrichment`);
+    }
+
+    // Queue deep analysis if not available
+    if (!bill.executive_summary) {
+      const enrichmentQueue = c.env.ENRICHMENT_QUEUE;
+      enrichmentQueue.send({
+        type: 'deep_analysis_bill',
+        bill_id: billId,
+        timestamp: new Date().toISOString()
+      }).catch((error: any) => {
+        console.warn('Failed to queue bill deep analysis:', error);
+      });
+      console.log(`📤 Queued bill ${billId} for deep analysis`);
+    }
+
+    return c.json(response);
+  } catch (error) {
+    console.error('Get bill detail error:', error);
+    return c.json({
+      error: 'Failed to get bill details',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

@@ -127,6 +127,12 @@ export default class extends Each<SyncMessage, Env> {
                     // Strip HTML to get plain text
                     const plainText = stripHTML(billText);
 
+                    // Save plain text to database
+                    await db
+                      .prepare(`UPDATE bills SET text = ? WHERE id = ?`)
+                      .bind(plainText, bill.number)
+                      .run();
+
                     // Upload plain text to SmartBucket
                     const documentKey = `congress-${congress}/${bill.type}${bill.number}.txt`;
                     await billTexts.put(documentKey, plainText, {
@@ -138,7 +144,7 @@ export default class extends Each<SyncMessage, Env> {
                       }
                     });
 
-                    console.log(`    ✓ Uploaded ${bill.type}${bill.number} to SmartBucket (${plainText.length} chars)`);
+                    console.log(`    ✓ Saved text and uploaded ${bill.type}${bill.number} (${plainText.length} chars)`);
                   } catch (error) {
                     console.warn(`    ⚠️  Failed to upload bill text for ${bill.type}${bill.number}`);
                   }

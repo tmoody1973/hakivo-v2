@@ -25,6 +25,18 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "CONGRESS_API_KEY" {
+    secret = true
+  }
+
+  env "GEMINI_API_KEY" {
+    secret = true
+  }
+
+  env "CEREBRAS_API_KEY" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -100,6 +112,12 @@ application "hakivo-new" {
     }
   }
 
+  observer "enrichment-observer" {
+    source {
+      queue = "enrichment-queue"
+    }
+  }
+
   // Scheduled tasks
   task "daily-brief-scheduler" {
     type = "cron"
@@ -118,6 +136,11 @@ application "hakivo-new" {
 
   task "news-sync-scheduler" {
     type = "cron"
+    cron = "0 8,14,20 * * *"
+  }
+
+  task "congress-actions-scheduler" {
+    type = "cron"
     cron = "0 6,18 * * *"
   }
 
@@ -125,6 +148,8 @@ application "hakivo-new" {
   queue "brief-queue" {}
 
   queue "sync-queue" {}
+
+  queue "enrichment-queue" {}
 
   // SQL database for application data
   sql_database "app-db" {}

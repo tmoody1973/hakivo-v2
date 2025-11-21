@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { DailyBriefWidget } from "@/components/widgets/daily-brief-widget"
 import { RepresentativesHorizontalWidget } from "@/components/widgets/representatives-horizontal-widget"
-import { BillActionsWidget } from "@/components/widgets/bill-actions-widget"
+import { LatestActionsWidget } from "@/components/widgets/latest-actions-widget"
 import { PersonalizedContentWidget } from "@/components/widgets/personalized-content-widget"
 import { getUserPreferences } from '@/lib/api/backend';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, user, accessToken } = useAuth();
+  const { isAuthenticated, isLoading, user, accessToken, refreshToken, updateAccessToken } = useAuth();
   const [userInterests, setUserInterests] = useState<string[]>([]);
 
   useEffect(() => {
@@ -26,7 +26,11 @@ export default function DashboardPage() {
     const fetchPreferences = async () => {
       if (accessToken && isAuthenticated) {
         try {
-          const response = await getUserPreferences(accessToken);
+          const response = await getUserPreferences(
+            accessToken,
+            refreshToken || undefined,
+            updateAccessToken
+          );
           if (response.success && response.data) {
             // Extract policy interests from preferences
             const preferences = response.data as any;
@@ -41,7 +45,7 @@ export default function DashboardPage() {
     };
 
     fetchPreferences();
-  }, [accessToken, isAuthenticated]);
+  }, [accessToken, isAuthenticated, refreshToken, updateAccessToken]);
 
   // Show loading state while checking authentication
   if (isLoading) {
@@ -70,7 +74,7 @@ export default function DashboardPage() {
         <DailyBriefWidget />
 
         <div className="grid gap-6 md:grid-cols-2">
-          <BillActionsWidget />
+          <LatestActionsWidget />
 
           <PersonalizedContentWidget userInterests={userInterests} />
         </div>
