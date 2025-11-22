@@ -175,10 +175,10 @@ Both API keys configured in `.env.local`:
 
 ```bash
 # Gemini 3 Pro - Deep bill analysis with web search + thinking
-GEMINI_API_KEY=AIzaSyAhlm96-sjJ6DgoSOP7cFJP0DQrtS5tWE8
+GEMINI_API_KEY=[REDACTED - see .env.local]
 
 # Cerebras - Ultra-fast feed summaries for news & bills
-CEREBRAS_API_KEY=csk-t32ew5yew3envwfnf3p423vd9vfvrwj9whkr9ceh6d4cvmf3
+CEREBRAS_API_KEY=[REDACTED - see .env.local]
 ```
 
 ### Raindrop Manifest ✅
