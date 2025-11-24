@@ -1128,16 +1128,23 @@ export async function bookmarkArticle(
     summary?: string;
     imageUrl?: string;
     interest: string;
-  }
+  },
+  refreshToken?: string,
+  onTokenRefreshed?: (newAccessToken: string) => void
 ): Promise<APIResponse<{ message: string }>> {
   try {
     console.log('[bookmarkArticle] Bookmarking article:', article.title);
 
     const url = `${DASHBOARD_API_URL}/dashboard/news/bookmark`;
-    const response = await fetch(url, {
+    const response = await authenticatedFetch(url, {
       method: 'POST',
-      headers: getHeaders(accessToken),
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(article),
+      accessToken,
+      refreshToken,
+      onTokenRefreshed,
     });
 
     console.log('[bookmarkArticle] Response status:', response.status);
@@ -1292,7 +1299,9 @@ export async function getUserBookmarks(
  */
 export async function getPersonalizedBills(
   accessToken: string,
-  limit?: number
+  limit?: number,
+  refreshToken?: string,
+  onTokenRefreshed?: (newAccessToken: string) => void
 ): Promise<APIResponse<{
   bills: Array<{
     id: string;
@@ -1344,9 +1353,13 @@ export async function getPersonalizedBills(
     const url = `${DASHBOARD_API_URL}/dashboard/bills?${queryParams.toString()}`;
     console.log('[getPersonalizedBills] Fetching from:', url);
 
-    // No headers - avoid CORS preflight (Content-Type triggers preflight)
-    const response = await fetch(url, {
+    // Use centralized fetch wrapper with automatic token refresh
+    const response = await authenticatedFetch(url, {
       method: 'GET',
+      accessToken,
+      refreshToken,
+      onTokenRefreshed,
+      skipAuthHeader: true, // Token is in query params
     });
 
     console.log('[getPersonalizedBills] Response status:', response.status);
@@ -1527,16 +1540,23 @@ export async function bookmarkBill(
     policyArea: string;
     latestActionText?: string;
     latestActionDate?: string;
-  }
+  },
+  refreshToken?: string,
+  onTokenRefreshed?: (newAccessToken: string) => void
 ): Promise<APIResponse<{ message: string; bookmarkId: string }>> {
   try {
     console.log('[bookmarkBill] Bookmarking bill:', bill.title);
 
     const url = `${DASHBOARD_API_URL}/dashboard/bills/bookmark`;
-    const response = await fetch(url, {
+    const response = await authenticatedFetch(url, {
       method: 'POST',
-      headers: getHeaders(accessToken),
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(bill),
+      accessToken,
+      refreshToken,
+      onTokenRefreshed,
     });
 
     console.log('[bookmarkBill] Response status:', response.status);

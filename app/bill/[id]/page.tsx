@@ -68,7 +68,7 @@ interface BillData {
     tags?: string[]
     enrichedAt?: string
     modelUsed?: string
-    status: string
+    status?: string
     startedAt?: number
     completedAt?: number
   } | null
@@ -90,8 +90,8 @@ interface BillData {
       [key: string]: string
     }
     unintendedConsequences?: string[]
-    argumentsFor?: Array<{ point: string; evidence: string }>
-    argumentsAgainst?: Array<{ point: string; evidence: string }>
+    argumentsFor?: Array<{ point: string; evidence: string }> | string[]
+    argumentsAgainst?: Array<{ point: string; evidence: string }> | string[]
     implementationChallenges?: string[]
     passageLikelihood?: string
     passageReasoning?: string
@@ -105,7 +105,7 @@ interface BillData {
     thinkingSummary?: string
     analyzedAt?: string
     modelUsed?: string
-    status: string
+    status?: string
     startedAt?: number
     completedAt?: number
   } | null
@@ -697,8 +697,14 @@ export default function SimplifiedBillDetailPage() {
                               <div className="flex gap-2">
                                 <span className="text-green-600 font-semibold">+</span>
                                 <div className="flex-1">
-                                  <p className="font-medium text-foreground">{arg.point}</p>
-                                  <p className="text-muted-foreground mt-1">{arg.evidence}</p>
+                                  {typeof arg === 'string' ? (
+                                    <p className="font-medium text-foreground">{arg}</p>
+                                  ) : (
+                                    <>
+                                      <p className="font-medium text-foreground">{arg.point}</p>
+                                      <p className="text-muted-foreground mt-1">{arg.evidence}</p>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </li>
@@ -722,8 +728,14 @@ export default function SimplifiedBillDetailPage() {
                               <div className="flex gap-2">
                                 <span className="text-red-600 font-semibold">-</span>
                                 <div className="flex-1">
-                                  <p className="font-medium text-foreground">{arg.point}</p>
-                                  <p className="text-muted-foreground mt-1">{arg.evidence}</p>
+                                  {typeof arg === 'string' ? (
+                                    <p className="font-medium text-foreground">{arg}</p>
+                                  ) : (
+                                    <>
+                                      <p className="font-medium text-foreground">{arg.point}</p>
+                                      <p className="text-muted-foreground mt-1">{arg.evidence}</p>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </li>

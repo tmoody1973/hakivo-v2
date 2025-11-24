@@ -47,14 +47,14 @@ interface NewsArticle {
   fetchedAt: number
   score: number
   sourceDomain: string
-  enrichment: {
-    plainLanguageSummary: string
-    keyPoints: string[]
-    readingTimeMinutes: number
-    impactLevel: string
-    tags: string[]
-    enrichedAt: string
-    modelUsed: string
+  enrichment?: {
+    plainLanguageSummary?: string
+    keyPoints?: string[]
+    readingTimeMinutes?: number
+    impactLevel?: string
+    tags?: string[]
+    enrichedAt?: string
+    modelUsed?: string
   } | null
 }
 
@@ -184,7 +184,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
         setBillsLoading(true)
         setBillsError(null)
 
-        const response = await getPersonalizedBills(accessToken, 20)
+        const response = await getPersonalizedBills(accessToken, 20, refreshToken || undefined, updateAccessToken)
 
         if (response.success && response.data) {
           setBills(response.data.bills)
@@ -201,7 +201,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
     }
 
     fetchBills()
-  }, [accessToken, activeTab, bills.length])
+  }, [accessToken, refreshToken, updateAccessToken, activeTab, bills.length])
 
   // Filter news based on selected category
   const getFilteredNews = () => {
@@ -298,7 +298,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
         summary: article.summary,
         imageUrl: article.imageUrl || undefined,
         interest: article.interest
-      })
+      }, refreshToken || undefined, updateAccessToken)
 
       if (response.success) {
         setBookmarkedIds(prev => new Set([...prev, article.id]))
@@ -329,7 +329,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
         policyArea: bill.policyArea || 'Unknown',
         latestActionText: bill.latestActionText || undefined,
         latestActionDate: bill.latestActionDate || undefined
-      })
+      }, refreshToken || undefined, updateAccessToken)
 
       if (response.success) {
         setBookmarkedBillIds(prev => new Set([...prev, bill.id]))
