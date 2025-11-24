@@ -1,6 +1,5 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import * as jose from 'jose';
@@ -73,27 +72,29 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use('*', logger());
-app.use('*', cors({
-  origin: '*', // Allow all origins temporarily to fix authentication
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  credentials: false,
-  exposeHeaders: ['Content-Type', 'Authorization'],
-  maxAge: 600
-}));
-
-// Handle preflight OPTIONS requests explicitly
-app.options('*', (c) => {
+// Manual CORS middleware - Hono's CORS middleware was not setting Access-Control-Allow-Origin header
+app.use('*', async (c, next) => {
   const origin = c.req.header('Origin') || '';
   const allowedOrigins = ['http://localhost:3000', 'https://hakivo-v2.netlify.app'];
 
+  // Set CORS headers on all requests
   if (allowedOrigins.includes(origin)) {
     c.header('Access-Control-Allow-Origin', origin);
+  } else {
+    // Allow all origins temporarily for testing
+    c.header('Access-Control-Allow-Origin', '*');
   }
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  c.header('Access-Control-Expose-Headers', 'Content-Type, Authorization');
   c.header('Access-Control-Max-Age', '600');
-  return c.text('', 200);
+
+  // Handle preflight OPTIONS requests
+  if (c.req.method === 'OPTIONS') {
+    return c.text('', 200);
+  }
+
+  await next();
 });
 
 /**
