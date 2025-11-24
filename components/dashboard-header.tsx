@@ -139,8 +139,6 @@ export function DashboardHeader() {
                   Settings
                 </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>Profile</DropdownMenuItem>
-              <DropdownMenuItem>Preferences</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 dark:text-red-400">
                 <LogOut className="mr-2 h-4 w-4" />
