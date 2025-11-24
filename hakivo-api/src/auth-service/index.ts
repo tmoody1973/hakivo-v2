@@ -928,18 +928,13 @@ app.get('/auth/workos/callback', async (c) => {
 
     const workos = new WorkOS(workosApiKey);
 
-    // Exchange code for user profile and session
-    const authResponse = await workos.userManagement.authenticateWithCode({
+    // Exchange code for user profile
+    const { user } = await workos.userManagement.authenticateWithCode({
       code,
       clientId: workosClientId,
     });
 
-    const user = authResponse.user;
-    const workosSessionId = (authResponse as any).sessionId || user.id; // Fallback to user.id if sessionId not available
-
-    console.log(`✓ WorkOS user authenticated: ${user.email}`, {
-      hasSessionId: !!(authResponse as any).sessionId
-    });
+    console.log(`✓ WorkOS user authenticated: ${user.email}`);
 
     // Check if user exists in database
     let existingUser = await db
@@ -1008,7 +1003,6 @@ app.get('/auth/workos/callback', async (c) => {
         userId,
         email: user.email,
         workosUserId: user.id,
-        workosSessionId, // Store WorkOS session ID for logout
         createdAt: Date.now()
       }),
       { expirationTtl: 30 * 24 * 60 * 60 } // 30 days
@@ -1057,53 +1051,27 @@ app.get('/auth/workos/callback', async (c) => {
 app.get('/auth/workos/logout', async (c) => {
   try {
     const workosApiKey = c.env.WORKOS_API_KEY;
+    const workosClientId = c.env.WORKOS_CLIENT_ID;
 
-    if (!workosApiKey) {
+    if (!workosApiKey || !workosClientId) {
       return c.json({ error: 'WorkOS not configured' }, 500);
     }
-
-    const workos = new WorkOS(workosApiKey);
 
     // Get our local session ID from query or header
     const sessionId = c.req.query('sessionId') || c.req.header('X-Session-ID');
 
-    if (!sessionId) {
-      return c.json({ error: 'Session ID required' }, 400);
+    if (sessionId) {
+      // Delete local session from KV cache if provided
+      await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
+      console.log(`✓ Deleted local session from cache: ${sessionId}`);
     }
 
-    // Step 1: Get WorkOS session ID from local session cache before deleting
-    const sessionData = await c.env.SESSION_CACHE.get(`session:${sessionId}`);
-    let workosSessionId: string | undefined;
+    // Manually construct WorkOS AuthKit logout URL
+    // The browser will send WorkOS session cookies, WorkOS will end the session,
+    // then redirect to the configured "Logout redirect" in the dashboard
+    const logoutUrl = `https://api.workos.com/user_management/sessions/logout?client_id=${workosClientId}`;
 
-    if (sessionData) {
-      try {
-        const parsed = JSON.parse(sessionData);
-        workosSessionId = parsed.workosSessionId;
-        console.log(`✓ Found WorkOS session ID: ${workosSessionId ? 'yes' : 'no'}`);
-      } catch (e) {
-        console.error('Failed to parse session data:', e);
-      }
-    }
-
-    // Step 2: Delete local session from KV cache
-    await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
-    console.log(`✓ Deleted local session from cache: ${sessionId}`);
-
-    // Step 3: Generate WorkOS logout URL to properly end SSO session
-    // This will clear WorkOS session cookies and redirect to the configured logout redirect
-    if (!workosSessionId) {
-      console.warn('⚠️ No WorkOS session ID found, cannot revoke WorkOS session');
-      // Still redirect to frontend to clear local state
-      const origin = c.req.header('Origin') || c.req.header('Referer');
-      const fallbackUrl = origin || 'https://hakivo-v2.netlify.app';
-      return c.redirect(fallbackUrl);
-    }
-
-    const logoutUrl = workos.userManagement.getLogoutUrl({
-      sessionId: workosSessionId
-    });
-
-    console.log(`✓ Redirecting to WorkOS logout URL to end SSO session`);
+    console.log(`✓ Redirecting to WorkOS logout URL to clear SSO cookies`);
 
     // Redirect to WorkOS logout, which will then redirect to the configured "Logout redirect" in dashboard
     return c.redirect(logoutUrl);
