@@ -2,5 +2,9 @@
   command = "npm run build"
   publish = ".next"
 
+[build.environment]
+  # Omit local .env files from secrets scanning
+  SECRETS_SCAN_OMIT_PATHS = ".env.local,hakivo-api/.env.local,hakivo-api/hakivo-api/.env.local"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
