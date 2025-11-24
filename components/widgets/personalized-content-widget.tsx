@@ -94,7 +94,7 @@ interface PersonalizedContentWidgetProps {
   userInterests?: string[]
 }
 
-const ITEMS_PER_PAGE = 5;
+const ITEMS_PER_PAGE = 3;
 
 export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedContentWidgetProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
