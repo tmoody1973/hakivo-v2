@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY || 'LujQ9kIn44Remaqi1i3Q8fcbeK9nA6aAZ0coUa3C';
+const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY;
 const BASE_URL = 'https://api.congress.gov/v3';
 
 interface CongressBill {
