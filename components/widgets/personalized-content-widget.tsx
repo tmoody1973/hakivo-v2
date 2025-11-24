@@ -115,7 +115,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
   const [newsCurrentPage, setNewsCurrentPage] = useState(1)
   const [billsCurrentPage, setBillsCurrentPage] = useState(1)
 
-  const { accessToken} = useAuth()
+  const { accessToken, refreshToken, updateAccessToken } = useAuth()
 
   // Fetch personalized news on mount
   useEffect(() => {
@@ -130,7 +130,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
         setLoading(true)
         setError(null)
 
-        const response = await getPersonalizedNews(accessToken, 20)
+        const response = await getPersonalizedNews(accessToken, 20, refreshToken || undefined, updateAccessToken)
 
         if (response.success && response.data) {
           setNewsArticles(response.data.articles)

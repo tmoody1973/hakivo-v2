@@ -21,7 +21,7 @@ type NewsArticle = {
 }
 
 export function PersonalizedNewsWidget() {
-  const { accessToken } = useAuth()
+  const { accessToken, refreshToken, updateAccessToken } = useAuth()
   const [articles, setArticles] = useState<NewsArticle[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +34,12 @@ export function PersonalizedNewsWidget() {
       }
 
       try {
-        const response = await getPersonalizedNews(accessToken, 5)
+        const response = await getPersonalizedNews(
+          accessToken,
+          5,
+          refreshToken || undefined,
+          updateAccessToken
+        )
         console.log('📰 [WIDGET] News API Response:', response)
         if (response.success && response.data) {
           console.log('📸 [WIDGET] First article:', response.data.articles[0])
@@ -58,7 +63,7 @@ export function PersonalizedNewsWidget() {
     }
 
     fetchNews()
-  }, [accessToken])
+  }, [accessToken, refreshToken, updateAccessToken])
 
   const getTimeAgo = (publishedDate: string) => {
     const now = new Date()

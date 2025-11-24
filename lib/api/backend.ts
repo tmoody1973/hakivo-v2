@@ -104,6 +104,78 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
 }
 
 // ============================================================================
+// Centralized Fetch Wrapper with Automatic Token Refresh
+// ============================================================================
+
+interface AuthenticatedFetchOptions extends RequestInit {
+  accessToken: string;
+  refreshToken?: string;
+  onTokenRefreshed?: (newAccessToken: string) => void;
+  skipAuthHeader?: boolean; // For endpoints that use token in query params
+}
+
+/**
+ * Centralized fetch wrapper that automatically handles token refresh on 401 errors
+ * This ensures all API calls can recover from expired tokens without manual retry logic
+ */
+async function authenticatedFetch(
+  url: string,
+  options: AuthenticatedFetchOptions
+): Promise<Response> {
+  const { accessToken, refreshToken, onTokenRefreshed, skipAuthHeader, ...fetchOptions } = options;
+
+  // Add Authorization header unless explicitly skipped
+  if (!skipAuthHeader) {
+    fetchOptions.headers = {
+      ...fetchOptions.headers,
+      'Authorization': `Bearer ${accessToken}`,
+    };
+  }
+
+  console.log('[authenticatedFetch] Making request to:', url);
+
+  // First attempt with current token
+  let response = await fetch(url, fetchOptions);
+
+  // If 401 and we have a refresh token, attempt refresh and retry
+  if (response.status === 401 && refreshToken) {
+    console.log('[authenticatedFetch] Token expired (401), attempting refresh...');
+
+    const refreshResult = await refreshAccessToken(refreshToken);
+
+    if (refreshResult.success && refreshResult.accessToken) {
+      console.log('[authenticatedFetch] Token refreshed successfully, retrying request...');
+
+      // Notify caller of new token (they should update their state)
+      if (onTokenRefreshed) {
+        onTokenRefreshed(refreshResult.accessToken);
+      }
+
+      // Retry request with new token
+      if (!skipAuthHeader) {
+        fetchOptions.headers = {
+          ...fetchOptions.headers,
+          'Authorization': `Bearer ${refreshResult.accessToken}`,
+        };
+      } else {
+        // If token is in query params, update the URL
+        const urlObj = new URL(url);
+        urlObj.searchParams.set('token', refreshResult.accessToken);
+        url = urlObj.toString();
+      }
+
+      response = await fetch(url, fetchOptions);
+      console.log('[authenticatedFetch] Retry response status:', response.status);
+    } else {
+      console.error('[authenticatedFetch] Token refresh failed, user needs to re-login');
+      // Return the 401 response - caller should handle redirect to login
+    }
+  }
+
+  return response;
+}
+
+// ============================================================================
 // User APIs
 // ============================================================================
 
@@ -959,7 +1031,9 @@ export async function searchMembers(params: {
  */
 export async function getPersonalizedNews(
   accessToken: string,
-  limit?: number
+  limit?: number,
+  refreshToken?: string,
+  onTokenRefreshed?: (newAccessToken: string) => void
 ): Promise<APIResponse<{
   articles: Array<{
     id: string;
@@ -993,9 +1067,13 @@ export async function getPersonalizedNews(
     const url = `${DASHBOARD_API_URL}/dashboard/news?${queryParams.toString()}`;
     console.log('[getPersonalizedNews] Fetching from:', url);
 
-    // No headers - avoid CORS preflight (Content-Type triggers preflight)
-    const response = await fetch(url, {
+    // Use centralized fetch wrapper with automatic token refresh
+    const response = await authenticatedFetch(url, {
       method: 'GET',
+      accessToken,
+      refreshToken,
+      onTokenRefreshed,
+      skipAuthHeader: true, // Token is in query params
     });
 
     console.log('[getPersonalizedNews] Response status:', response.status);
