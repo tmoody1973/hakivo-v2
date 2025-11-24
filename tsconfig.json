@@ -37,6 +37,6 @@
   ],
   "exclude": [
     "node_modules",
-    "hakivo-api/scripts"
+    "hakivo-api"
   ]
 }
