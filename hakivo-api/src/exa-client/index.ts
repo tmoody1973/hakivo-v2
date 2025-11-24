@@ -64,13 +64,13 @@ export default class extends Service<Env> {
     try {
       const response = await client.searchAndContents(query, {
         numResults: limit,
-        text: {
-          maxCharacters: 500
-        },
+        text: true,
         type: 'auto',
         category: 'news',
         userLocation: 'US',
-        summary: true,
+        summary: {
+          query: 'create a plain english 2 sentence summary easy to understand'
+        },
         startPublishedDate: searchStartDate.toISOString(),
         endPublishedDate: searchEndDate.toISOString(),
         includeDomains: [

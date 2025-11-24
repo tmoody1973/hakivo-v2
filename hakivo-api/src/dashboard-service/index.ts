@@ -555,25 +555,19 @@ app.get('/dashboard/news', async (c) => {
     // Build WHERE clause for interests filter
     const placeholders = policyInterests.map(() => '?').join(',');
 
-    // Query news articles filtered by user interests, excluding already-seen articles
-    // JOIN with news_enrichment to include AI-generated summaries
+    // Query news articles filtered by user interests
+    // Fast and simple - just use Exa's summary and image directly (no AI enrichment needed)
     const articles = await db
       .prepare(`
         SELECT
-          na.id, na.interest, na.title, na.url, na.author, na.summary,
-          na.image_url, na.published_date, na.fetched_at, na.score, na.source_domain,
-          ne.plain_language_summary, ne.key_points, ne.reading_time_minutes,
-          ne.impact_level, ne.tags, ne.enriched_at, ne.model_used
-        FROM news_articles na
-        LEFT JOIN news_enrichment ne ON na.id = ne.article_id
-        LEFT JOIN user_article_views uav
-          ON na.id = uav.article_id AND uav.user_id = ?
-        WHERE na.interest IN (${placeholders})
-          AND uav.article_id IS NULL  -- Exclude articles user has already seen
-        ORDER BY na.published_date DESC, na.score DESC
+          id, interest, title, url, author, summary,
+          image_url, published_date, fetched_at, score, source_domain
+        FROM news_articles
+        WHERE interest IN (${placeholders})
+        ORDER BY published_date DESC, score DESC
         LIMIT ?
       `)
-      .bind(auth.userId, ...policyInterests, limit)
+      .bind(...policyInterests, limit)
       .all();
 
     const formattedArticles = articles.results?.map((article: any) => ({
@@ -582,41 +576,13 @@ app.get('/dashboard/news', async (c) => {
       title: article.title,
       url: article.url,
       author: article.author,
-      summary: article.summary,
+      summary: article.summary, // Use Exa's summary directly - fast and accurate
       imageUrl: article.image_url,
       publishedDate: article.published_date,
       fetchedAt: article.fetched_at,
       score: article.score,
-      sourceDomain: article.source_domain,
-      // AI enrichment data (null if not yet enriched)
-      enrichment: article.plain_language_summary ? {
-        plainLanguageSummary: article.plain_language_summary,
-        keyPoints: article.key_points ? JSON.parse(article.key_points as string) : [],
-        readingTimeMinutes: article.reading_time_minutes,
-        impactLevel: article.impact_level,
-        tags: article.tags ? JSON.parse(article.tags as string) : [],
-        enrichedAt: article.enriched_at,
-        modelUsed: article.model_used
-      } : null
+      sourceDomain: article.source_domain
     })) || [];
-
-    // Send unenriched articles to enrichment queue (fire and forget)
-    const unenrichedArticles = formattedArticles.filter(a => !a.enrichment);
-    if (unenrichedArticles.length > 0) {
-      const enrichmentQueue = c.env.ENRICHMENT_QUEUE;
-      Promise.all(
-        unenrichedArticles.map(article =>
-          enrichmentQueue.send({
-            type: 'enrich_news',
-            article_id: article.id,
-            timestamp: new Date().toISOString()
-          })
-        )
-      ).catch((error: any) => {
-        console.warn('Failed to queue article enrichment:', error);
-      });
-      console.log(`📤 Queued ${unenrichedArticles.length} articles for enrichment`);
-    }
 
     // Mark articles as viewed (async, don't wait for completion)
     if (formattedArticles.length > 0) {
@@ -955,6 +921,34 @@ app.get('/dashboard/representatives', async (c) => {
 });
 
 /**
+ * POST /admin/clear-news
+ * Clear all news articles from database
+ * (Temporary endpoint for testing)
+ */
+app.post('/admin/clear-news', async (c) => {
+  console.log('🗑️  Clearing news articles...');
+
+  try {
+    const db = c.env.APP_DB;
+    const result = await db.prepare('DELETE FROM news_articles').run();
+
+    console.log(`✅ Cleared ${result.meta.changes} articles`);
+
+    return c.json({
+      success: true,
+      message: 'News articles cleared',
+      deletedCount: result.meta.changes
+    });
+  } catch (error) {
+    console.error('Clear news error:', error);
+    return c.json({
+      error: 'Failed to clear news articles',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * POST /admin/sync-news
  * Manual trigger to sync news articles from Exa.ai
  * (Temporary endpoint for immediate database population)
@@ -971,9 +965,9 @@ app.post('/admin/sync-news', async (c) => {
     let successfulSyncs = 0;
     const errors: Array<{ interest: string; error: string }> = [];
 
-    // Define date range (last 24 hours for fresh news)
+    // Define date range (last 7 days for fresh news)
     const endDate = new Date();
-    const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     console.log(`📅 Fetching news from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 

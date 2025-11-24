@@ -14,12 +14,6 @@ import { corsDisabled } from '@liquidmetal-ai/raindrop-framework/core/cors';
  * Enable CORS when you need to allow web applications from different domains to access
  * your API (e.g., a frontend at https://app.example.com calling an API at https://api.example.com).
  *
- * @example Allow all origins (public API - use with caution)
- * ```typescript
- * import { corsAllowAll } from '@liquidmetal-ai/raindrop-framework/core/cors';
- * export const cors = corsAllowAll;
- * ```
- *
  * @example Allow specific origins (recommended for production)
  * ```typescript
  * import { createCorsHandler } from '@liquidmetal-ai/raindrop-framework/core/cors';

@@ -668,12 +668,12 @@ export default function BillDetailPage() {
                           {analysis.argumentsFor && analysis.argumentsFor.length > 0 ? (
                             analysis.argumentsFor.map((benefit, index) => (
                               <li key={index} className="flex gap-2 text-sm">
-                                <Check className="h-4 w-4 text-green-600 dark:text-green-500 flex-shrink-0 mt-0.5" />
-                                <span className="text-foreground">{String(benefit)}</span>
+                                <Check className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                                <span className="text-green-900 dark:text-green-100">{String(benefit)}</span>
                               </li>
                             ))
                           ) : (
-                            <p className="text-sm text-muted-foreground">No benefits listed</p>
+                            <p className="text-sm text-green-700 dark:text-green-300">No benefits listed</p>
                           )}
                         </ul>
                       </CardContent>
@@ -692,12 +692,12 @@ export default function BillDetailPage() {
                           {analysis.argumentsAgainst && analysis.argumentsAgainst.length > 0 ? (
                             analysis.argumentsAgainst.map((concern, index) => (
                               <li key={index} className="flex gap-2 text-sm">
-                                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
-                                <span className="text-foreground">{String(concern)}</span>
+                                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                                <span className="text-red-900 dark:text-red-100">{String(concern)}</span>
                               </li>
                             ))
                           ) : (
-                            <p className="text-sm text-muted-foreground">No concerns listed</p>
+                            <p className="text-sm text-red-700 dark:text-red-300">No concerns listed</p>
                           )}
                         </ul>
                       </CardContent>
@@ -710,23 +710,27 @@ export default function BillDetailPage() {
         )}
 
         {/* Latest Action (always shown) */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Latest Action</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground leading-relaxed">{bill.latestActionText}</p>
-            {bill.latestActionDate && (
-              <p className="text-sm text-muted-foreground mt-2">
-                {new Date(bill.latestActionDate).toLocaleDateString('en-US', {
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric'
-                })}
+        {(bill.latestAction?.text || bill.latestActionText) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Latest Action</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground leading-relaxed">
+                {bill.latestAction?.text || bill.latestActionText}
               </p>
-            )}
-          </CardContent>
-        </Card>
+              {(bill.latestAction?.date || bill.latestActionDate) && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  {new Date(bill.latestAction?.date || bill.latestActionDate || '').toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

@@ -71,8 +71,21 @@ export function EnhancedNewsCard({ article }: EnhancedNewsCardProps) {
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 space-y-2">
+        <div className="flex items-start gap-4">
+          {/* Thumbnail Image */}
+          {article.imageUrl && (
+            <div className="flex-shrink-0 w-24 h-24 rounded-md overflow-hidden bg-muted">
+              <img
+                src={article.imageUrl}
+                alt={article.title}
+                className="w-full h-full object-cover"
+                onError={() => console.error('❌ [EnhancedNewsCard] Failed to load image:', article.imageUrl)}
+                onLoad={() => console.log('✅ [EnhancedNewsCard] Image loaded:', article.imageUrl)}
+              />
+            </div>
+          )}
+
+          <div className="flex-1 space-y-2 min-w-0">
             {/* Category and Time */}
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="secondary" className="text-xs">

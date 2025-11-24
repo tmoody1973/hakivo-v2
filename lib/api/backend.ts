@@ -973,15 +973,6 @@ export async function getPersonalizedNews(
     fetchedAt: number;
     score: number;
     sourceDomain: string;
-    enrichment: {
-      plainLanguageSummary: string;
-      keyPoints: string[];
-      readingTimeMinutes: number;
-      impactLevel: string;
-      tags: string[];
-      enrichedAt: string;
-      modelUsed: string;
-    } | null;
   }>;
   count: number;
   interests: string[];
@@ -1024,6 +1015,14 @@ export async function getPersonalizedNews(
 
     const result = await response.json();
     console.log('[getPersonalizedNews] Success, found:', result.count || 0, 'articles');
+
+    // DEBUG: Log first article's imageUrl
+    if (result.articles && result.articles.length > 0) {
+      console.log('[getPersonalizedNews] 🖼️ First article imageUrl:', result.articles[0].imageUrl);
+      console.log('[getPersonalizedNews] 📰 First article title:', result.articles[0].title);
+      console.log('[getPersonalizedNews] 🔍 Full first article:', JSON.stringify(result.articles[0], null, 2));
+    }
+
     return {
       success: true,
       data: result,
