@@ -74,13 +74,10 @@ const app = new Hono<{ Bindings: Env }>();
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-  origin: (origin) => {
-    const allowedOrigins = ['http://localhost:3000', 'https://hakivo-v2.netlify.app'];
-    return allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-  },
+  origin: '*', // Allow all origins temporarily to fix authentication
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  credentials: false, // Changed to false to avoid preflight
+  credentials: false,
   exposeHeaders: ['Content-Type', 'Authorization'],
   maxAge: 600
 }));
