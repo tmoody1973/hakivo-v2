@@ -74,7 +74,7 @@ const app = new Hono<{ Bindings: Env }>();
 // Middleware
 app.use('*', logger());
 app.use('*', cors({
-  origin: 'http://localhost:3000',
+  origin: ['http://localhost:3000', 'https://hakivo-v2.netlify.app'],
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   credentials: false, // Changed to false to avoid preflight
@@ -84,7 +84,12 @@ app.use('*', cors({
 
 // Handle preflight OPTIONS requests explicitly
 app.options('*', (c) => {
-  c.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  const origin = c.req.header('Origin') || '';
+  const allowedOrigins = ['http://localhost:3000', 'https://hakivo-v2.netlify.app'];
+
+  if (allowedOrigins.includes(origin)) {
+    c.header('Access-Control-Allow-Origin', origin);
+  }
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
   c.header('Access-Control-Max-Age', '600');
