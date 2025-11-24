@@ -42,7 +42,7 @@ export function EnhancedNewsCard({ article }: EnhancedNewsCardProps) {
 
   return (
     <Card className="hover:shadow-md transition-shadow">
-      <CardHeader className="pb-2 pt-3 px-4">
+      <CardHeader className="pb-3 pt-3 px-4">
         <div className="flex items-start gap-3">
           {/* Thumbnail Image - Bigger */}
           {article.imageUrl && (
@@ -57,45 +57,45 @@ export function EnhancedNewsCard({ article }: EnhancedNewsCardProps) {
             </div>
           )}
 
-          <div className="flex-1 space-y-1.5 min-w-0">
-            {/* Category and Time */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="text-xs px-2 py-0">
-                {article.interest}
-              </Badge>
-              <span className="text-xs text-muted-foreground">{timeAgo}</span>
+          <div className="flex-1 flex flex-col justify-between min-w-0 h-32">
+            <div className="space-y-0.5">
+              {/* Category and Time */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="text-xs px-2 py-0">
+                  {article.interest}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{timeAgo}</span>
+              </div>
+
+              {/* Title - More compact */}
+              <Link href={article.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                <h3 className="font-semibold text-sm leading-tight line-clamp-2">
+                  {article.title}
+                </h3>
+              </Link>
+
+              {/* Compact summary preview */}
+              <p className="text-xs text-muted-foreground line-clamp-2 leading-snug">
+                {article.summary}
+              </p>
             </div>
 
-            {/* Title - More compact */}
-            <Link href={article.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-              <h3 className="font-semibold text-base leading-snug line-clamp-2">
-                {article.title}
-              </h3>
-            </Link>
-
-            {/* Compact summary preview - Always visible, no expand/collapse */}
-            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-              {article.summary}
-            </p>
+            {/* Source and Actions - Aligned with bottom of image */}
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs text-muted-foreground truncate">
+                {article.sourceDomain}
+                {article.author && ` • ${article.author}`}
+              </span>
+              <Button size="sm" variant="ghost" asChild className="h-6 text-xs px-2 flex-shrink-0">
+                <Link href={article.url} target="_blank" rel="noopener noreferrer">
+                  Read
+                  <ExternalLink className="ml-1 h-3 w-3" />
+                </Link>
+              </Button>
+            </div>
           </div>
         </div>
       </CardHeader>
-
-      <CardContent className="pt-0 px-4 pb-3">
-        {/* Source and Actions - Compact footer */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {article.sourceDomain}
-            {article.author && ` • ${article.author}`}
-          </span>
-          <Button size="sm" variant="ghost" asChild className="h-7 text-xs">
-            <Link href={article.url} target="_blank" rel="noopener noreferrer">
-              Read Article
-              <ExternalLink className="ml-1 h-3 w-3" />
-            </Link>
-          </Button>
-        </div>
-      </CardContent>
     </Card>
   )
 }
