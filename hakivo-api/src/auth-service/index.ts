@@ -1073,37 +1073,11 @@ app.get('/auth/workos/logout', async (c) => {
     await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
     console.log(`✓ Deleted local session from cache: ${sessionId}`);
 
-    // Step 3: Revoke ALL WorkOS sessions for this user (sign out everywhere)
-    // This ensures the user is logged out from all devices and the WorkOS
-    // browser session cookie is invalidated
-    if (workosUserId) {
-      try {
-        // List all active WorkOS sessions for the user
-        const sessions = await workos.userManagement.listSessions(workosUserId);
-
-        console.log(`Found ${sessions.data.length} WorkOS sessions for user ${workosUserId}`);
-
-        // Revoke each session
-        for (const session of sessions.data) {
-          try {
-            await workos.userManagement.revokeSession({
-              sessionId: session.id
-            });
-            console.log(`✓ Revoked WorkOS session: ${session.id}`);
-          } catch (revokeError) {
-            console.error(`Failed to revoke session ${session.id}:`, revokeError);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to list/revoke WorkOS sessions:', error);
-      }
-    } else {
-      console.warn('No WorkOS user ID found, skipping WorkOS session revocation');
-    }
-
-    // Step 4: Redirect to landing page
-    // Note: WorkOS sessions are now revoked, so the browser cookie is invalid
-    console.log(`✓ All sessions revoked, redirecting to landing page`);
+    // Step 3: Redirect to landing page
+    // Note: Local session is deleted. WorkOS session will expire based on configured timeout.
+    // For proper WorkOS session revocation, the frontend should redirect to the WorkOS logout endpoint
+    // using workos.userManagement.getLogoutUrl({ sessionId: workosSessionId })
+    console.log(`✓ Local session deleted, redirecting to landing page`);
     return c.redirect('http://localhost:3000');
   } catch (error) {
     console.error('WorkOS logout error:', error);

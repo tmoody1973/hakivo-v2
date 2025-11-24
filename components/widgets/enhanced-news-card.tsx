@@ -7,13 +7,13 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
 interface NewsEnrichment {
-  plainLanguageSummary: string
-  keyPoints: string[]
-  readingTimeMinutes: number
-  impactLevel: string
-  tags: string[]
-  enrichedAt: string
-  modelUsed: string
+  plainLanguageSummary?: string
+  keyPoints?: string[]
+  readingTimeMinutes?: number
+  impactLevel?: string
+  tags?: string[]
+  enrichedAt?: string
+  modelUsed?: string
 }
 
 interface NewsArticle {
@@ -28,7 +28,7 @@ interface NewsArticle {
   score: number
   sourceDomain: string
   interest: string
-  enrichment: NewsEnrichment | null
+  enrichment?: NewsEnrichment | null
 }
 
 interface EnhancedNewsCardProps {
