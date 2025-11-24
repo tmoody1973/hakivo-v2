@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, TrendingUp, List, Bookmark, Sparkles, Clock } from 'lucide-react';
+import { AlertCircle, TrendingUp, List, Bookmark, Sparkles, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface BillAction {
@@ -34,15 +35,18 @@ interface LatestActionsResponse {
   error?: string;
 }
 
+const ITEMS_PER_PAGE = 5;
+
 export function LatestActionsWidget() {
   const [actions, setActions] = useState<BillAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     async function fetchLatestActions() {
       try {
-        const response = await fetch('/api/congress/latest-actions?limit=10');
+        const response = await fetch('/api/congress/latest-actions?limit=50');
 
         if (!response.ok) {
           throw new Error(`Failed to fetch latest actions: ${response.statusText}`);
@@ -65,6 +69,41 @@ export function LatestActionsWidget() {
 
     fetchLatestActions();
   }, []);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(actions.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentActions = actions.slice(startIndex, endIndex);
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    return pages;
+  };
 
   const getStatusBadgeColor = (status: string) => {
     const statusLower = status.toLowerCase();
@@ -169,7 +208,7 @@ export function LatestActionsWidget() {
 
           <TabsContent value="latest" className="mt-0">
             <div className="space-y-3">
-              {actions.map((action) => (
+              {currentActions.map((action) => (
                 <div
                   key={action.id}
                   className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
@@ -207,6 +246,47 @@ export function LatestActionsWidget() {
                 </div>
               )}
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="h-8"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {getPageNumbers().map((page, index) => (
+                  page === '...' ? (
+                    <span key={`ellipsis-${index}`} className="px-2 text-muted-foreground">...</span>
+                  ) : (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCurrentPage(page as number)}
+                      className="h-8 w-8 p-0"
+                    >
+                      {page}
+                    </Button>
+                  )
+                ))}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="h-8"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="tracked" className="mt-0">
