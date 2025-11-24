@@ -929,12 +929,24 @@ app.get('/auth/workos/callback', async (c) => {
     const workos = new WorkOS(workosApiKey);
 
     // Exchange code for user profile
-    const { user } = await workos.userManagement.authenticateWithCode({
+    const authResponse = await workos.userManagement.authenticateWithCode({
       code,
       clientId: workosClientId,
     });
 
-    console.log(`✓ WorkOS user authenticated: ${user.email}`);
+    console.log('✓ WorkOS auth response:', JSON.stringify(authResponse, null, 2));
+
+    const { user, accessToken: workosAccessToken } = authResponse;
+
+    // Extract WorkOS session ID from the access token's 'sid' claim
+    let workosSessionId: string | null = null;
+    try {
+      const decoded = jose.decodeJwt(workosAccessToken);
+      workosSessionId = decoded.sid as string;
+      console.log('✓ Extracted WorkOS session ID:', workosSessionId);
+    } catch (err) {
+      console.warn('⚠️ Could not extract session ID from WorkOS token:', err);
+    }
 
     // Check if user exists in database
     let existingUser = await db
@@ -1003,6 +1015,7 @@ app.get('/auth/workos/callback', async (c) => {
         userId,
         email: user.email,
         workosUserId: user.id,
+        workosSessionId, // Store WorkOS session ID for logout
         createdAt: Date.now()
       }),
       { expirationTtl: 30 * 24 * 60 * 60 } // 30 days
@@ -1057,30 +1070,54 @@ app.get('/auth/workos/logout', async (c) => {
       return c.json({ error: 'WorkOS not configured' }, 500);
     }
 
-    // Get our local session ID from query or header
-    const sessionId = c.req.query('sessionId') || c.req.header('X-Session-ID');
+    const workos = new WorkOS(workosApiKey);
+
+    // Get our local session ID from query parameter
+    const sessionId = c.req.query('sessionId');
+
+    let workosSessionId: string | null = null;
 
     if (sessionId) {
-      // Delete local session from KV cache if provided
+      // Retrieve session from cache to get WorkOS session ID
+      const sessionData = await c.env.SESSION_CACHE.get(`session:${sessionId}`);
+
+      if (sessionData) {
+        try {
+          const session = JSON.parse(sessionData);
+          workosSessionId = session.workosSessionId;
+          console.log('✓ Retrieved WorkOS session ID from cache:', workosSessionId);
+        } catch (err) {
+          console.warn('⚠️ Could not parse session data:', err);
+        }
+      }
+
+      // Delete local session from KV cache
       await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
       console.log(`✓ Deleted local session from cache: ${sessionId}`);
     }
 
-    // Manually construct WorkOS AuthKit logout URL
-    // The browser will send WorkOS session cookies, WorkOS will end the session,
-    // then redirect to the configured "Logout redirect" in the dashboard
-    const logoutUrl = `https://api.workos.com/user_management/sessions/logout?client_id=${workosClientId}`;
+    // Generate WorkOS logout URL using the session ID
+    let logoutUrl: string;
 
-    console.log(`✓ Redirecting to WorkOS logout URL to clear SSO cookies`);
+    if (workosSessionId) {
+      // Use SDK method to generate proper logout URL
+      logoutUrl = workos.userManagement.getLogoutUrl({ sessionId: workosSessionId });
+      console.log(`✓ Generated WorkOS logout URL with session ID`);
+    } else {
+      // Fallback: redirect to app homepage if we don't have a session ID
+      logoutUrl = 'https://hakivo-v2.netlify.app';
+      console.log(`⚠️ No WorkOS session ID found, redirecting to homepage`);
+    }
 
-    // Redirect to WorkOS logout, which will then redirect to the configured "Logout redirect" in dashboard
+    console.log(`✓ Redirecting to: ${logoutUrl}`);
+
+    // Redirect to WorkOS logout, which will clear the session and redirect to configured logout URI
     return c.redirect(logoutUrl);
   } catch (error) {
     console.error('WorkOS logout error:', error);
 
     // Fallback: redirect to home page if logout fails
-    const origin = c.req.header('Origin') || c.req.header('Referer');
-    const fallbackUrl = origin || 'https://hakivo-v2.netlify.app';
+    const fallbackUrl = 'https://hakivo-v2.netlify.app';
 
     console.log(`⚠️ Logout failed, redirecting to fallback: ${fallbackUrl}`);
     return c.redirect(fallbackUrl);
