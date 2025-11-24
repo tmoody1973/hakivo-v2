@@ -1315,13 +1315,17 @@ export async function getBillById(
   bill: {
     id: string;
     congress: number;
-    billType: string;
-    billNumber: number;
+    type: string;
+    number: number;
     title: string;
     policyArea: string | null;
     introducedDate: string | null;
-    latestActionDate: string | null;
-    latestActionText: string | null;
+    latestAction?: {
+      date: string | null;
+      text: string | null;
+    };
+    latestActionDate?: string | null;
+    latestActionText?: string | null;
     originChamber: string | null;
     updateDate: string | null;
     sponsor: {

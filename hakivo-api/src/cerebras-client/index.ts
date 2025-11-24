@@ -10,7 +10,7 @@ export default class extends Service<Env> {
    */
   private getCerebrasClient(): Cerebras {
     if (!this.cerebras) {
-      const apiKey = process.env.CEREBRAS_API_KEY;
+      const apiKey = this.env.CEREBRAS_API_KEY;
 
       if (!apiKey) {
         throw new Error('CEREBRAS_API_KEY environment variable is not set');

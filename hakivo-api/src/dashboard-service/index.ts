@@ -34,20 +34,8 @@ const app = new Hono<{ Bindings: Env }>();
 // Middleware
 app.use('*', logger());
 
-// CORS middleware - allow all origins for development
-app.use('*', cors({
-  origin: (origin) => origin || '*', // Allow any origin
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposeHeaders: ['Content-Length', 'Content-Type'],
-  credentials: true,
-  maxAge: 86400, // 24 hours
-}));
-
-// Explicit OPTIONS handler for all routes (handle preflight)
-app.options('*', (c) => {
-  return new Response(null, { status: 204 });
-});
+// CORS middleware
+app.use('*', cors());
 
 /**
  * Verify JWT token from auth header

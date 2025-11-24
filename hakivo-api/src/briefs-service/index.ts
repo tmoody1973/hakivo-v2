@@ -23,17 +23,12 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use('*', logger());
-app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
+app.use('*', cors());
 
 /**
  * Verify JWT token from auth header
  */
-async function verifyAuth(authHeader: string | undefined): Promise<{ userId: string } | null> {
+async function verifyAuth(authHeader: string | undefined, jwtSecret: string): Promise<{ userId: string } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }
@@ -41,7 +36,6 @@ async function verifyAuth(authHeader: string | undefined): Promise<{ userId: str
   const token = authHeader.substring(7);
 
   try {
-    const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       throw new Error('JWT_SECRET not configured');
     }
@@ -65,7 +59,7 @@ async function verifyAuth(authHeader: string | undefined): Promise<{ userId: str
  */
 async function requireAuth(c: any): Promise<{ userId: string } | Response> {
   const authHeader = c.req.header('Authorization');
-  const auth = await verifyAuth(authHeader);
+  const auth = await verifyAuth(authHeader, c.env.JWT_SECRET);
 
   if (!auth) {
     return c.json({ error: 'Unauthorized' }, 401);

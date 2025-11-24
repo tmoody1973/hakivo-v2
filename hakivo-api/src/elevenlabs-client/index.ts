@@ -14,7 +14,7 @@ export default class extends Service<Env> {
    * Get API key from environment
    */
   private getApiKey(): string {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const apiKey = this.env.ELEVENLABS_API_KEY;
 
     if (!apiKey) {
       throw new Error('ELEVENLABS_API_KEY environment variable is not set');

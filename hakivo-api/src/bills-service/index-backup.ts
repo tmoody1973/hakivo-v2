@@ -5,7 +5,6 @@ import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
 import { buildBillFilterQuery, getInterestNames } from '../config/user-interests';
-
 // Validation schemas
 const SearchBillsSchema = z.object({
   query: z.string().optional(),
@@ -58,7 +57,7 @@ app.use('*', cors());
 /**
  * Verify JWT token from auth header
  */
-async function verifyAuth(authHeader: string | undefined, jwtSecret: string): Promise<{ userId: string } | null> {
+async function verifyAuth(authHeader: string | undefined, jwtSecret: string | undefined): Promise<{ userId: string } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }
@@ -483,68 +482,62 @@ app.get('/bills/:congress/:type/:number', async (c) => {
       .bind(bill.id)
       .all();
 
-    // Get enrichment data (quick Cerebras summary)
-    const enrichment = await db
-      .prepare(`
-        SELECT
-          plain_language_summary,
-          reading_time_minutes,
-          key_points,
-          impact_level,
-          bipartisan_score,
-          current_stage,
-          progress_percentage,
-          tags,
-          enriched_at,
-          model_used,
-          status
-        FROM bill_enrichment
-        WHERE bill_id = ?
-      `)
-      .bind(bill.id)
-      .first();
-
-    // Get deep analysis data (detailed Gemini 3 Pro analysis)
-    const analysis = await db
-      .prepare(`
-        SELECT
-          executive_summary,
-          status_quo_vs_change,
-          section_breakdown,
-          mechanism_of_action,
-          agency_powers,
-          fiscal_impact,
-          stakeholder_impact,
-          unintended_consequences,
-          arguments_for,
-          arguments_against,
-          implementation_challenges,
-          passage_likelihood,
-          passage_reasoning,
-          recent_developments,
-          state_impacts,
-          thinking_summary,
-          analyzed_at,
-          model_used,
-          status
-        FROM bill_analysis
-        WHERE bill_id = ?
-      `)
-      .bind(bill.id)
-      .first();
-
     // TODO: Get actions, subjects, committees when tables are created
     // For now, return empty arrays
     const actions = { results: [] };
     const subjects = { results: [] };
     const committees = { results: [] };
 
+    // Fetch enrichment data (if available)
+    const enrichmentData = await db
+      .prepare('SELECT * FROM bill_enrichment WHERE bill_id = ?')
+      .bind(bill.id)
+      .first();
+
+    // Fetch analysis data (if available)
+    const analysisData = await db
+      .prepare('SELECT * FROM bill_analysis WHERE bill_id = ?')
+      .bind(bill.id)
+      .first();
+
+    // Trigger background enrichment tasks via Raindrop queues (async, don't await)
+    try {
+      const enrichmentQueue = c.env.ENRICHMENT_QUEUE;
+
+      // Trigger enrichment if missing or failed
+      if (!enrichmentData || enrichmentData.status === 'failed' || enrichmentData.status === null) {
+        console.log(`📋 Queueing enrichment for bill: ${bill.id}`);
+        enrichmentQueue
+          .send({
+            type: 'enrich_bill',
+            bill_id: bill.id as string,
+            timestamp: new Date().toISOString()
+          })
+          .catch((err: unknown) => console.error('Failed to queue enrichment:', err));
+      }
+
+      // Trigger deep analysis if missing or failed
+      if (!analysisData || analysisData.status === 'failed' || analysisData.status === null) {
+        console.log(`🔬 Queueing deep analysis for bill: ${bill.id}`);
+        enrichmentQueue
+          .send({
+            type: 'deep_analysis_bill',
+            bill_id: bill.id as string,
+            timestamp: new Date().toISOString()
+          })
+          .catch((err: unknown) => console.error('Failed to queue analysis:', err));
+      }
+    } catch (error) {
+      console.warn('Failed to queue enrichment tasks:', error);
+      // Don't fail the request if queueing fails
+    }
+
     // Format response
-    const response: any = {
+    const response = {
       id: bill.id,
       congress: bill.congress,
-      type: bill.bill_type,
-      number: bill.bill_number,
+      billType: bill.bill_type,
+      billNumber: bill.bill_number,
       title: bill.title,
       originChamber: bill.origin_chamber,
       introducedDate: bill.introduced_date,
@@ -584,50 +577,33 @@ app.get('/bills/:congress/:type/:number', async (c) => {
         chamber: row.chamber
       })) || [],
       text: bill.text,
-      updateDate: bill.update_date
+      updateDate: bill.update_date,
+
+      // Enrichment data (quick summary for bill cards)
+      enrichment: enrichmentData ? {
+        summary: enrichmentData.plain_language_summary,
+        keyPoints: enrichmentData.key_points ? JSON.parse(enrichmentData.key_points as string) : [],
+        impactLevel: enrichmentData.impact_level,
+        bipartisanScore: enrichmentData.bipartisan_score,
+        tags: enrichmentData.tags ? JSON.parse(enrichmentData.tags as string) : [],
+        status: enrichmentData.status,
+        enrichedAt: enrichmentData.enriched_at
+      } : null,
+
+      // Deep analysis data (comprehensive for detail pages)
+      analysis: analysisData ? {
+        executiveSummary: analysisData.executive_summary,
+        statusQuoVsChange: analysisData.status_quo_vs_change,
+        mechanismOfAction: analysisData.mechanism_of_action,
+        stakeholderImpact: analysisData.stakeholder_impact ? JSON.parse(analysisData.stakeholder_impact as string) : null,
+        argumentsFor: analysisData.arguments_for ? JSON.parse(analysisData.arguments_for as string) : [],
+        argumentsAgainst: analysisData.arguments_against ? JSON.parse(analysisData.arguments_against as string) : [],
+        passageLikelihood: analysisData.passage_likelihood,
+        passageReasoning: analysisData.passage_reasoning,
+        status: analysisData.status,
+        analyzedAt: analysisData.analyzed_at
+      } : null
     };
-
-    // Add enrichment data if available (quick summary for feed)
-    if (enrichment) {
-      response.enrichment = {
-        plainLanguageSummary: enrichment.plain_language_summary,
-        readingTimeMinutes: enrichment.reading_time_minutes,
-        keyPoints: enrichment.key_points ? JSON.parse(enrichment.key_points as string) : null,
-        impactLevel: enrichment.impact_level,
-        bipartisanScore: enrichment.bipartisan_score,
-        currentStage: enrichment.current_stage,
-        progressPercentage: enrichment.progress_percentage,
-        tags: enrichment.tags ? JSON.parse(enrichment.tags as string) : null,
-        enrichedAt: enrichment.enriched_at,
-        modelUsed: enrichment.model_used,
-        status: enrichment.status
-      };
-    }
-
-    // Add deep analysis if available (detailed Gemini 3 Pro analysis)
-    if (analysis) {
-      response.analysis = {
-        executiveSummary: analysis.executive_summary,
-        statusQuoVsChange: analysis.status_quo_vs_change,
-        sectionBreakdown: analysis.section_breakdown ? JSON.parse(analysis.section_breakdown as string) : null,
-        mechanismOfAction: analysis.mechanism_of_action,
-        agencyPowers: analysis.agency_powers ? JSON.parse(analysis.agency_powers as string) : null,
-        fiscalImpact: analysis.fiscal_impact ? JSON.parse(analysis.fiscal_impact as string) : null,
-        stakeholderImpact: analysis.stakeholder_impact ? JSON.parse(analysis.stakeholder_impact as string) : null,
-        unintendedConsequences: analysis.unintended_consequences ? JSON.parse(analysis.unintended_consequences as string) : null,
-        argumentsFor: analysis.arguments_for ? JSON.parse(analysis.arguments_for as string) : null,
-        argumentsAgainst: analysis.arguments_against ? JSON.parse(analysis.arguments_against as string) : null,
-        implementationChallenges: analysis.implementation_challenges ? JSON.parse(analysis.implementation_challenges as string) : null,
-        passageLikelihood: analysis.passage_likelihood,
-        passageReasoning: analysis.passage_reasoning,
-        recentDevelopments: analysis.recent_developments ? JSON.parse(analysis.recent_developments as string) : null,
-        stateImpacts: analysis.state_impacts ? JSON.parse(analysis.state_impacts as string) : null,
-        thinkingSummary: analysis.thinking_summary,
-        analyzedAt: analysis.analyzed_at,
-        modelUsed: analysis.model_used,
-        status: analysis.status
-      };
-    }
 
     return c.json({
       success: true,
@@ -637,104 +613,6 @@ app.get('/bills/:congress/:type/:number', async (c) => {
     console.error('Get bill error:', error);
     return c.json({
       error: 'Failed to get bill',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-
-/**
- * POST /bills/:congress/:type/:number/analyze
- * Generate deep AI analysis for a bill (button-triggered)
- * Returns existing analysis if available, otherwise queues analysis job
- */
-app.post('/bills/:congress/:type/:number/analyze', async (c) => {
-  try {
-    const db = c.env.APP_DB;
-    const queue = c.env.ENRICHMENT_QUEUE;
-
-    const congress = parseInt(c.req.param('congress'));
-    const billType = c.req.param('type');
-    const billNumber = parseInt(c.req.param('number'));
-
-    // Construct bill_id
-    const billId = `${congress}-${billType}-${billNumber}`;
-
-    // Check if bill exists
-    const bill = await db
-      .prepare('SELECT id, title, text FROM bills WHERE congress = ? AND bill_type = ? AND bill_number = ?')
-      .bind(congress, billType, billNumber)
-      .first();
-
-    if (!bill) {
-      return c.json({ error: 'Bill not found' }, 404);
-    }
-
-    // Check if analysis already exists
-    const existingAnalysis = await db
-      .prepare('SELECT status, analyzed_at, executive_summary FROM bill_analysis WHERE bill_id = ?')
-      .bind(billId)
-      .first();
-
-    // If analysis is complete, return it
-    if (existingAnalysis && existingAnalysis.status === 'complete') {
-      return c.json({
-        success: true,
-        status: 'complete',
-        message: 'Analysis already exists',
-        analyzedAt: existingAnalysis.analyzed_at
-      });
-    }
-
-    // If analysis is in progress, return status
-    if (existingAnalysis && existingAnalysis.status === 'processing') {
-      return c.json({
-        success: true,
-        status: 'processing',
-        message: 'Analysis is currently being generated'
-      });
-    }
-
-    // Check if bill has text to analyze
-    const billText = bill.text as string | null | undefined;
-    if (!billText || billText.length < 100) {
-      return c.json({
-        error: 'Bill text not available for analysis',
-        message: 'Cannot analyze bill without full text'
-      }, 400);
-    }
-
-    // Create or update analysis record with 'pending' status
-    const now = Date.now();
-    await db
-      .prepare(`
-        INSERT INTO bill_analysis (bill_id, executive_summary, analyzed_at, status, started_at)
-        VALUES (?, '', ?, 'pending', ?)
-        ON CONFLICT(bill_id) DO UPDATE SET
-          status = 'pending',
-          started_at = excluded.started_at
-      `)
-      .bind(billId, now, now)
-      .run();
-
-    // Queue analysis job for enrichment-observer to process
-    await queue.send({
-      type: 'deep_analysis_bill',
-      bill_id: billId,
-      timestamp: new Date().toISOString()
-    });
-
-    console.log(`✓ Queued deep analysis for bill ${billId}`);
-
-    return c.json({
-      success: true,
-      status: 'queued',
-      message: 'Analysis job queued successfully. Check back in 30-60 seconds.',
-      billId: billId
-    });
-  } catch (error) {
-    console.error('Analyze bill error:', error);
-    return c.json({
-      error: 'Failed to queue analysis',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

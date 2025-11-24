@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -28,8 +28,6 @@ import {
   Share2,
   Loader2,
   Zap,
-  Check,
-  AlertCircle,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth/auth-context"
@@ -107,7 +105,7 @@ interface BillData {
     thinkingSummary?: string
     analyzedAt?: string
     modelUsed?: string
-    status?: string
+    status: string
     startedAt?: number
     completedAt?: number
   } | null
@@ -120,18 +118,21 @@ const impactLevelConfig = {
   critical: { label: "Critical Impact", color: "bg-red-500/10 text-red-700 dark:text-red-400" },
 }
 
-// Likelihood config removed from UI - kept for future use
-// const likelihoodConfig = {
-//   "very-low": { label: "Very Low", color: "text-red-600", percentage: 10 },
-//   low: { label: "Low", color: "text-orange-600", percentage: 30 },
-//   moderate: { label: "Moderate", color: "text-yellow-600", percentage: 50 },
-//   high: { label: "High", color: "text-green-600", percentage: 70 },
-//   "very-high": { label: "Very High", color: "text-emerald-600", percentage: 90 },
-// }
+const likelihoodConfig = {
+  "very-low": { label: "Very Low", color: "text-red-600", percentage: 10 },
+  low: { label: "Low", color: "text-orange-600", percentage: 30 },
+  moderate: { label: "Moderate", color: "text-yellow-600", percentage: 50 },
+  high: { label: "High", color: "text-green-600", percentage: 70 },
+  "very-high": { label: "Very High", color: "text-emerald-600", percentage: 90 },
+}
 
-export default function BillDetailPage() {
+// Current congress (119th Congress: 2025-2027)
+const CURRENT_CONGRESS = 119
+
+export default function SimplifiedBillDetailPage() {
   const params = useParams()
-  const billId = params?.id as string
+  const router = useRouter()
+  const simplifiedId = params?.id as string // e.g., "hr-1234" or "s-2767"
   const [bill, setBill] = useState<BillData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -139,20 +140,25 @@ export default function BillDetailPage() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const { accessToken, isLoading: authLoading } = useAuth()
 
+  // Convert simplified ID (hr-1234) to full ID (119-hr-1234)
+  const fullBillId = simplifiedId ? `${CURRENT_CONGRESS}-${simplifiedId}` : null
+
   // Fetch bill data
   useEffect(() => {
     async function fetchBill() {
+      if (!fullBillId) return
+
       try {
-        console.log('[BillDetailPage] Starting fetch for bill:', billId)
-        console.log('[BillDetailPage] Auth loading:', authLoading)
-        console.log('[BillDetailPage] Access token:', accessToken ? 'present' : 'missing')
+        console.log('[SimplifiedBillDetailPage] Starting fetch for bill:', fullBillId)
+        console.log('[SimplifiedBillDetailPage] Auth loading:', authLoading)
+        console.log('[SimplifiedBillDetailPage] Access token:', accessToken ? 'present' : 'missing')
 
         setLoading(true)
         setError(null)
 
-        const response = await getBillById(billId, accessToken || undefined)
+        const response = await getBillById(fullBillId, accessToken || undefined)
 
-        console.log('[BillDetailPage] Response:', response)
+        console.log('[SimplifiedBillDetailPage] Response:', response)
 
         if (response.success && response.data) {
           setBill(response.data.bill as BillData)
@@ -162,69 +168,64 @@ export default function BillDetailPage() {
           setLoading(false)
         }
       } catch (err) {
-        console.error("[BillDetailPage] Error fetching bill:", err)
+        console.error("[SimplifiedBillDetailPage] Error fetching bill:", err)
         setError("Failed to load bill details")
         setLoading(false)
       }
     }
 
     // Wait for auth to finish loading before attempting to fetch
-    if (billId && !authLoading) {
+    if (fullBillId && !authLoading) {
       fetchBill()
     }
-  }, [billId, accessToken, authLoading])
+  }, [fullBillId, accessToken, authLoading])
 
   // Poll for updates when enrichment or analysis is processing
   useEffect(() => {
-    // Only poll if we have a bill, auth token, and auth is not loading
-    if (!bill || !accessToken || authLoading) return
+    if (!bill || !accessToken || authLoading || !fullBillId) return
 
     const isEnrichmentProcessing = bill.enrichment?.status === 'processing'
     const isAnalysisProcessing = bill.analysis?.status === 'processing'
 
-    // Only set up polling if something is processing
     if (!isEnrichmentProcessing && !isAnalysisProcessing) return
 
-    console.log('[BillDetailPage] Setting up polling - enrichment:', isEnrichmentProcessing, 'analysis:', isAnalysisProcessing)
+    console.log('[SimplifiedBillDetailPage] Setting up polling - enrichment:', isEnrichmentProcessing, 'analysis:', isAnalysisProcessing)
 
     const pollInterval = setInterval(async () => {
       try {
-        console.log('[BillDetailPage] Polling for updates...')
-        const response = await getBillById(billId, accessToken)
+        console.log('[SimplifiedBillDetailPage] Polling for updates...')
+        const response = await getBillById(fullBillId, accessToken)
 
         if (response.success && response.data) {
           const newBill = response.data.bill as BillData
 
-          // Check if status changed from processing to complete
           const enrichmentComplete = isEnrichmentProcessing && newBill.enrichment?.status === 'complete'
           const analysisComplete = isAnalysisProcessing && newBill.analysis?.status === 'complete'
 
           if (enrichmentComplete) {
-            console.log('[BillDetailPage] Enrichment completed!')
+            console.log('[SimplifiedBillDetailPage] Enrichment completed!')
           }
           if (analysisComplete) {
-            console.log('[BillDetailPage] Analysis completed!')
+            console.log('[SimplifiedBillDetailPage] Analysis completed!')
           }
 
-          // Update bill data
           setBill(newBill)
         }
       } catch (err) {
-        console.error('[BillDetailPage] Polling error:', err)
+        console.error('[SimplifiedBillDetailPage] Polling error:', err)
       }
     }, 5000) // Poll every 5 seconds
 
-    // Cleanup interval on unmount or when dependencies change
     return () => {
-      console.log('[BillDetailPage] Clearing poll interval')
+      console.log('[SimplifiedBillDetailPage] Clearing poll interval')
       clearInterval(pollInterval)
     }
-  }, [bill, billId, accessToken, authLoading])
+  }, [bill, fullBillId, accessToken, authLoading])
 
   // Function to trigger bill analysis
   const handleAnalyzeBill = async () => {
-    if (!billId || !accessToken) {
-      console.error('[BillDetailPage] Cannot analyze: missing billId or accessToken')
+    if (!fullBillId || !accessToken) {
+      console.error('[SimplifiedBillDetailPage] Cannot analyze: missing fullBillId or accessToken')
       return
     }
 
@@ -232,9 +233,9 @@ export default function BillDetailPage() {
     setAnalyzeError(null)
 
     try {
-      console.log('[BillDetailPage] Triggering analysis for bill:', billId)
+      console.log('[SimplifiedBillDetailPage] Triggering analysis for bill:', fullBillId)
 
-      const response = await fetch(`/api/bills/${billId}/analyze`, {
+      const response = await fetch(`/api/bills/${fullBillId}/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -248,49 +249,17 @@ export default function BillDetailPage() {
       }
 
       const data = await response.json()
-      console.log('[BillDetailPage] Analysis triggered successfully:', data)
+      console.log('[SimplifiedBillDetailPage] Analysis triggered successfully:', data)
 
-      // Poll for analysis completion
-      let attempts = 0
-      const maxAttempts = 24 // Poll for up to 2 minutes (24 * 5 seconds)
-
-      const pollInterval = setInterval(async () => {
-        attempts++
-        console.log(`[BillDetailPage] Polling for analysis completion (attempt ${attempts}/${maxAttempts})`)
-
-        try {
-          const billResponse = await getBillById(billId, accessToken)
-          if (billResponse.success && billResponse.data?.bill) {
-            const updatedBill = billResponse.data.bill as BillData
-            setBill(updatedBill)
-
-            // Check if analysis is complete
-            if (updatedBill.analysis?.status === 'complete') {
-              console.log('[BillDetailPage] Analysis complete!')
-              clearInterval(pollInterval)
-              setAnalyzing(false)
-            } else if (updatedBill.analysis?.status === 'failed') {
-              console.error('[BillDetailPage] Analysis failed')
-              clearInterval(pollInterval)
-              setAnalyzeError('Analysis failed. Please try again.')
-              setAnalyzing(false)
-            }
-          }
-
-          // Stop polling after max attempts
-          if (attempts >= maxAttempts) {
-            console.log('[BillDetailPage] Max polling attempts reached')
-            clearInterval(pollInterval)
-            setAnalyzing(false)
-          }
-        } catch (pollError) {
-          console.error('[BillDetailPage] Error polling for analysis:', pollError)
-        }
-      }, 5000) // Poll every 5 seconds
-
+      // Refresh bill data to show the analysis is in progress
+      const billResponse = await getBillById(fullBillId, accessToken)
+      if (billResponse.success && billResponse.data?.bill) {
+        setBill(billResponse.data.bill)
+      }
     } catch (err) {
-      console.error('[BillDetailPage] Error triggering analysis:', err)
+      console.error('[SimplifiedBillDetailPage] Error triggering analysis:', err)
       setAnalyzeError(err instanceof Error ? err.message : 'Failed to trigger analysis')
+    } finally {
       setAnalyzing(false)
     }
   }
@@ -337,10 +306,9 @@ export default function BillDetailPage() {
     ? impactLevelConfig[enrichment.impactLevel as keyof typeof impactLevelConfig]
     : null
 
-  // Likelihood info removed from UI - kept for future use
-  // const likelihoodInfo = analysis?.passageLikelihood
-  //   ? likelihoodConfig[analysis.passageLikelihood as keyof typeof likelihoodConfig]
-  //   : null
+  const likelihoodInfo = analysis?.passageLikelihood
+    ? likelihoodConfig[analysis.passageLikelihood as keyof typeof likelihoodConfig]
+    : null
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -620,91 +588,336 @@ export default function BillDetailPage() {
               <Separator />
 
               {/* Tabs for Different Analysis Sections */}
-              {/* Simplified Analysis Layout - No Tabs */}
-              <div className="space-y-6">
-                {/* Who It Affects */}
-                {analysis.stakeholderImpact && (
-                  <div>
-                    <h3 className="font-semibold text-base mb-3">Who It Affects</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.keys(analysis.stakeholderImpact).map((stakeholder) => (
-                        <Badge key={stakeholder} variant="secondary" className="capitalize">
-                          {stakeholder.replace(/_/g, ' ')}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              <Tabs defaultValue="analysis" className="w-full">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="analysis">Analysis</TabsTrigger>
+                  <TabsTrigger value="arguments">Arguments</TabsTrigger>
+                  <TabsTrigger value="impact">Impact</TabsTrigger>
+                  <TabsTrigger value="likelihood">Likelihood</TabsTrigger>
+                </TabsList>
 
-                {/* Key Provisions */}
-                {analysis.sectionBreakdown && analysis.sectionBreakdown.length > 0 && (
-                  <div>
-                    <h3 className="font-semibold text-base mb-3">Key Provisions</h3>
-                    <ul className="space-y-2">
-                      {analysis.sectionBreakdown.map((provision, index) => (
-                        <li key={index} className="flex gap-2">
-                          <span className="text-muted-foreground">•</span>
-                          <span className="text-muted-foreground">{String(provision)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                {/* Analysis Tab */}
+                <TabsContent value="analysis" className="space-y-4">
+                  <Accordion type="single" collapsible className="w-full">
+                    {/* Status Quo vs Change */}
+                    <AccordionItem value="status-quo">
+                      <AccordionTrigger>Status Quo vs. Proposed Change</AccordionTrigger>
+                      <AccordionContent>
+                        <p className="text-muted-foreground leading-relaxed">
+                          {analysis.statusQuoVsChange}
+                        </p>
+                      </AccordionContent>
+                    </AccordionItem>
 
-                {/* Potential Impact - Two Column Grid */}
-                <div>
-                  <h3 className="font-semibold text-base mb-3">Potential Impact</h3>
+                    {/* Mechanism of Action */}
+                    <AccordionItem value="mechanism">
+                      <AccordionTrigger className="flex items-center gap-2">
+                        <Gavel className="h-4 w-4" />
+                        How This Bill Works
+                      </AccordionTrigger>
+                      <AccordionContent>
+                        <p className="text-muted-foreground leading-relaxed">
+                          {analysis.mechanismOfAction}
+                        </p>
+                      </AccordionContent>
+                    </AccordionItem>
+
+                    {/* Section Breakdown */}
+                    {analysis.sectionBreakdown && analysis.sectionBreakdown.length > 0 && (
+                      <AccordionItem value="sections">
+                        <AccordionTrigger>Bill Sections Breakdown</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="space-y-3">
+                            {analysis.sectionBreakdown.map((section, index) => (
+                              <div key={index} className="border-l-2 border-primary pl-4">
+                                <h4 className="font-semibold text-sm">{section.section}</h4>
+                                <p className="text-muted-foreground text-sm">{section.summary}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+
+                    {/* Agency Powers */}
+                    {analysis.agencyPowers && analysis.agencyPowers.length > 0 && (
+                      <AccordionItem value="agencies">
+                        <AccordionTrigger className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4" />
+                          Agency Powers & Authorities
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <ul className="space-y-2 list-disc list-inside">
+                            {analysis.agencyPowers.map((power, index) => (
+                              <li key={index} className="text-muted-foreground">
+                                {power}
+                              </li>
+                            ))}
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+
+                    {/* Implementation Challenges */}
+                    {analysis.implementationChallenges && analysis.implementationChallenges.length > 0 && (
+                      <AccordionItem value="challenges">
+                        <AccordionTrigger className="flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4" />
+                          Implementation Challenges
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <ul className="space-y-2 list-disc list-inside">
+                            {analysis.implementationChallenges.map((challenge, index) => (
+                              <li key={index} className="text-muted-foreground">
+                                {challenge}
+                              </li>
+                            ))}
+                          </ul>
+                        </AccordionContent>
+                      </AccordionItem>
+                    )}
+                  </Accordion>
+                </TabsContent>
+
+                {/* Arguments Tab */}
+                <TabsContent value="arguments" className="space-y-4">
                   <div className="grid md:grid-cols-2 gap-4">
-                    {/* Potential Benefits */}
-                    <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900">
+                    {/* Arguments For */}
+                    <Card>
                       <CardHeader className="pb-3">
-                        <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
+                        <CardTitle className="text-sm flex items-center gap-2 text-green-600">
                           <ThumbsUp className="h-4 w-4" />
-                          Potential Benefits
+                          Arguments For
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <ul className="space-y-3">
-                          {analysis.argumentsFor && analysis.argumentsFor.length > 0 ? (
-                            analysis.argumentsFor.map((benefit, index) => (
-                              <li key={index} className="flex gap-2 text-sm">
-                                <Check className="h-4 w-4 text-green-600 dark:text-green-500 flex-shrink-0 mt-0.5" />
-                                <span className="text-foreground">{String(benefit)}</span>
-                              </li>
-                            ))
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No benefits listed</p>
-                          )}
+                          {analysis.argumentsFor?.map((arg, index) => (
+                            <li key={index} className="text-sm">
+                              <div className="flex gap-2">
+                                <span className="text-green-600 font-semibold">+</span>
+                                <div className="flex-1">
+                                  <p className="font-medium text-foreground">{arg.point}</p>
+                                  <p className="text-muted-foreground mt-1">{arg.evidence}</p>
+                                </div>
+                              </div>
+                            </li>
+                          )) || <p className="text-sm text-muted-foreground">No arguments listed</p>}
                         </ul>
                       </CardContent>
                     </Card>
 
-                    {/* Potential Concerns */}
-                    <Card className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900">
+                    {/* Arguments Against */}
+                    <Card>
                       <CardHeader className="pb-3">
-                        <CardTitle className="text-sm flex items-center gap-2 text-red-700 dark:text-red-400">
-                          <AlertCircle className="h-4 w-4" />
-                          Potential Concerns
+                        <CardTitle className="text-sm flex items-center gap-2 text-red-600">
+                          <ThumbsDown className="h-4 w-4" />
+                          Arguments Against
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <ul className="space-y-3">
-                          {analysis.argumentsAgainst && analysis.argumentsAgainst.length > 0 ? (
-                            analysis.argumentsAgainst.map((concern, index) => (
-                              <li key={index} className="flex gap-2 text-sm">
-                                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
-                                <span className="text-foreground">{String(concern)}</span>
-                              </li>
-                            ))
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No concerns listed</p>
-                          )}
+                          {analysis.argumentsAgainst?.map((arg, index) => (
+                            <li key={index} className="text-sm">
+                              <div className="flex gap-2">
+                                <span className="text-red-600 font-semibold">-</span>
+                                <div className="flex-1">
+                                  <p className="font-medium text-foreground">{arg.point}</p>
+                                  <p className="text-muted-foreground mt-1">{arg.evidence}</p>
+                                </div>
+                              </div>
+                            </li>
+                          )) || <p className="text-sm text-muted-foreground">No arguments listed</p>}
                         </ul>
                       </CardContent>
                     </Card>
                   </div>
-                </div>
-              </div>
+
+                  {/* Unintended Consequences */}
+                  {analysis.unintendedConsequences && analysis.unintendedConsequences.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-500" />
+                          Potential Unintended Consequences
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2 list-disc list-inside">
+                          {analysis.unintendedConsequences.map((consequence, index) => (
+                            <li key={index} className="text-sm text-muted-foreground">
+                              {consequence}
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                {/* Impact Tab */}
+                <TabsContent value="impact" className="space-y-4">
+                  {/* Fiscal Impact */}
+                  {analysis.fiscalImpact && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <DollarSign className="h-4 w-4" />
+                          Fiscal Impact
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {analysis.fiscalImpact.estimatedCost && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Estimated Cost</p>
+                            <p className="text-lg font-bold">{String(analysis.fiscalImpact.estimatedCost)}</p>
+                          </div>
+                        )}
+                        {analysis.fiscalImpact.fundingSource && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Funding Source</p>
+                            <p className="text-sm text-muted-foreground">{String(analysis.fiscalImpact.fundingSource)}</p>
+                          </div>
+                        )}
+                        {analysis.fiscalImpact.timeframe && (
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Timeframe</p>
+                            <p className="text-sm text-muted-foreground">{String(analysis.fiscalImpact.timeframe)}</p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Stakeholder Impact */}
+                  {analysis.stakeholderImpact && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Users className="h-4 w-4" />
+                          Stakeholder Impact
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {Object.entries(analysis.stakeholderImpact).map(([stakeholder, impact]) => (
+                            <div key={stakeholder} className="border-l-2 border-primary pl-4">
+                              <h4 className="font-semibold text-sm capitalize">{stakeholder.replace(/_/g, ' ')}</h4>
+                              {typeof impact === 'string' ? (
+                                <p className="text-muted-foreground text-sm">{impact}</p>
+                              ) : typeof impact === 'object' && impact !== null ? (
+                                <div className="space-y-2 mt-2">
+                                  {Object.entries(impact).map(([subStakeholder, description]) => (
+                                    <div key={subStakeholder} className="ml-4">
+                                      <h5 className="font-medium text-xs capitalize text-foreground">{subStakeholder.replace(/_/g, ' ')}</h5>
+                                      <p className="text-muted-foreground text-xs">{String(description)}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-muted-foreground text-sm">{String(impact)}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* State Impacts */}
+                  {analysis.stateImpacts && Object.keys(analysis.stateImpacts).length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <MapPin className="h-4 w-4" />
+                          State-Specific Impacts
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {Object.entries(analysis.stateImpacts).map(([state, impact]) => (
+                            <div key={state} className="border-l-2 border-primary pl-4">
+                              <h4 className="font-semibold text-sm">{state}</h4>
+                              {typeof impact === 'string' ? (
+                                <p className="text-muted-foreground text-sm">{impact}</p>
+                              ) : typeof impact === 'object' && impact !== null ? (
+                                <pre className="text-muted-foreground text-xs overflow-auto">{JSON.stringify(impact, null, 2)}</pre>
+                              ) : (
+                                <p className="text-muted-foreground text-sm">{String(impact)}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                {/* Likelihood Tab */}
+                <TabsContent value="likelihood" className="space-y-4">
+                  {/* Passage Likelihood */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm">Likelihood of Passage</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                          <Progress value={likelihoodInfo?.percentage || 50} className="h-3" />
+                        </div>
+                        <Badge variant="outline" className={likelihoodInfo?.color}>
+                          {likelihoodInfo?.label || analysis.passageLikelihood}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {analysis.passageReasoning}
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  {/* Recent Developments */}
+                  {analysis.recentDevelopments && analysis.recentDevelopments.length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Clock className="h-4 w-4" />
+                          Recent Developments
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {analysis.recentDevelopments.map((dev, index) => (
+                            <div key={index} className="flex gap-3">
+                              <div className="flex-shrink-0 w-24 text-xs text-muted-foreground">
+                                {new Date(dev.date).toLocaleDateString()}
+                              </div>
+                              <p className="text-sm text-muted-foreground flex-1">{dev.event}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* AI Thinking Summary */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        AI Analysis Notes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground leading-relaxed italic">
+                        {analysis.thinkingSummary}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-3">
+                        Analysis model: {analysis.modelUsed}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         )}

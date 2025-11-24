@@ -9,6 +9,7 @@ export interface Env {
   ADMIN_DASHBOARD: ServiceStub<import('../admin-dashboard/index.js').default>;
   AI: Ai;
   annotation: Annotation<Omit<MRNObject, 'type' | 'applicationName' | 'versionId'>>;
+  ANTHROPIC_API_KEY: string;
   APP_DB: SqlDatabase;
   AUDIO_BRIEFS: SmartBucket;
   AUTH_SERVICE: ServiceStub<import('../auth-service/index.js').default>;
@@ -26,6 +27,7 @@ export interface Env {
   DASHBOARD_SERVICE: ServiceStub<import('../dashboard-service/index.js').default>;
   DB_ADMIN: ServiceStub<import('../db-admin/index.js').default>;
   DISTRICT_CACHE: KvCache;
+  ELEVENLABS_API_KEY: string;
   ENRICHMENT_QUEUE: Queue<import('../enrichment-observer').Body>;
   EXA_API_KEY: string;
   EXA_CLIENT: ServiceStub<import('../exa-client/index.js').default>;
@@ -41,6 +43,10 @@ export interface Env {
   SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;
   USER_SERVICE: ServiceStub<import('../user-service/index.js').default>;
+  VULTR_ACCESS_KEY: string;
+  VULTR_BUCKET_NAME: string;
+  VULTR_ENDPOINT: string;
+  VULTR_SECRET_KEY: string;
   VULTR_STORAGE_CLIENT: ServiceStub<import('../vultr-storage-client/index.js').default>;
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;

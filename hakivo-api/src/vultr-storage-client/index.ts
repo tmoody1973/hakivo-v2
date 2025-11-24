@@ -11,9 +11,9 @@ export default class extends Service<Env> {
    */
   private getS3Client(): S3Client {
     if (!this.s3Client) {
-      const endpoint = process.env.VULTR_ENDPOINT;
-      const accessKeyId = process.env.VULTR_ACCESS_KEY;
-      const secretAccessKey = process.env.VULTR_SECRET_KEY;
+      const endpoint = this.env.VULTR_ENDPOINT;
+      const accessKeyId = this.env.VULTR_ACCESS_KEY;
+      const secretAccessKey = this.env.VULTR_SECRET_KEY;
 
       if (!endpoint || !accessKeyId || !secretAccessKey) {
         throw new Error('Missing Vultr S3 credentials: VULTR_ENDPOINT, VULTR_ACCESS_KEY, or VULTR_SECRET_KEY');
@@ -62,7 +62,7 @@ export default class extends Service<Env> {
     metadata?: Record<string, string>
   ): Promise<{ key: string; url: string; size: number }> {
     const s3 = this.getS3Client();
-    const bucketName = process.env.VULTR_BUCKET_NAME;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
 
     if (!bucketName) {
       throw new Error('VULTR_BUCKET_NAME environment variable is not set');
@@ -86,7 +86,7 @@ export default class extends Service<Env> {
     await s3.send(command);
 
     // Generate public URL
-    const endpoint = process.env.VULTR_ENDPOINT!;
+    const endpoint = this.env.VULTR_ENDPOINT;
     const url = `https://${bucketName}.${endpoint}/${key}`;
 
     console.log(`✓ Audio uploaded to Vultr: ${key} (${buffer.length} bytes)`);
@@ -106,7 +106,7 @@ export default class extends Service<Env> {
    */
   async getPresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
     const s3 = this.getS3Client();
-    const bucketName = process.env.VULTR_BUCKET_NAME;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
 
     if (!bucketName) {
       throw new Error('VULTR_BUCKET_NAME environment variable is not set');
@@ -129,7 +129,7 @@ export default class extends Service<Env> {
    */
   async fileExists(key: string): Promise<boolean> {
     const s3 = this.getS3Client();
-    const bucketName = process.env.VULTR_BUCKET_NAME;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
 
     if (!bucketName) {
       throw new Error('VULTR_BUCKET_NAME environment variable is not set');
@@ -161,7 +161,7 @@ export default class extends Service<Env> {
     metadata?: Record<string, string>;
   }> {
     const s3 = this.getS3Client();
-    const bucketName = process.env.VULTR_BUCKET_NAME;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
 
     if (!bucketName) {
       throw new Error('VULTR_BUCKET_NAME environment variable is not set');

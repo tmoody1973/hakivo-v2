@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
-export async function GET(
+export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: billId } = await params;
 
-    console.log('[API /bills/:id] Fetching bill:', billId);
+    console.log('[API /bills/:id/analyze] Analyzing bill:', billId);
 
     // Parse bill ID (format: "119-s-2767" -> congress/type/number)
     const parts = billId.split('-');
@@ -24,7 +24,7 @@ export async function GET(
 
     // Get authorization header from the request
     const authorization = request.headers.get('authorization');
-    console.log('[API /bills/:id] Authorization header:', authorization ? 'present' : 'missing');
+    console.log('[API /bills/:id/analyze] Authorization header:', authorization ? 'present' : 'missing');
 
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -34,40 +34,33 @@ export async function GET(
       headers['Authorization'] = authorization;
     }
 
-    // Call backend with correct format: /bills/:congress/:type/:number
-    const url = `${BILLS_API_URL}/bills/${congress}/${billType}/${billNumber}`;
-    console.log('[API /bills/:id] Fetching from:', url);
+    // Call backend analyze endpoint: POST /bills/:congress/:type/:number/analyze
+    const url = `${BILLS_API_URL}/bills/${congress}/${billType}/${billNumber}/analyze`;
+    console.log('[API /bills/:id/analyze] Calling backend:', url);
 
     const response = await fetch(url, {
-      method: 'GET',
+      method: 'POST',
       headers,
     });
 
-    console.log('[API /bills/:id] Response status:', response.status);
+    console.log('[API /bills/:id/analyze] Response status:', response.status);
 
     if (!response.ok) {
       const error = await response.text();
-
-      // 401 during initial load is expected (auth not ready yet)
-      if (response.status === 401) {
-        console.log('[API /bills/:id] Auth not ready, returning 401');
-      } else {
-        console.error('[API /bills/:id] Error response:', error);
-      }
+      console.error('[API /bills/:id/analyze] Error response:', error);
 
       return NextResponse.json(
-        { error: error || 'Failed to fetch bill' },
+        { error: error || 'Failed to trigger bill analysis' },
         { status: response.status }
       );
     }
 
     const data = await response.json();
-    console.log('[API /bills/:id] Success - returning bill data');
+    console.log('[API /bills/:id/analyze] Success - analysis triggered');
 
-    // Backend returns { success: true, bill: {...} }, frontend expects the full response
     return NextResponse.json(data);
   } catch (error) {
-    console.error('[API /bills/:id] Caught error:', error);
+    console.error('[API /bills/:id/analyze] Caught error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

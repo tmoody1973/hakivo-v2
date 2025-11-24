@@ -4,57 +4,58 @@ import { GoogleGenAI } from '@google/genai';
 
 /**
  * Policy Analyst System Prompt
- * Forensic legislative analysis framework with strict neutrality
+ * Clear, accessible legislative analysis for everyday citizens
  */
-const POLICY_ANALYST_PROMPT = `You are a neutral policy analyst conducting forensic legislative analysis. Your role is to translate complex legislation into plain English while maintaining strict objectivity.
+const POLICY_ANALYST_PROMPT = `You are explaining a bill to everyday Americans. Use simple, clear language that anyone can understand - like explaining it to a friend over coffee.
 
-Core Principles:
-- Strict neutrality: Present facts without bias
-- Plain English: Avoid jargon, use accessible language
-- Forensic depth: Analyze mechanisms, not just outcomes
-- Steelman both sides: Present strongest arguments for and against
-- Implementation focus: Identify practical challenges
+Writing Guidelines:
+- Use simple words: Say "people" not "stakeholders", "cost" not "fiscal impact"
+- Short sentences: Keep them under 20 words when possible
+- No jargon: Avoid legal terms, acronyms, and technical language
+- Be neutral: Just the facts, no political spin
+- Be specific: Use real examples and concrete details
 
-Analysis Framework:
-1. Executive Summary (BLUF - Bottom Line Up Front)
-   - 2-3 sentences capturing core purpose and impact
+What to Explain:
+1. What It Does
+   - In 2-3 simple sentences, what does this bill change?
+   - Focus on the practical impact on people's lives
 
-2. Status Quo vs. Change
-   - What exists now
-   - What changes if this passes
-   - Key differences
+2. Current Situation vs. If This Passes
+   - How things work now
+   - How they would change
+   - Keep it concrete and relatable
 
-3. Mechanism of Action
-   - How the bill actually works
-   - What powers it grants/removes
-   - Implementation pathway
+3. How It Works
+   - Explain the main steps in simple terms
+   - Who does what
+   - When changes would happen
 
-4. Stakeholder Impact
-   - Winners (who benefits and how)
-   - Losers (who is disadvantaged)
-   - Affected groups and magnitude
+4. Who's Affected
+   - List the main groups of people impacted
+   - Explain clearly how it affects them
+   - Use everyday language
 
-5. Arguments FOR (Steelmanned)
-   - Strongest case for passage
-   - Supporting evidence
-   - Policy rationale
+5. Potential Benefits
+   - What good things could happen
+   - Be specific about who benefits and how
+   - Use plain language
 
-6. Arguments AGAINST (Steelmanned)
-   - Strongest case against passage
-   - Concerns and evidence
-   - Alternative approaches
+6. Potential Concerns
+   - What problems could arise
+   - Be specific about the concerns
+   - Explain clearly without drama
 
-7. Implementation Challenges
-   - Logistical hurdles
-   - Resource requirements
-   - Potential bottlenecks
+7. Challenges to Make It Work
+   - What practical problems might come up
+   - What would be needed to implement this
+   - Keep it understandable
 
-8. Passage Likelihood
-   - Current political dynamics
-   - Historical precedent
-   - Key factors affecting passage
+8. Likelihood of Passing
+   - Based on current politics, what are the chances?
+   - What factors matter most
+   - Simple percentage with brief explanation
 
-Maintain objectivity. Present all perspectives fairly. Focus on mechanisms, not ideological framing.`;
+Remember: Explain like you're talking to your neighbor, not writing a legal brief. Clear, simple, and helpful.`;
 
 /**
  * Enrichment Observer
@@ -196,7 +197,6 @@ Provide a clear, concise summary that explains what happened and why it matters.
     console.log(`📜 Enriching bill card: ${message.bill_id}`);
 
     const db = this.env.APP_DB;
-    const gemini = this.getGeminiClient();
     const startTime = Date.now();
 
     try {
@@ -224,82 +224,121 @@ Provide a clear, concise summary that explains what happened and why it matters.
         return;
       }
 
-      // Fetch bill text from SmartBucket if available
-      let billText = '';
-      try {
-        const billTexts = this.env.BILL_TEXTS;
-        const congress = bill.congress;
-        const billType = bill.bill_type;
-        const billNumber = bill.bill_number;
-        const documentKey = `congress-${congress}/${billType}${billNumber}.txt`;
+      // Get bill text from database (already stored in bills.text column)
+      const billText = (bill.text as string) || '';
 
-        const textObject = await billTexts.get(documentKey);
-        if (textObject) {
-          billText = await textObject.text();
-        }
-      } catch (error) {
-        console.warn(`  Bill text not available, using title and summary only`);
-      }
+      // Generate analysis using Cerebras (faster and cheaper than Gemini)
+      const billType = String(bill.bill_type || '').toUpperCase();
+      const billNum = bill.bill_number as number;
+      const billNumber = `${billType} ${billNum}`;
+      const billTitle = String(bill.title || '');
 
-      // Generate comprehensive analysis with Gemini 3 Pro
-      const prompt = `${POLICY_ANALYST_PROMPT}
+      // Use first 8000 characters of bill text (matches Cerebras client limit)
+      const textToAnalyze = billText.slice(0, 8000);
 
-Analyze this legislation and provide a structured summary for bill cards:
+      console.log(`  Calling Cerebras for bill analysis...`);
 
-Bill: ${bill.bill_type}${bill.bill_number} - ${bill.congress}th Congress
-Title: ${bill.title}
-Latest Action: ${bill.latest_action_text || 'None'}
-${billText ? `\nFull Text:\n${billText.substring(0, 30000)}` : ''}
+      // Use fetch instead of SDK for Cloudflare Workers compatibility
+      const cerebraResponse = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.env.CEREBRAS_API_KEY}`
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are explaining a Congressional bill to everyday citizens in simple, clear language.
 
-Return a JSON object with these fields:
+Write like you're talking to a friend:
+- Use simple words and short sentences
+- Avoid legal jargon and acronyms
+- Be specific and concrete
+- Stay neutral and factual
+
+Provide:
+1. What this bill does (2-3 simple sentences starting with "This bill would...")
+2. Who's affected (3-5 groups in plain language - "people with student loans" not "student loan borrowers")
+3. Main changes (3-5 clear points about what actually changes)
+4. Potential benefits (2-4 good things that could happen, explained simply)
+5. Potential concerns (2-4 problems that might arise, explained simply)
+
+Format your response as JSON with this exact structure:
 {
-  "what_it_does": "2-3 sentence plain language summary of the bill's purpose and impact",
-  "who_it_affects": ["group1", "group2", "group3"],
-  "key_provisions": ["provision 1", "provision 2", "provision 3"],
-  "potential_benefits": ["benefit 1", "benefit 2"],
-  "potential_concerns": ["concern 1", "concern 2"]
+  "whatItDoes": "string (simple, conversational explanation)",
+  "whoItAffects": ["string (everyday language)", "string", ...],
+  "keyProvisions": ["string (what changes in plain terms)", "string", ...],
+  "potentialBenefits": ["string (clear benefit)", "string", ...],
+  "potentialConcerns": ["string (clear concern)", "string", ...]
 }
 
-Focus on:
-- Clear, accessible language
-- Specific stakeholder groups affected
-- Concrete provisions and mechanisms
-- Balanced benefits and concerns`;
+Be fair and balanced. Explain both sides clearly without political spin.`
+            },
+            {
+              role: 'user',
+              content: `Analyze ${billNumber}: ${billTitle}
 
-      const result = await gemini.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }]
-          }
-        ]
+Bill Text:
+${textToAnalyze}
+
+Provide a structured analysis in JSON format.`
+            }
+          ],
+          model: 'gpt-oss-120b',
+          stream: false,
+          max_completion_tokens: 2048,
+          temperature: 0.4,
+          top_p: 1
+        })
       });
 
-      const responseText = result.text || '';
+      if (!cerebraResponse.ok) {
+        const errorText = await cerebraResponse.text();
+        throw new Error(`Cerebras API error (${cerebraResponse.status}): ${errorText}`);
+      }
+
+      const cerebraData = await cerebraResponse.json() as {
+        choices: Array<{ message: { content: string } }>;
+        usage?: { total_tokens?: number };
+      };
+
+      const choice = cerebraData.choices[0];
+      const responseText = choice?.message?.content || '';
+      const usage = cerebraData.usage;
+      const tokensUsed = usage?.total_tokens || 0;
+
+      console.log(`  ✓ Cerebras analysis complete (${tokensUsed} tokens)`);
 
       // Parse JSON response
       let analysis: any;
       try {
-        analysis = JSON.parse(responseText);
+        // Extract JSON from response (handles cases where LLM adds markdown formatting)
+        let jsonText = responseText.trim();
+        if (jsonText.startsWith('```json')) {
+          jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+        } else if (jsonText.startsWith('```')) {
+          jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+        }
+
+        analysis = JSON.parse(jsonText);
       } catch (error) {
-        console.warn('  Failed to parse JSON, using fallback');
+        console.warn('  Failed to parse Cerebras JSON, using fallback');
         analysis = {
-          what_it_does: responseText.substring(0, 300),
-          who_it_affects: [],
-          key_provisions: [],
-          potential_benefits: [],
-          potential_concerns: []
+          whatItDoes: responseText.substring(0, 300),
+          whoItAffects: [],
+          keyProvisions: [],
+          potentialBenefits: [],
+          potentialConcerns: []
         };
       }
 
-      const summary = analysis.what_it_does || '';
+      const summary = analysis.whatItDoes || '';
 
-      // Use structured key points from analysis
-      const keyPoints = analysis.key_provisions || this.extractKeyPoints(summary);
+      // Use structured key provisions from Cerebras analysis
+      const keyPoints = analysis.keyProvisions || this.extractKeyPoints(summary);
 
-      // Determine impact level
-      const billTitle = String(bill.title || '');
+      // Determine impact level (billTitle already declared above)
       const impactLevel = this.determineImpactLevel(billTitle, summary);
 
       // Calculate bipartisan score (placeholder - would need cosponsor data)
@@ -311,7 +350,7 @@ Focus on:
 
       // Combine tags from policy area and who it affects
       const billTags = this.extractBillTags(bill, summary);
-      const whoAffects = analysis.who_it_affects || [];
+      const whoAffects = analysis.whoItAffects || [];
       const tags = [...new Set([...billTags, ...whoAffects])];
 
       // Insert enrichment into database
@@ -336,7 +375,7 @@ Focus on:
           progress,
           JSON.stringify(tags),
           completedAt,
-          'gemini-3-pro-preview',
+          'cerebras-gpt-oss-120b',
           startTime,
           completedAt
         )
@@ -355,24 +394,23 @@ Focus on:
   }
 
   /**
-   * Deep analysis of a bill with Gemini 3 Pro
+   * Deep analysis of a bill with Cerebras
    * Comprehensive forensic analysis for bill detail pages
    */
   private async deepAnalyzeBill(message: DeepAnalysisBillMessage): Promise<void> {
     console.log(`🔬 Deep analyzing bill: ${message.bill_id}`);
 
     const db = this.env.APP_DB;
-    const gemini = this.getGeminiClient();
     const startTime = Date.now();
 
     try {
       // Mark as processing
       await db
         .prepare(`
-          INSERT OR REPLACE INTO bill_analysis (bill_id, status, started_at)
-          VALUES (?, 'processing', ?)
+          INSERT OR REPLACE INTO bill_analysis (bill_id, status, started_at, analyzed_at, executive_summary)
+          VALUES (?, 'processing', ?, ?, 'Analysis in progress...')
         `)
-        .bind(message.bill_id, startTime)
+        .bind(message.bill_id, startTime, startTime)
         .run();
 
       // Fetch bill from database
@@ -393,59 +431,186 @@ Focus on:
       // Get bill text from database (already in bills.text column)
       const billText = (bill.text as string) || '';
 
-      // Use Gemini 3 Pro with thinking mode and web search
+      // Use Cerebras for faster, more cost-effective deep analysis
+      const billTypeStr = String(bill.bill_type || '').toUpperCase();
+      const billNumStr = bill.bill_number as number;
+
+      console.log(`  Calling Cerebras for deep analysis...`);
+
       const analysisPrompt = `${POLICY_ANALYST_PROMPT}
 
-Conduct a comprehensive forensic analysis of this legislation:
+Explain this bill to engaged citizens who want to understand what's really going on:
 
-Bill: ${bill.bill_type}${bill.bill_number} - ${bill.congress}th Congress
+Bill: ${billTypeStr}${billNumStr} - ${bill.congress}th Congress
 Title: ${bill.title}
 Latest Action: ${bill.latest_action_text || 'None'}
 ${billText ? `\nFull Text:\n${billText.substring(0, 50000)}` : ''}
 
-Provide a structured analysis following the policy analyst framework:
+Write your analysis like you're explaining it to a friend. Use these guidelines:
 
-1. Executive Summary (2-3 sentences BLUF)
-2. Status Quo vs. Change
-3. Section-by-Section Breakdown (if full text available)
-4. Mechanism of Action
-5. Agency Powers Granted/Modified
-6. Fiscal Impact
-7. Stakeholder Impact (winners/losers)
-8. Unintended Consequences
-9. Arguments FOR (steelmanned)
-10. Arguments AGAINST (steelmanned)
-11. Implementation Challenges
-12. Passage Likelihood (0-100) with reasoning
-13. State-Specific Impacts (if applicable)
+1. **Executive Summary** (4-6 sentences for comprehensive context)
+   - Start with the main point: "This bill would..."
+   - Explain WHY this matters - what problem does it solve?
+   - Add a concrete comparison or relatable example (like "roughly the cost of X")
+   - Mention who this helps and who it might concern
+   - Use everyday language - write like you're texting a friend
+   - Avoid legal jargon completely
 
-Return the analysis as a JSON object with these fields.`;
+2. **Current Situation vs. If This Passes**
+   - How things work NOW (in simple terms)
+   - What CHANGES if this passes
+   - Use concrete examples people can relate to
 
-      const result = await gemini.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        config: {
-          tools: [
-            {
-              googleSearch: {}
-            }
-          ]
+3. **Main Sections** (5-8 key provisions if full text available)
+   - Break down the bill into easy-to-understand parts
+   - For EACH section, explain:
+     * What it changes (the action)
+     * Why it matters (the impact)
+     * Add context or examples when helpful (like "This hasn't changed since 1994")
+   - Focus on what each section DOES, not legal language
+   - Use relatable comparisons and real-world scenarios
+   - Make each point comprehensive but still conversational
+
+4. **How It Actually Works**
+   - Explain the process step-by-step
+   - Who's responsible for doing what
+   - When changes would happen (timelines in plain terms)
+
+5. **Government Agency Changes**
+   - Which agencies get new powers or responsibilities
+   - What they can now do (or can't do anymore)
+   - Explain in concrete terms
+
+6. **Cost and Funding**
+   - How much money is involved (use relatable comparisons)
+   - Where the money comes from
+   - Timeline for spending
+   - Keep numbers accessible (e.g., "about $50 per person" vs "$17.5 billion")
+
+7. **Who's Affected and How**
+   - List specific groups of people
+   - Explain clearly how their lives would change
+   - Use real-world scenarios
+   - Be specific about winners and losers
+
+8. **Possible Unintended Effects**
+   - What unexpected things might happen
+   - Secondary consequences to watch for
+   - Explain in terms of real-world scenarios
+
+9. **Why People Support This**
+   - Strongest arguments FOR the bill
+   - What problems it's trying to solve
+   - Real benefits people could see
+   - Be fair and clear
+
+10. **Why People Oppose This**
+    - Strongest arguments AGAINST the bill
+    - Legitimate concerns and risks
+    - What critics worry about
+    - Be fair and clear
+
+11. **Practical Challenges**
+    - What would be hard to actually implement
+    - What resources or changes are needed
+    - Potential roadblocks
+    - Keep it concrete
+
+12. **Will It Pass?** (give a percentage 0-100)
+    - Current political situation
+    - What factors will decide it
+    - Brief, clear explanation of your reasoning
+
+13. **State-Specific Impact** (if relevant)
+    - Which states are most affected
+    - How impacts vary by location
+    - Use specific examples
+
+Return the analysis as a JSON object with these fields (use snake_case):
+{
+  "executive_summary": "string (4-6 comprehensive sentences starting with 'This bill would...'. Include WHY it matters, WHO it affects, and use a relatable comparison. Example: 'This bill would double the payment that bankruptcy trustees get for each Chapter 7 case, from $60 to $120. Right now, trustees only get $60 per case, a number that hasn't moved since 1994. This costs about $45 million extra each year – roughly the cost of a new car for every person in a small town of 10,000. It helps trustees keep up with inflation while keeping the bankruptcy system running without taxpayer money.')",
+  "status_quo_vs_change": "string (explain current vs. future in simple, detailed terms with context)",
+  "section_breakdown": ["array of 5-8 comprehensive provision explanations. Each should explain WHAT changes, WHY it matters, and add helpful context. Example: 'Section 3: Raises trustee pay from $60 to $120 per Chapter 7 case. This is the first raise since 1994 - if it had kept up with inflation, it would be over $125 today. The extra money helps trustees cover their costs and stay motivated to handle cases quickly.'"],
+  "mechanism_of_action": "string (detailed step-by-step how it works in plain language)",
+  "agency_powers": ["array of specific powers in plain language with context"],
+  "fiscal_impact": {
+    "estimatedCost": "string (use relatable comparisons like 'about $45 million extra each year – roughly the cost of a new car for every person in a small town of 10,000')",
+    "fundingSource": "string (where money comes from, explained simply)",
+    "timeframe": "string (when spending happens)"
+  },
+  "stakeholder_impact": {
+    "group_name": "clear, comprehensive explanation of how they're affected and why it matters"
+  },
+  "unintended_consequences": ["array of possible unexpected effects with explanations"],
+  "arguments_for": ["array of 3-5 strongest supporting arguments, each 1-2 sentences explaining the benefit clearly"],
+  "arguments_against": ["array of 3-5 strongest opposing arguments, each 1-2 sentences explaining the concern clearly"],
+  "implementation_challenges": ["array of practical obstacles with context"],
+  "passage_likelihood": number (0-100),
+  "passage_reasoning": "string (clear explanation with current political context)",
+  "state_impacts": {
+    "state_name": "specific impact on that state with examples"
+  }
+}
+
+Remember: Write like you're talking to a friend, not writing a government report. Clear, simple, and practical.`;
+
+      // Use fetch instead of SDK for Cloudflare Workers compatibility
+      const cerebraResponse = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.env.CEREBRAS_API_KEY}`
         },
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: analysisPrompt }]
-          }
-        ]
-      }) as any;
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a neutral policy analyst conducting comprehensive forensic legislative analysis. Respond only with valid JSON.'
+            },
+            {
+              role: 'user',
+              content: analysisPrompt
+            }
+          ],
+          model: 'gpt-oss-120b',
+          stream: false,
+          max_completion_tokens: 4096,
+          temperature: 0.3,
+          top_p: 1
+        })
+      });
 
-      const analysisText = result.text || '';
+      if (!cerebraResponse.ok) {
+        const errorText = await cerebraResponse.text();
+        throw new Error(`Cerebras API error (${cerebraResponse.status}): ${errorText}`);
+      }
+
+      const cerebraData = await cerebraResponse.json() as {
+        choices: Array<{ message: { content: string } }>;
+        usage?: { total_tokens?: number };
+      };
+
+      const choice = cerebraData.choices[0];
+      const analysisText = choice?.message?.content || '';
+      const usage = cerebraData.usage;
+      const tokensUsed = usage?.total_tokens || 0;
+
+      console.log(`  ✓ Cerebras deep analysis complete (${tokensUsed} tokens)`);
 
       // Parse JSON response
       let analysis: any;
       try {
-        analysis = JSON.parse(analysisText);
+        // Extract JSON from response (handles cases where LLM adds markdown formatting)
+        let jsonText = analysisText.trim();
+        if (jsonText.startsWith('```json')) {
+          jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+        } else if (jsonText.startsWith('```')) {
+          jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+        }
+
+        analysis = JSON.parse(jsonText);
       } catch (error) {
-        console.error('  Failed to parse Gemini response as JSON, using raw text');
+        console.error('  Failed to parse Cerebras response as JSON, using raw text');
         analysis = {
           executive_summary: analysisText.substring(0, 500),
           status_quo_vs_change: 'Analysis failed to parse',
@@ -455,8 +620,7 @@ Return the analysis as a JSON object with these fields.`;
         };
       }
 
-      // Extract thinking summary if available
-      // TODO: Update thinking summary extraction for new SDK
+      // No thinking summary for Cerebras
       const thinkingSummary = null;
 
       const completedAt = Date.now();
@@ -476,8 +640,8 @@ Return the analysis as a JSON object with these fields.`;
         `)
         .bind(
           message.bill_id,
-          analysis.executive_summary || '',
-          analysis.status_quo_vs_change || '',
+          analysis.executive_summary || 'Analysis pending - executive summary not yet available',
+          analysis.status_quo_vs_change || 'Not available',
           JSON.stringify(analysis.section_breakdown || []),
           analysis.mechanism_of_action || '',
           JSON.stringify(analysis.agency_powers || []),
@@ -493,7 +657,7 @@ Return the analysis as a JSON object with these fields.`;
           JSON.stringify(analysis.state_impacts || {}),
           thinkingSummary,
           completedAt,
-          'gemini-3-pro-preview',
+          'cerebras-gpt-oss-120b',
           startTime,
           completedAt
         )
@@ -501,11 +665,26 @@ Return the analysis as a JSON object with these fields.`;
 
       console.log(`  ✓ Deep analysis complete in ${completedAt - startTime}ms: ${analysis.executive_summary?.substring(0, 80)}...`);
     } catch (error) {
-      console.error(`  ✗ Failed to deep analyze bill:`, error);
-      // Mark as failed
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : '';
+      console.error(`  ✗ Failed to deep analyze bill:`, errorMessage);
+      console.error(`  Stack:`, errorStack);
+
+      // Mark as failed with Cerebras model name and error details
+      const failedAt = Date.now();
       await db
-        .prepare(`UPDATE bill_analysis SET status = 'failed' WHERE bill_id = ?`)
-        .bind(message.bill_id)
+        .prepare(`
+          INSERT OR REPLACE INTO bill_analysis (
+            bill_id, status, model_used, started_at, analyzed_at,
+            executive_summary
+          ) VALUES (?, 'failed', 'cerebras-gpt-oss-120b', ?, ?, ?)
+        `)
+        .bind(
+          message.bill_id,
+          startTime,
+          failedAt,
+          `Error: ${errorMessage}`
+        )
         .run().catch(() => {}); // Ignore errors on error handling
       throw error;
     }

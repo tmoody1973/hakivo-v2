@@ -37,6 +37,30 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "ANTHROPIC_API_KEY" {
+    secret = true
+  }
+
+  env "ELEVENLABS_API_KEY" {
+    secret = true
+  }
+
+  env "VULTR_ENDPOINT" {
+    secret = true
+  }
+
+  env "VULTR_ACCESS_KEY" {
+    secret = true
+  }
+
+  env "VULTR_SECRET_KEY" {
+    secret = true
+  }
+
+  env "VULTR_BUCKET_NAME" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"

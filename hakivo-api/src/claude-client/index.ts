@@ -10,7 +10,7 @@ export default class extends Service<Env> {
    */
   private getAnthropicClient(): Anthropic {
     if (!this.anthropic) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = this.env.ANTHROPIC_API_KEY;
 
       if (!apiKey) {
         throw new Error('ANTHROPIC_API_KEY environment variable is not set');

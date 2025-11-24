@@ -10,7 +10,7 @@ export default class extends Service<Env> {
    * Get Congress.gov API key from environment
    */
   private getApiKey(): string {
-    const apiKey = process.env.CONGRESS_API_KEY;
+    const apiKey = this.env.CONGRESS_API_KEY;
 
     if (!apiKey) {
       throw new Error('CONGRESS_API_KEY environment variable is not set');
