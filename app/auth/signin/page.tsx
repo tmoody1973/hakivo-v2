@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/auth-context';
 
-const AUTH_API_URL = process.env.NEXT_PUBLIC_AUTH_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export default function SignInPage() {
   const router = useRouter();
@@ -27,8 +27,8 @@ export default function SignInPage() {
   const handleSignIn = () => {
     setIsRedirecting(true);
     // Add force=true to show login screen even if user has an existing WorkOS session
-    const loginUrl = `${AUTH_API_URL}/auth/workos/login?force=true`;
-    console.log('AUTH_API_URL:', AUTH_API_URL);
+    const loginUrl = `${API_BASE_URL}/auth/workos/login?force=true`;
+    console.log('API_BASE_URL:', API_BASE_URL);
     console.log('Full login URL:', loginUrl);
     // Redirect to backend WorkOS login endpoint
     window.location.href = loginUrl;
