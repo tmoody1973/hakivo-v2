@@ -10,7 +10,12 @@
  * categorizes them with Cerebras AI, and stores them in the database.
  */
 
-import policyInterestMapping from '../../docs/architecture/policy_interest_mapping.json';
+import * as policyInterestMappingData from '../../../docs/architecture/policy_interest_mapping.json';
+
+const policyInterestMapping = policyInterestMappingData as unknown as Array<{
+  interest: string;
+  keywords: string[];
+}>;
 
 // Configuration
 const DAYS_BACK = 3; // Fetch articles from last 3 days
@@ -213,7 +218,7 @@ async function main() {
   console.log(`📰 Articles per interest: ${ARTICLES_PER_INTEREST}\n`);
 
   // Get all policy interests
-  const availableCategories = policyInterestMapping.map(m => m.interest);
+  const availableCategories = policyInterestMapping.map((m: { interest: string; keywords: string[] }) => m.interest);
 
   // Collect all articles
   const allArticles: Array<{
