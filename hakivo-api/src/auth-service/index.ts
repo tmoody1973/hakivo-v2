@@ -889,10 +889,12 @@ app.get('/auth/workos/login', async (c) => {
       provider: 'authkit',
       clientId: workosClientId,
       redirectUri: workosRedirectUri,
-      ...(forceLogin && { screenHint: 'sign-in' }) // Force login screen if requested
+      // Use 'sign-up' to force showing the full auth screen (sign-in OR sign-up options)
+      // This prevents auto-authentication with existing WorkOS session
+      screenHint: forceLogin ? 'sign-up' : 'sign-in',
     });
 
-    console.log(`✓ Redirecting to WorkOS AuthKit (force login: ${forceLogin}): ${authorizationUrl}`);
+    console.log(`✓ Redirecting to WorkOS AuthKit (force login: ${forceLogin}, screenHint: ${forceLogin ? 'sign-up' : 'sign-in'}): ${authorizationUrl}`);
 
     return c.redirect(authorizationUrl);
   } catch (error) {
@@ -1105,22 +1107,24 @@ app.get('/auth/workos/logout', async (c) => {
       }
     }
 
-    // Generate WorkOS logout URL using the session ID
+    // Generate logout redirect URL
     let logoutUrl: string;
 
     if (workosSessionId) {
-      // Use SDK method to generate proper logout URL
+      // Use SDK method to generate proper logout URL with session ID
+      // This will end the WorkOS session and redirect to the configured logout URI
       logoutUrl = workos.userManagement.getLogoutUrl({ sessionId: workosSessionId });
-      console.log(`✓ Generated WorkOS logout URL with session ID`);
+      console.log(`✓ Generated WorkOS logout URL with session ID: ${workosSessionId}`);
     } else {
-      // Fallback: redirect to app homepage if we don't have a session ID
-      logoutUrl = 'https://hakivo-v2.netlify.app';
-      console.log(`⚠️ No WorkOS session ID found, redirecting to homepage`);
+      // No session ID available - redirect to sign-in page with force=true
+      // This ensures the login screen is shown next time (not auto-login)
+      const appUrl = 'https://hakivo-v2.netlify.app';
+      logoutUrl = `${appUrl}/auth/signin`;
+      console.log(`⚠️ No WorkOS session ID found, redirecting to signin page`);
     }
 
     console.log(`✓ Redirecting to: ${logoutUrl}`);
 
-    // Redirect to WorkOS logout, which will clear the session and redirect to configured logout URI
     return c.redirect(logoutUrl);
   } catch (error) {
     console.error('WorkOS logout error:', error);

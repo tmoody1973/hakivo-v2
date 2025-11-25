@@ -155,20 +155,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: false,
       });
 
-      // Redirect to WorkOS logout to end SSO session
-      if (sessionId) {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        // Pass workosSessionId if available for immediate logout
-        const logoutUrl = workosSessionId
-          ? `${API_URL}/auth/workos/logout?sessionId=${sessionId}&workosSessionId=${workosSessionId}`
-          : `${API_URL}/auth/workos/logout?sessionId=${sessionId}`;
-        window.location.href = logoutUrl;
-      } else {
-        window.location.href = '/';
-      }
+      // ALWAYS redirect to WorkOS logout endpoint to clear WorkOS session cookies
+      // Even if we don't have sessionId, the backend will call WorkOS logout to clear cookies
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const params = new URLSearchParams();
+
+      if (sessionId) params.set('sessionId', sessionId);
+      if (workosSessionId) params.set('workosSessionId', workosSessionId);
+
+      const logoutUrl = `${API_URL}/auth/workos/logout${params.toString() ? `?${params}` : ''}`;
+      console.log('[Auth] Redirecting to logout URL:', logoutUrl);
+      window.location.href = logoutUrl;
     } catch (error) {
       console.error('Error clearing auth state:', error);
-      window.location.href = '/';
+      // Still try to hit backend logout even on error
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      window.location.href = `${API_URL}/auth/workos/logout`;
     }
   };
 

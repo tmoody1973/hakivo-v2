@@ -26,7 +26,8 @@ export default function SignInPage() {
 
   const handleSignIn = () => {
     setIsRedirecting(true);
-    const loginUrl = `${API_BASE_URL}/auth/workos/login`;
+    // Add force=true to show login screen even if user has an existing WorkOS session
+    const loginUrl = `${API_BASE_URL}/auth/workos/login?force=true`;
     console.log('API_BASE_URL:', API_BASE_URL);
     console.log('Full login URL:', loginUrl);
     // Redirect to backend WorkOS login endpoint
