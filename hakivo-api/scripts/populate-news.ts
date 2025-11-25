@@ -29,7 +29,7 @@ const policyInterestMapping: Array<{
 );
 
 // Configuration
-const DAYS_BACK = 7; // Fetch articles from last 7 days
+const DAYS_BACK = 14; // Fetch articles from last 14 days
 const ARTICLES_PER_INTEREST = 25;
 const EXA_API_KEY = process.env.EXA_API_KEY;
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
@@ -73,10 +73,10 @@ interface CerebrasResponse {
 async function searchNews(keywords: string[], startDate: Date, endDate: Date, numResults: number): Promise<Article[]> {
   const exa = new Exa(EXA_API_KEY!);
 
-  // Build query like the actual service does
+  // Build query - removed strict context filter for better results
   const keywordQuery = keywords.join(' OR ');
-  const contextQuery = '(news headline OR article OR bill OR legislation OR law OR congress OR act) site:news headline OR site:article';
-  const query = `${keywordQuery} ${contextQuery}`;
+  // Removed: const contextQuery = '(news headline OR article OR bill OR legislation OR law OR congress OR act) site:news headline OR site:article';
+  const query = `${keywordQuery}`;
 
   const response = await exa.searchAndContents(query, {
     numResults,
@@ -101,7 +101,28 @@ async function searchNews(keywords: string[], startDate: Date, endDate: Date, nu
       'rollcall.com',
       'thehill.com',
       'ap.com',
-      'cnn.com'
+      'cnn.com',
+      'reuters.com',
+      'bloomberg.com',
+      'wsj.com',
+      'usatoday.com',
+      'axios.com',
+      'nbcnews.com',
+      'foxnews.com',
+      'apnews.com',
+      'msnbc.com',
+      'cnbc.com',
+      'bbc.com',
+      'forbes.com',
+      'time.com',
+      'newsweek.com',
+      'propublica.org',
+      'theatlantic.com',
+      'vox.com',
+      'slate.com',
+      'motherjones.com',
+      'thedailybeast.com',
+      'huffpost.com'
     ]
   });
 
