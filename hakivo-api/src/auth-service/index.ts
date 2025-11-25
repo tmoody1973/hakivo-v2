@@ -1116,11 +1116,10 @@ app.get('/auth/workos/logout', async (c) => {
       logoutUrl = workos.userManagement.getLogoutUrl({ sessionId: workosSessionId });
       console.log(`✓ Generated WorkOS logout URL with session ID: ${workosSessionId}`);
     } else {
-      // No session ID available - redirect to sign-in page with force=true
-      // This ensures the login screen is shown next time (not auto-login)
+      // No session ID available - redirect to landing page
       const appUrl = 'https://hakivo-v2.netlify.app';
-      logoutUrl = `${appUrl}/auth/signin`;
-      console.log(`⚠️ No WorkOS session ID found, redirecting to signin page`);
+      logoutUrl = appUrl; // Redirect to home/landing page
+      console.log(`⚠️ No WorkOS session ID found, redirecting to landing page`);
     }
 
     console.log(`✓ Redirecting to: ${logoutUrl}`);
