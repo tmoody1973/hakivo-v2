@@ -11,7 +11,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "populate-news": "ts-node scripts/populate-news.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27",

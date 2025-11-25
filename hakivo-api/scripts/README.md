@@ -1,115 +1,78 @@
-# Congress Data Ingestion Scripts
+# News Population Script
 
-Scripts for populating the Hakivo database with Congress.gov data.
+Standalone script to populate news articles into Raindrop SQL database.
+
+## Features
+
+- Fetches Congressional news from Exa.ai for all 12 policy interests
+- Uses Cerebras AI to semantically categorize articles
+- Generates SQL INSERT statements ready to run in Raindrop database
+- Configurable date range and articles per interest
 
 ## Prerequisites
 
-1. **Congress.gov API Key**
-   - Sign up at: https://api.congress.gov/sign-up/
-   - You'll receive an API key via email
+Set environment variables in `.env` file:
 
-2. **Backend Running**
-   - Make sure your Raindrop backend is deployed and running
-   - Admin dashboard should be accessible
+```bash
+EXA_API_KEY=your_exa_api_key
+CEREBRAS_API_KEY=your_cerebras_api_key
+```
 
 ## Usage
 
-### 1. Set up environment variable
-
-```bash
-export CONGRESS_API_KEY="your-api-key-here"
-```
-
-Or add to your `.env` file:
-```
-CONGRESS_API_KEY=your-api-key-here
-```
-
-### 2. Run the ingestion script
+### Run the script
 
 ```bash
 cd hakivo-api
-npx tsx scripts/ingest-congress-data.ts
+npm run populate-news
 ```
 
-### 3. Monitor progress
+### What it does
 
-Open the admin dashboard in your browser:
-```
-https://svc-01ka747hjpq5r2qk4ct00r3yyd.01k66gey30f48fys2tv4e412yt.lmapp.run/
-```
+1. **Fetches articles** from Exa.ai
+   - Date range: Last 3 days (configurable)
+   - Articles per interest: 25 (configurable)
+   - Total: ~300 articles across 12 policy interests
 
-You'll see:
-- **System Overview** - Row counts updating in real-time
-- **Database Tables** - All tables with current row counts
-- **SQL Query Tool** - Run queries to inspect the data
+2. **AI categorization** with Cerebras
+   - Semantic understanding of article content
+   - Fixes miscategorization from keyword-only search
+   - Example: Epstein articles won't appear under "Commerce & Labor"
 
-## What Gets Ingested
+3. **Generates SQL** INSERT statements
+   - Output ready to copy-paste into Raindrop SQL admin
+   - Or save to file and run via Wrangler D1
 
-For both 118th and 119th Congress:
+## Running the SQL
 
-- ✅ **Bills** - All bills with full text content
-- ✅ **Members** - All representatives and senators
-- ✅ **Committees** - House and Senate committees
-- ⏳ **Votes** - Coming soon
+### Option 1: Copy-paste into database admin
 
-## Example SQL Queries
-
-Once data is ingested, try these queries in the admin dashboard:
-
-```sql
--- Count total bills
-SELECT COUNT(*) FROM bills;
-
--- View recent bills
-SELECT bill_type, bill_number, title, introduced_date
-FROM bills
-ORDER BY introduced_date DESC
-LIMIT 10;
-
--- View full bill text
-SELECT title, text
-FROM bills
-WHERE bill_type = 'hr' AND bill_number = 1
-LIMIT 1;
-
--- View California representatives
-SELECT first_name, last_name, party, district
-FROM members
-WHERE state = 'CA'
-ORDER BY district;
-
--- View all committees
-SELECT name, chamber
-FROM committees
-ORDER BY chamber, name;
+```bash
+npm run populate-news > insert-news.sql
+# Then copy contents and paste into Raindrop SQL admin
 ```
 
-## Expected Results
+### Option 2: Admin API endpoint (easiest)
 
-After running the script, you should see approximately:
+If you have a JWT token, use the admin endpoint:
 
-- **Bills**: 10,000-15,000 (both congresses combined)
-- **Members**: 500-600 (current + former members)
-- **Committees**: 100-150 (House + Senate)
+```bash
+# Get token from browser localStorage after logging in
+curl -X POST https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/admin/trigger-news-sync \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
 
-## Troubleshooting
+## Configuration
 
-### API Rate Limiting
-The script includes 100ms delays between API calls to avoid rate limiting. If you still get errors, increase the delay in the code.
+Edit `scripts/populate-news.ts` to customize:
 
-### Database Errors
-If you get database errors, make sure:
-1. The backend is deployed and running
-2. The admin dashboard URL is correct
-3. Database migrations have run successfully
+```typescript
+const DAYS_BACK = 3;              // Fetch articles from last X days
+const ARTICLES_PER_INTEREST = 25; // Articles per policy interest
+```
 
-### Missing Data
-Some bills may not have full text available yet. The script will log warnings for these cases but continue processing.
+## Cost Estimate
 
-## Next Steps
-
-After ingestion completes:
-1. Verify data in admin dashboard
-2. Test frontend pages that display the data
-3. Set up the schedulers to keep data updated
+- **Exa.ai**: 300 searches × $0.01 = ~$3.00
+- **Cerebras AI**: 300 categorizations × $0.0001 = ~$0.03
+- **Total**: ~$3.03 per run
