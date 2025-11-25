@@ -3,6 +3,7 @@
   publish = ".next"
 
 [build.environment]
+  NODE_ENV = "production"
   # Omit local .env files from secrets scanning
   SECRETS_SCAN_OMIT_PATHS = ".env.local,hakivo-api/.env.local,hakivo-api/hakivo-api/.env.local"
 
