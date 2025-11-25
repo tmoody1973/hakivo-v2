@@ -157,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // ALWAYS redirect to WorkOS logout endpoint to clear WorkOS session cookies
       // Even if we don't have sessionId, the backend will call WorkOS logout to clear cookies
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
       const params = new URLSearchParams();
 
       if (sessionId) params.set('sessionId', sessionId);
@@ -169,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error clearing auth state:', error);
       // Still try to hit backend logout even on error
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
       window.location.href = `${API_URL}/auth/workos/logout`;
     }
   };
