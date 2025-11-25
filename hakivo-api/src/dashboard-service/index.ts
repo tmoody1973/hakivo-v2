@@ -1,4 +1,4 @@
-import { Service } from '@liquidmetal-ai/raindrop-framework';
+import { Service, ExecutionContext } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
@@ -1647,6 +1647,54 @@ app.get('/bills/:id', async (c) => {
     console.error('Get bill detail error:', error);
     return c.json({
       error: 'Failed to get bill details',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * Admin endpoint to manually trigger news sync
+ * POST /admin/trigger-news-sync
+ */
+app.post('/admin/trigger-news-sync', async (c) => {
+  try {
+    const auth = await verifyAuth(c.req.header('Authorization'), c.env.JWT_SECRET);
+    if (!auth) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    console.log('🔧 [ADMIN] Manually triggering news sync...');
+
+    // Import and instantiate the news-sync-scheduler
+    const NewsSyncScheduler = (await import('../news-sync-scheduler/index.js')).default;
+
+    // Create mock execution context
+    const mockCtx = {
+      waitUntil: (_promise: Promise<any>) => {},
+      passThroughOnException: () => {}
+    } as ExecutionContext;
+
+    const scheduler = new NewsSyncScheduler(mockCtx, c.env as any);
+
+    // Create a proper Event object
+    const mockEvent = {
+      type: 'scheduled' as const,
+      scheduledTime: Date.now(),
+      cron: 'manual-trigger'
+    };
+
+    // Manually call the scheduler's handle method
+    await scheduler.handle(mockEvent);
+
+    return c.json({
+      success: true,
+      message: 'News sync triggered successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Admin trigger news sync error:', error);
+    return c.json({
+      error: 'Failed to trigger news sync',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
