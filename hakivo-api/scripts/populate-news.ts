@@ -10,15 +10,26 @@
  * categorizes them with Cerebras AI, and stores them in the database.
  */
 
-import * as policyInterestMappingData from '../../../docs/architecture/policy_interest_mapping.json';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import Exa from 'exa-js';
 
-const policyInterestMapping = policyInterestMappingData as unknown as Array<{
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const policyInterestMapping: Array<{
   interest: string;
   keywords: string[];
-}>;
+}> = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, '../docs/architecture/policy_interest_mapping.json'),
+    'utf-8'
+  )
+);
 
 // Configuration
-const DAYS_BACK = 3; // Fetch articles from last 3 days
+const DAYS_BACK = 7; // Fetch articles from last 7 days
 const ARTICLES_PER_INTEREST = 25;
 const EXA_API_KEY = process.env.EXA_API_KEY;
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
@@ -60,57 +71,49 @@ interface CerebrasResponse {
 
 // Exa.ai client
 async function searchNews(keywords: string[], startDate: Date, endDate: Date, numResults: number): Promise<Article[]> {
-  const query = keywords.join(' OR ');
+  const exa = new Exa(EXA_API_KEY!);
 
-  const response = await fetch('https://api.exa.ai/search', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': EXA_API_KEY!,
+  // Build query like the actual service does
+  const keywordQuery = keywords.join(' OR ');
+  const contextQuery = '(news headline OR article OR bill OR legislation OR law OR congress OR act) site:news headline OR site:article';
+  const query = `${keywordQuery} ${contextQuery}`;
+
+  const response = await exa.searchAndContents(query, {
+    numResults,
+    text: true,
+    type: 'auto', // Use 'auto' instead of 'keyword' for better results
+    category: 'news',
+    userLocation: 'US',
+    summary: {
+      query: 'create a plain english 2 sentence summary easy to understand'
     },
-    body: JSON.stringify({
-      query,
-      type: 'keyword',
-      category: 'news',
-      numResults,
-      startPublishedDate: startDate.toISOString(),
-      endPublishedDate: endDate.toISOString(),
-      contents: {
-        text: { maxCharacters: 2000 },
-        summary: { maxCharacters: 500 },
-      },
-      includeDomains: [
-        'congress.gov',
-        'rollcall.com',
-        'thehill.com',
-        'politico.com',
-        'washingtonpost.com',
-        'nytimes.com',
-        'wsj.com',
-        'reuters.com',
-        'apnews.com',
-        'bloomberg.com',
-        'cnn.com',
-        'npr.org',
-      ],
-    }),
+    startPublishedDate: startDate.toISOString(),
+    endPublishedDate: endDate.toISOString(),
+    includeDomains: [
+      'punchbowl.news',
+      'politico.com',
+      'theguardian.com',
+      'nytimes.com',
+      'cbsnews.com',
+      'abcnews.com',
+      'npr.org',
+      'washingtonpost.com',
+      'rollcall.com',
+      'thehill.com',
+      'ap.com',
+      'cnn.com'
+    ]
   });
 
-  if (!response.ok) {
-    throw new Error(`Exa API error: ${response.statusText}`);
-  }
-
-  const data: ExaResult = await response.json();
-
-  return data.results.map(result => ({
-    title: result.title,
+  return response.results.map(result => ({
+    title: result.title || 'Untitled',
     url: result.url,
     author: result.author || null,
-    summary: result.summary || '',
+    summary: result.summary || 'No summary available',
     text: result.text || '',
     imageUrl: result.image || null,
-    publishedDate: result.publishedDate,
-    score: result.score,
+    publishedDate: result.publishedDate || new Date().toISOString(),
+    score: result.score || 0,
   }));
 }
 
@@ -165,7 +168,7 @@ Return JSON with the category name (must exactly match one from the list).`,
     throw new Error(`Cerebras API error: ${response.statusText}`);
   }
 
-  const data: CerebrasResponse = await response.json();
+  const data = await response.json() as CerebrasResponse;
   const content = data.choices[0]!.message.content.trim();
 
   // Parse JSON response
