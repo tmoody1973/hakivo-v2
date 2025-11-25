@@ -260,6 +260,101 @@ Provide a structured analysis in JSON format.`
   }
 
   /**
+   * Categorize news article using AI semantic understanding
+   * Replaces keyword-based categorization with accurate semantic classification
+   *
+   * @mcp-tool
+   * @mcp-description Categorize news article into correct policy interest using semantic understanding
+   * @mcp-param title - Article title
+   * @mcp-param summary - Article summary from Exa.ai
+   * @mcp-param availableCategories - List of valid policy interest categories
+   * @mcp-returns AI-determined category name
+   * @mcp-cost ~$0.0001 per article (Cerebras gpt-oss-120b)
+   *
+   * @example
+   * ```ts
+   * const category = await cerebrasClient.categorizeNewsArticle(
+   *   "Latest on Epstein files as Trump changes course",
+   *   "President Trump is urging House Republicans to support release of files...",
+   *   ["Civil Rights & Law", "Commerce & Labor", "Government & Politics"]
+   * );
+   * // Returns: "Civil Rights & Law"
+   * ```
+   */
+  async categorizeNewsArticle(
+    title: string,
+    summary: string,
+    availableCategories: string[]
+  ): Promise<{ category: string; tokensUsed: number }> {
+    const categoriesText = availableCategories.map((c, i) => `${i + 1}. ${c}`).join('\n');
+
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are a news categorization expert. Analyze the article and determine which ONE policy interest category it belongs to based on its PRIMARY topic.
+
+Ignore tangential keyword mentions - focus on what the article is ACTUALLY about.
+
+Available categories:
+${categoriesText}
+
+Return your response as JSON with this exact structure:
+{
+  "category": "Category Name",
+  "reasoning": "Brief explanation"
+}`
+      },
+      {
+        role: 'user' as const,
+        content: `Categorize this news article:
+
+Title: ${title}
+Summary: ${summary}
+
+Return JSON with the category name (must exactly match one from the list).`
+      }
+    ];
+
+    const result = await this.generateCompletion(messages, 0.2, 150);
+
+    try {
+      // Extract JSON from response
+      let jsonText = result.content.trim();
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const category = parsed.category || parsed.Category || availableCategories[0];
+
+      // Validate category is in available list
+      if (!availableCategories.includes(category)) {
+        console.warn(`AI returned invalid category: ${category}, using first available`);
+        return {
+          category: availableCategories[0]!,
+          tokensUsed: result.tokensUsed
+        };
+      }
+
+      return {
+        category,
+        tokensUsed: result.tokensUsed
+      };
+    } catch (error) {
+      console.error('Failed to parse categorization JSON:', error);
+      console.error('Raw response:', result.content);
+
+      // Fallback: return first category
+      return {
+        category: availableCategories[0]!,
+        tokensUsed: result.tokensUsed
+      };
+    }
+  }
+
+  /**
    * Required fetch method for Raindrop Service
    * This is a private service, so fetch returns 501 Not Implemented
    */

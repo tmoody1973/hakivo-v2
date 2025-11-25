@@ -26,11 +26,15 @@ export default class extends Task<Env> {
       let successfulSyncs = 0;
       const errors: Array<{ interest: string; error: string }> = [];
 
-      // Define date range (last 24 hours for fresh news)
+      // Define date range (last 3 days for larger content pool)
       const endDate = new Date();
-      const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const startDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
       console.log(`📅 Fetching news from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      // Get all policy interests for AI categorization
+      const availableCategories = policyInterestMapping.map(m => m.interest);
+      const cerebrasClient = this.env.CEREBRAS_CLIENT;
 
       // Iterate through all 12 policy interests
       for (const mapping of policyInterestMapping) {
@@ -45,19 +49,40 @@ export default class extends Task<Env> {
             keywords,
             startDate,
             endDate,
-            15 // Fetch 15 articles per interest
+            25 // Fetch 25 articles per interest (3-day window = ~900 total articles)
           );
 
           console.log(`   Found ${results.length} articles`);
 
-          // Store each article in news_articles table
+          // Store each article in news_articles table with AI categorization
           for (const article of results) {
             try {
               // Extract domain from URL
               const url = new URL(article.url);
               const sourceDomain = url.hostname.replace('www.', '');
 
-              // Insert article (ignore if duplicate URL for this interest)
+              // Use AI to determine correct category (semantic understanding)
+              let aiCategory = interest; // Fallback to keyword-based category
+              let categoryChanged = false;
+
+              try {
+                const categorization = await cerebrasClient.categorizeNewsArticle(
+                  article.title,
+                  article.summary,
+                  availableCategories
+                );
+                aiCategory = categorization.category;
+                categoryChanged = (aiCategory !== interest);
+
+                if (categoryChanged) {
+                  console.log(`   🔄 Recategorized: "${article.title.substring(0, 60)}..."`);
+                  console.log(`      ${interest} → ${aiCategory}`);
+                }
+              } catch (error) {
+                console.warn(`   ⚠️ AI categorization failed, using keyword-based: ${interest}`, error);
+              }
+
+              // Insert article with AI-determined category (ignore if duplicate URL)
               await db
                 .prepare(`
                   INSERT OR IGNORE INTO news_articles (
@@ -67,7 +92,7 @@ export default class extends Task<Env> {
                 `)
                 .bind(
                   crypto.randomUUID(),
-                  interest,
+                  aiCategory, // Use AI-determined category
                   article.title,
                   article.url,
                   article.author,

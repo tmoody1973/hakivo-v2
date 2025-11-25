@@ -555,19 +555,24 @@ app.get('/dashboard/news', async (c) => {
     // Build WHERE clause for interests filter
     const placeholders = policyInterests.map(() => '?').join(',');
 
-    // Query news articles filtered by user interests
-    // Fast and simple - just use Exa's summary and image directly (no AI enrichment needed)
+    // Query news articles filtered by user interests with smart rotation
+    // Prioritize unseen articles, then show older viewed articles
     const articles = await db
       .prepare(`
         SELECT
-          id, interest, title, url, author, summary,
-          image_url, published_date, fetched_at, score, source_domain
-        FROM news_articles
-        WHERE interest IN (${placeholders})
-        ORDER BY published_date DESC, score DESC
+          n.id, n.interest, n.title, n.url, n.author, n.summary,
+          n.image_url, n.published_date, n.fetched_at, n.score, n.source_domain,
+          v.viewed_at
+        FROM news_articles n
+        LEFT JOIN user_article_views v ON n.id = v.article_id AND v.user_id = ?
+        WHERE n.interest IN (${placeholders})
+        ORDER BY
+          CASE WHEN v.viewed_at IS NULL THEN 0 ELSE 1 END,  -- Unseen first
+          n.published_date DESC,                             -- Then by recency
+          n.score DESC                                       -- Then by quality
         LIMIT ?
       `)
-      .bind(...policyInterests, limit)
+      .bind(auth.userId, ...policyInterests, limit)
       .all();
 
     const formattedArticles = articles.results?.map((article: any) => ({
