@@ -1039,6 +1039,7 @@ app.get('/auth/workos/callback', async (c) => {
       accessToken,
       refreshToken,
       sessionId,
+      workosSessionId, // Return WorkOS session ID to frontend for logout
       user: {
         id: userId,
         email: user.email,
@@ -1072,12 +1073,12 @@ app.get('/auth/workos/logout', async (c) => {
 
     const workos = new WorkOS(workosApiKey);
 
-    // Get our local session ID from query parameter
+    // Get workosSessionId from query parameter (passed from frontend) OR from cache
+    let workosSessionId: string | null = c.req.query('workosSessionId') || null;
     const sessionId = c.req.query('sessionId');
 
-    let workosSessionId: string | null = null;
-
-    if (sessionId) {
+    // If not passed directly, try to get it from cache
+    if (!workosSessionId && sessionId) {
       // Retrieve session from cache to get WorkOS session ID
       const sessionData = await c.env.SESSION_CACHE.get(`session:${sessionId}`);
 
@@ -1094,6 +1095,14 @@ app.get('/auth/workos/logout', async (c) => {
       // Delete local session from KV cache
       await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
       console.log(`✓ Deleted local session from cache: ${sessionId}`);
+    } else if (workosSessionId) {
+      console.log('✓ Using WorkOS session ID from query parameter');
+
+      // Still clean up local session if provided
+      if (sessionId) {
+        await c.env.SESSION_CACHE.delete(`session:${sessionId}`);
+        console.log(`✓ Deleted local session from cache: ${sessionId}`);
+      }
     }
 
     // Generate WorkOS logout URL using the session ID

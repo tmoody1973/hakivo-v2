@@ -18,6 +18,7 @@ export interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   sessionId: string | null;
+  workosSessionId: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -29,6 +30,7 @@ export interface AuthContextType extends AuthState {
     accessToken: string;
     refreshToken: string;
     sessionId: string;
+    workosSessionId?: string | null;
     user: User;
   }) => void;
   logout: () => void;
@@ -44,6 +46,7 @@ const STORAGE_KEYS = {
   ACCESS_TOKEN: 'hakivo_access_token',
   REFRESH_TOKEN: 'hakivo_refresh_token',
   SESSION_ID: 'hakivo_session_id',
+  WORKOS_SESSION_ID: 'hakivo_workos_session_id',
   USER: 'hakivo_user',
 };
 
@@ -53,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     accessToken: null,
     refreshToken: null,
     sessionId: null,
+    workosSessionId: null,
     user: null,
     isAuthenticated: false,
     isLoading: true,
@@ -64,12 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const accessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
       const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
       const sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
+      const workosSessionId = localStorage.getItem(STORAGE_KEYS.WORKOS_SESSION_ID);
       const userStr = localStorage.getItem(STORAGE_KEYS.USER);
 
       console.log('[Auth] Loading from localStorage:');
       console.log('[Auth] - accessToken:', accessToken ? 'exists' : 'null');
       console.log('[Auth] - refreshToken:', refreshToken ? 'exists' : 'null');
       console.log('[Auth] - sessionId:', sessionId ? 'exists' : 'null');
+      console.log('[Auth] - workosSessionId:', workosSessionId ? 'exists' : 'null');
       console.log('[Auth] - user:', userStr ? 'exists' : 'null');
 
       if (accessToken && refreshToken && sessionId && userStr) {
@@ -79,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           accessToken,
           refreshToken,
           sessionId,
+          workosSessionId,
           user,
           isAuthenticated: true,
           isLoading: false,
@@ -98,18 +105,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     accessToken: string;
     refreshToken: string;
     sessionId: string;
+    workosSessionId?: string | null;
     user: User;
   }) => {
     try {
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokens.accessToken);
       localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refreshToken);
       localStorage.setItem(STORAGE_KEYS.SESSION_ID, tokens.sessionId);
+      if (tokens.workosSessionId) {
+        localStorage.setItem(STORAGE_KEYS.WORKOS_SESSION_ID, tokens.workosSessionId);
+      }
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(tokens.user));
 
       setAuthState({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         sessionId: tokens.sessionId,
+        workosSessionId: tokens.workosSessionId || null,
         user: tokens.user,
         isAuthenticated: true,
         isLoading: false,
@@ -123,11 +135,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     try {
       const sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
+      const workosSessionId = localStorage.getItem(STORAGE_KEYS.WORKOS_SESSION_ID);
 
       // Clear localStorage
       localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
       localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
       localStorage.removeItem(STORAGE_KEYS.SESSION_ID);
+      localStorage.removeItem(STORAGE_KEYS.WORKOS_SESSION_ID);
       localStorage.removeItem(STORAGE_KEYS.USER);
 
       // Clear React state
@@ -135,17 +149,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken: null,
         refreshToken: null,
         sessionId: null,
+        workosSessionId: null,
         user: null,
         isAuthenticated: false,
         isLoading: false,
       });
 
       // Redirect to WorkOS logout to end SSO session
-      // NOTE: This requires http://localhost:3000 to be added to
-      // WorkOS dashboard Redirect URIs
       if (sessionId) {
         const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        window.location.href = `${API_URL}/auth/workos/logout?sessionId=${sessionId}`;
+        // Pass workosSessionId if available for immediate logout
+        const logoutUrl = workosSessionId
+          ? `${API_URL}/auth/workos/logout?sessionId=${sessionId}&workosSessionId=${workosSessionId}`
+          : `${API_URL}/auth/workos/logout?sessionId=${sessionId}`;
+        window.location.href = logoutUrl;
       } else {
         window.location.href = '/';
       }
