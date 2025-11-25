@@ -1700,6 +1700,83 @@ app.post('/admin/trigger-news-sync', async (c) => {
   }
 });
 
+// Admin endpoint to insert articles directly
+app.post('/admin/insert-articles', async (c) => {
+  try {
+    // TEMPORARY: No auth for initial deployment
+    // const auth = await verifyAuth(c.req.header('Authorization'), c.env.JWT_SECRET);
+    // if (!auth) {
+    //   return c.json({ error: 'Unauthorized' }, 401);
+    // }
+
+    console.log('🔧 [ADMIN] Inserting articles directly...');
+
+    const body = await c.req.json();
+    const articles = body.articles;
+
+    if (!Array.isArray(articles)) {
+      return c.json({ error: 'Articles must be an array' }, 400);
+    }
+
+    const db = c.env.APP_DB;
+    let inserted = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const article of articles) {
+      try {
+        await db
+          .prepare(`
+            INSERT INTO news_articles (
+              id, interest, title, url, author, summary, text,
+              image_url, published_date, fetched_at, score, source_domain
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `)
+          .bind(
+            article.id,
+            article.interest,
+            article.title,
+            article.url,
+            article.author,
+            article.summary,
+            article.text,
+            article.image_url,
+            article.published_date,
+            article.fetched_at,
+            article.score,
+            article.source_domain
+          )
+          .run();
+        inserted++;
+        console.log(`✅ Inserted: ${article.title}`);
+      } catch (error: any) {
+        if (error.message?.includes('UNIQUE constraint')) {
+          skipped++;
+          console.log(`⏭️  Skipped (duplicate): ${article.title}`);
+        } else {
+          errors.push(`${article.title}: ${error.message}`);
+          console.error(`❌ Failed: ${article.title}`, error);
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      inserted,
+      skipped,
+      errors: errors.length > 0 ? errors : undefined,
+      total: articles.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Admin insert articles error:', error);
+    return c.json({
+      error: 'Failed to insert articles',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);
