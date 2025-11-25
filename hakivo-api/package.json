@@ -12,7 +12,8 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "populate-news": "ts-node scripts/populate-news.ts"
+    "populate-news": "ts-node scripts/populate-news.ts",
+    "send-articles": "ts-node scripts/send-all-articles.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27",
