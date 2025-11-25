@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, MessageSquare, LogOut } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -47,28 +47,15 @@ const routes = [
 
 export function DashboardHeader() {
   const pathname = usePathname()
-  const router = useRouter()
-  const { user, logout, sessionId } = useAuth()
+  const { user, logout } = useAuth()
 
-  const handleLogout = async () => {
-    try {
-      // Call backend WorkOS logout endpoint to clear WorkOS session
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-      if (sessionId) {
-        await fetch(`${API_BASE_URL}/auth/workos/logout?sessionId=${sessionId}`, {
-          method: 'GET',
-          redirect: 'manual' // Don't follow redirect
-        }).catch(err => console.warn('WorkOS logout failed:', err))
-      }
-    } catch (error) {
-      console.warn('Error during WorkOS logout:', error)
-    }
-
-    // Clear local storage and state
+  const handleLogout = () => {
+    // The auth context's logout() handles:
+    // 1. Clearing localStorage (tokens, session IDs, user data)
+    // 2. Clearing React state
+    // 3. Redirecting to backend WorkOS logout endpoint with both sessionId and workosSessionId
+    // 4. WorkOS logout endpoint terminates the SSO session and redirects to app
     logout()
-
-    // Redirect to home/landing page
-    router.push('/')
   }
 
   // Generate user initials for avatar fallback
