@@ -56,11 +56,12 @@ export default function AuthCallbackClient() {
           throw new Error(data.message || 'Authentication failed');
         }
 
-        // Store authentication data
+        // Store authentication data (including workosSessionId for proper logout)
         login({
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
           sessionId: data.sessionId,
+          workosSessionId: data.workosSessionId,
           user: data.user,
         });
 
