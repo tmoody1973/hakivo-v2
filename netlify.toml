@@ -9,6 +9,7 @@
   # Production Raindrop Cloud backend URLs
   NEXT_PUBLIC_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
   NEXT_PUBLIC_DASHBOARD_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_AUTH_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
