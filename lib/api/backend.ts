@@ -1656,3 +1656,115 @@ export async function getUserBillBookmarks(
     };
   }
 }
+
+// ============================================================================
+// Bills Semantic Search APIs
+// ============================================================================
+
+/**
+ * Semantic search for bills using vector embeddings in SmartBucket
+ *
+ * API ENDPOINT: POST /bills/semantic-search
+ * REQUEST BODY: { query: string, limit?: number, congress?: number }
+ * SUCCESS RESPONSE (200): {
+ *   success: true,
+ *   query: string,
+ *   bills: Array<{
+ *     id: string,
+ *     congress: number,
+ *     type: string,
+ *     number: number,
+ *     title: string,
+ *     policyArea: string | null,
+ *     originChamber: string,
+ *     introducedDate: string,
+ *     latestAction: { date: string, text: string },
+ *     sponsor: {
+ *       bioguideId: string,
+ *       firstName: string,
+ *       lastName: string,
+ *       party: string,
+ *       state: string
+ *     } | null,
+ *     relevanceScore: number,
+ *     matchedChunk: string | null
+ *   }>,
+ *   count: number,
+ *   searchMethod: 'vector_similarity'
+ * }
+ */
+export async function semanticSearchBills(params: {
+  query: string;
+  limit?: number;
+  congress?: number;
+}): Promise<APIResponse<{
+  success: boolean;
+  query: string;
+  bills: Array<{
+    id: string;
+    congress: number;
+    type: string;
+    number: number;
+    title: string;
+    policyArea: string | null;
+    originChamber: string;
+    introducedDate: string;
+    latestAction: { date: string; text: string };
+    sponsor: {
+      bioguideId: string;
+      firstName: string;
+      lastName: string;
+      party: string;
+      state: string;
+    } | null;
+    relevanceScore: number;
+    matchedChunk: string | null;
+  }>;
+  count: number;
+  searchMethod: string;
+}>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const url = `${BILLS_API_URL}/bills/semantic-search`;
+    console.log('[semanticSearchBills] Searching for:', params.query);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params),
+    });
+
+    console.log('[semanticSearchBills] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[semanticSearchBills] Error response:', errorText);
+      let errorMessage = 'Failed to search bills';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to search bills';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[semanticSearchBills] Success, found:', result.count || 0, 'bills');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[semanticSearchBills] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to search bills',
+      },
+    };
+  }
+}
