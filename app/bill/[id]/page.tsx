@@ -132,7 +132,7 @@ const CURRENT_CONGRESS = 119
 export default function SimplifiedBillDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const simplifiedId = params?.id as string // e.g., "hr-1234" or "s-2767"
+  const simplifiedId = params?.id as string // e.g., "hr-1234", "s-2767", or "119-hr-5316"
   const [bill, setBill] = useState<BillData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -140,8 +140,11 @@ export default function SimplifiedBillDetailPage() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const { accessToken, isLoading: authLoading } = useAuth()
 
-  // Convert simplified ID (hr-1234) to full ID (119-hr-1234)
-  const fullBillId = simplifiedId ? `${CURRENT_CONGRESS}-${simplifiedId}` : null
+  // Convert simplified ID to full ID
+  // Handle both "hr-1234" and "119-hr-1234" formats
+  const fullBillId = simplifiedId
+    ? (simplifiedId.match(/^\d+-/) ? simplifiedId : `${CURRENT_CONGRESS}-${simplifiedId}`)
+    : null
 
   // Fetch bill data
   useEffect(() => {
