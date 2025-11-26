@@ -1724,9 +1724,8 @@ export async function semanticSearchBills(params: {
   searchMethod: string;
 }>> {
   try {
-    // Use /api proxy in production (bypasses CORS), or explicit URL if provided
-    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || '/api';
-    const url = `${BILLS_API_URL}/bills/semantic-search`;
+    // Always use /api proxy for client-side requests (bypasses CORS)
+    const url = '/api/bills/semantic-search';
     console.log('[semanticSearchBills] Searching for:', params.query);
 
     const response = await fetch(url, {

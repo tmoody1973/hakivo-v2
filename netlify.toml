@@ -11,8 +11,8 @@
   NEXT_PUBLIC_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
   # DASHBOARD_API_URL is used for dashboard data endpoints
   NEXT_PUBLIC_DASHBOARD_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
-  # BILLS_API_URL uses Netlify proxy to bypass CORS (see redirects below)
-  NEXT_PUBLIC_BILLS_API_URL = ""
+  # BILLS_API_URL for backend bills-service (server-side routes need this)
+  NEXT_PUBLIC_BILLS_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
