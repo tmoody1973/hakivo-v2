@@ -17,9 +17,10 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Proxy /api/bills/* to bills-service to bypass CORS
+# Only redirect semantic-search (CORS workaround for client-side requests)
+# Let Next.js handle all other /api/bills/* routes (analyze, detail, etc.)
 [[redirects]]
-  from = "/api/bills/*"
-  to = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/:splat"
+  from = "/api/bills/semantic-search"
+  to = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/semantic-search"
   status = 200
   force = true
