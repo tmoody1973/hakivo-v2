@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "populate-news": "ts-node scripts/populate-news.ts",
-    "send-articles": "ts-node scripts/send-all-articles.ts"
+    "send-articles": "ts-node scripts/send-all-articles.ts",
+    "index-119th-bills": "ts-node scripts/index-119th-bills.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27",

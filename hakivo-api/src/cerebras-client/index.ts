@@ -355,6 +355,274 @@ Return JSON with the category name (must exactly match one from the list).`
   }
 
   /**
+   * Calculate Levenshtein distance between two strings
+   * Used for Stage 1 fast string similarity filtering
+   *
+   * @private
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const len1 = str1.length;
+    const len2 = str2.length;
+    const matrix: number[][] = [];
+
+    // Initialize matrix
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0]![j] = j;
+    }
+
+    // Fill matrix
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[i]![j] = Math.min(
+          matrix[i - 1]![j]! + 1,        // deletion
+          matrix[i]![j - 1]! + 1,        // insertion
+          matrix[i - 1]![j - 1]! + cost  // substitution
+        );
+      }
+    }
+
+    return matrix[len1]![len2]!;
+  }
+
+  /**
+   * Calculate similarity percentage between two strings (0-100)
+   * Uses normalized Levenshtein distance
+   *
+   * @private
+   */
+  private calculateSimilarity(str1: string, str2: string): number {
+    const maxLen = Math.max(str1.length, str2.length);
+    if (maxLen === 0) return 100; // Both empty = identical
+
+    const distance = this.levenshteinDistance(str1.toLowerCase(), str2.toLowerCase());
+    const similarity = ((maxLen - distance) / maxLen) * 100;
+    return similarity;
+  }
+
+  /**
+   * Compare two articles for semantic duplicate detection
+   * Stage 2 (Accurate) - Uses Cerebras LLM for semantic verification
+   *
+   * @private
+   */
+  private async compareArticlesForDuplicates(
+    article1: { title: string; summary: string },
+    article2: { title: string; summary: string }
+  ): Promise<{ isDuplicate: boolean; confidence: number }> {
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are a news deduplication expert. Compare these two news articles and determine if they cover the SAME underlying story (even if from different sources, angles, or publication dates).
+
+Two articles are duplicates if they report on the same event, development, or news story - even if the headlines or specific details differ.
+
+Return your response as JSON with this exact structure:
+{
+  "is_duplicate": true/false,
+  "confidence": 0.0-1.0,
+  "reason": "brief explanation"
+}`
+      },
+      {
+        role: 'user' as const,
+        content: `Article 1:
+Title: ${article1.title}
+Summary: ${article1.summary}
+
+Article 2:
+Title: ${article2.title}
+Summary: ${article2.summary}
+
+Determine if these articles cover the SAME news story. Return JSON.`
+      }
+    ];
+
+    const result = await this.generateCompletion(messages, 0.2, 200);
+
+    try {
+      // Extract JSON from response
+      let jsonText = result.content.trim();
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      return {
+        isDuplicate: parsed.is_duplicate || parsed.isDuplicate || false,
+        confidence: parsed.confidence || 0
+      };
+    } catch (error) {
+      console.error('Failed to parse deduplication JSON:', error);
+      console.error('Raw response:', result.content);
+
+      // Conservative fallback: assume not duplicate on error
+      return {
+        isDuplicate: false,
+        confidence: 0
+      };
+    }
+  }
+
+  /**
+   * Deduplicate news articles using two-stage approach
+   * Adapted from Exa's websets-news-monitor pattern
+   *
+   * Stage 1 (Fast): String similarity filtering on titles (>70% similarity)
+   * Stage 2 (Accurate): Cerebras semantic verification for likely duplicates
+   *
+   * @param articles - Articles to deduplicate (should all be from same category)
+   * @returns Array of unique article IDs to keep, duplicate groups, and stats
+   *
+   * @example
+   * ```ts
+   * const result = await cerebrasClient.deduplicateArticles([
+   *   { id: '1', title: 'Trump urges release of Epstein files', summary: '...', score: 0.95 },
+   *   { id: '2', title: 'President pushes for Epstein documents', summary: '...', score: 0.88 },
+   *   { id: '3', title: 'Senate passes climate bill', summary: '...', score: 0.92 }
+   * ]);
+   * // Returns: uniqueArticleIds: ['1', '3'], duplicatesRemoved: 1
+   * ```
+   */
+  async deduplicateArticles(
+    articles: Array<{
+      id: string;
+      title: string;
+      summary: string;
+      score: number; // Exa score
+    }>
+  ): Promise<{
+    uniqueArticleIds: string[];
+    duplicateGroups: Array<{
+      kept: string;
+      removed: string[];
+      reason: string;
+    }>;
+    stats: {
+      totalArticles: number;
+      stage1Candidates: number;
+      stage2Verified: number;
+      duplicatesRemoved: number;
+    };
+  }> {
+    const SIMILARITY_THRESHOLD = 70; // 70% title similarity triggers Stage 2
+    const MAX_CANDIDATES_PER_ARTICLE = 10; // Limit comparisons to top 10 similar
+
+    console.log(`🔍 Deduplication: Processing ${articles.length} articles`);
+
+    if (articles.length === 0) {
+      return {
+        uniqueArticleIds: [],
+        duplicateGroups: [],
+        stats: {
+          totalArticles: 0,
+          stage1Candidates: 0,
+          stage2Verified: 0,
+          duplicatesRemoved: 0
+        }
+      };
+    }
+
+    // Track which articles are duplicates
+    const duplicateMap = new Map<string, string>(); // duplicate ID -> kept ID
+    const duplicateGroups: Array<{ kept: string; removed: string[]; reason: string }> = [];
+
+    let stage1Candidates = 0;
+    let stage2Verified = 0;
+
+    // STAGE 1: Fast string similarity filtering
+    for (let i = 0; i < articles.length; i++) {
+      const article1 = articles[i]!;
+
+      // Skip if already marked as duplicate
+      if (duplicateMap.has(article1.id)) continue;
+
+      const candidates: Array<{ article: typeof article1; similarity: number; index: number }> = [];
+
+      // Compare with all subsequent articles
+      for (let j = i + 1; j < articles.length; j++) {
+        const article2 = articles[j]!;
+
+        // Skip if already marked as duplicate
+        if (duplicateMap.has(article2.id)) continue;
+
+        const similarity = this.calculateSimilarity(article1.title, article2.title);
+
+        if (similarity >= SIMILARITY_THRESHOLD) {
+          candidates.push({ article: article2, similarity, index: j });
+        }
+      }
+
+      if (candidates.length === 0) continue;
+
+      // Sort by similarity and take top candidates
+      candidates.sort((a, b) => b.similarity - a.similarity);
+      const topCandidates = candidates.slice(0, MAX_CANDIDATES_PER_ARTICLE);
+
+      stage1Candidates += topCandidates.length;
+
+      // STAGE 2: Cerebras semantic verification for each candidate
+      const duplicatesInGroup: string[] = [];
+
+      for (const candidate of topCandidates) {
+        const comparison = await this.compareArticlesForDuplicates(
+          { title: article1.title, summary: article1.summary },
+          { title: candidate.article.title, summary: candidate.article.summary }
+        );
+
+        stage2Verified++;
+
+        if (comparison.isDuplicate && comparison.confidence > 0.7) {
+          // Keep the article with highest Exa score
+          const kept = article1.score >= candidate.article.score ? article1 : candidate.article;
+          const removed = article1.score >= candidate.article.score ? candidate.article : article1;
+
+          duplicateMap.set(removed.id, kept.id);
+          duplicatesInGroup.push(removed.id);
+
+          console.log(`  ✓ Duplicate: "${removed.title.slice(0, 40)}..." (${(comparison.confidence * 100).toFixed(0)}%)`);
+        }
+      }
+
+      if (duplicatesInGroup.length > 0) {
+        duplicateGroups.push({
+          kept: article1.id,
+          removed: duplicatesInGroup,
+          reason: `${duplicatesInGroup.length} duplicate(s) with semantic match`
+        });
+      }
+    }
+
+    // Get unique article IDs (exclude duplicates)
+    const uniqueArticleIds = articles
+      .filter(article => !duplicateMap.has(article.id))
+      .map(article => article.id);
+
+    const stats = {
+      totalArticles: articles.length,
+      stage1Candidates,
+      stage2Verified,
+      duplicatesRemoved: duplicateMap.size
+    };
+
+    console.log(`  📊 Stage 1: ${stage1Candidates} candidate pairs (>70% similarity)`);
+    console.log(`  📊 Stage 2: ${stage2Verified} LLM verifications`);
+    console.log(`  ✅ Result: ${stats.duplicatesRemoved} duplicates removed, ${uniqueArticleIds.length} unique`);
+
+    return {
+      uniqueArticleIds,
+      duplicateGroups,
+      stats
+    };
+  }
+
+  /**
    * Required fetch method for Raindrop Service
    * This is a private service, so fetch returns 501 Not Implemented
    */

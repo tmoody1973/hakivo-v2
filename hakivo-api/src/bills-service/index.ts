@@ -1,6 +1,5 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
@@ -53,7 +52,41 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use('*', logger());
-app.use('*', cors());
+
+// Custom CORS middleware - handles OPTIONS at the earliest possible point
+app.use('*', async (c, next) => {
+  const allowedOrigins = [
+    'https://hakivo-v2.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ];
+
+  const origin = c.req.header('Origin') || '';
+  const isAllowed = allowedOrigins.includes(origin) || origin.startsWith('https://hakivo-v2');
+
+  // Set CORS headers on EVERY response
+  if (isAllowed) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Access-Control-Allow-Credentials', 'true');
+  } else {
+    c.header('Access-Control-Allow-Origin', '*');
+  }
+
+  c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  c.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+  c.header('Access-Control-Max-Age', '600');
+
+  // Handle preflight immediately - return 204 before any other processing
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: c.res.headers
+    });
+  }
+
+  await next();
+});
 
 /**
  * Verify JWT token from auth header
@@ -102,6 +135,273 @@ async function requireAuth(c: any): Promise<{ userId: string } | Response> {
 // Health check
 app.get('/health', (c) => {
   return c.json({ status: 'ok', service: 'bills-service', timestamp: new Date().toISOString() });
+});
+
+/**
+ * POST /bills/semantic-search
+ * Semantic search for bills using SmartBucket vector search
+ *
+ * Body: {
+ *   query: string,           // Natural language query (e.g., "healthcare reform bills")
+ *   limit: number,           // Max results (default: 10, max: 50)
+ *   congress: number         // Optional: filter by congress (e.g., 119)
+ * }
+ */
+app.post('/bills/semantic-search', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { query, limit = 10, congress } = body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return c.json({ error: 'Query is required' }, 400);
+    }
+
+    const searchLimit = Math.min(limit, 50);
+    const billTextsBucket = c.env.BILL_TEXTS;
+    const db = c.env.APP_DB;
+
+    // Perform semantic search on SmartBucket
+    const searchResults = await billTextsBucket.search({ input: query });
+
+    if (!searchResults || !searchResults.results || !Array.isArray(searchResults.results)) {
+      return c.json({
+        success: true,
+        query,
+        bills: [],
+        count: 0
+      });
+    }
+
+    // Extract bill IDs from search results and fetch metadata from database
+    const bills = [];
+    let processedCount = 0;
+
+    for (const result of searchResults.results) {
+      if (processedCount >= searchLimit) break;
+
+      // Extract bill info from SmartBucket source (e.g., "bills/119/hr-1234.txt")
+      const source = result.source || '';
+      const match = source.match(/bills\/(\d+)\/([a-z]+)-(\d+)\.txt/i);
+
+      if (!match || !match[1] || !match[2] || !match[3]) continue;
+
+      const billCongress = match[1];
+      const billType = match[2];
+      const billNumber = match[3];
+
+      // Filter by congress if specified
+      if (congress && parseInt(billCongress) !== congress) continue;
+
+      // Fetch bill metadata from database
+      const billData = await db
+        .prepare(`
+          SELECT
+            b.id,
+            b.congress,
+            b.bill_type,
+            b.bill_number,
+            b.title,
+            b.origin_chamber,
+            b.introduced_date,
+            b.latest_action_date,
+            b.latest_action_text,
+            b.sponsor_bioguide_id,
+            b.policy_area,
+            m.first_name,
+            m.last_name,
+            m.party,
+            m.state
+          FROM bills b
+          LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+          WHERE b.congress = ? AND b.bill_type = ? AND b.bill_number = ?
+        `)
+        .bind(billCongress, billType.toLowerCase(), billNumber)
+        .first();
+
+      if (billData) {
+        bills.push({
+          id: billData.id,
+          congress: billData.congress,
+          type: billData.bill_type,
+          number: billData.bill_number,
+          title: billData.title,
+          policyArea: billData.policy_area,
+          originChamber: billData.origin_chamber,
+          introducedDate: billData.introduced_date,
+          latestAction: {
+            date: billData.latest_action_date,
+            text: billData.latest_action_text
+          },
+          sponsor: billData.sponsor_bioguide_id ? {
+            bioguideId: billData.sponsor_bioguide_id,
+            firstName: billData.first_name,
+            lastName: billData.last_name,
+            party: billData.party,
+            state: billData.state
+          } : null,
+          relevanceScore: result.score || 0,
+          matchedChunk: result.text ? result.text.substring(0, 300) + '...' : null
+        });
+
+        processedCount++;
+      }
+    }
+
+    return c.json({
+      success: true,
+      query,
+      bills,
+      count: bills.length,
+      searchMethod: 'vector_similarity'
+    });
+
+  } catch (error) {
+    console.error('Semantic search error:', error);
+    return c.json({
+      error: 'Semantic search failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /bills/:id
+ * Get bill by database ID (simpler endpoint than congress/type/number)
+ */
+app.get('/bills/:id', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const billId = c.req.param('id');
+
+    // Get bill with sponsor details
+    const bill = await db
+      .prepare(`
+        SELECT
+          b.*,
+          m.first_name,
+          m.middle_name,
+          m.last_name,
+          m.party,
+          m.state,
+          m.district,
+          m.image_url
+        FROM bills b
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE b.id = ?
+      `)
+      .bind(billId)
+      .first();
+
+    if (!bill) {
+      return c.json({ error: 'Bill not found' }, 404);
+    }
+
+    // Get cosponsors
+    const cosponsors = await db
+      .prepare(`
+        SELECT
+          m.bioguide_id,
+          m.first_name,
+          m.last_name,
+          m.party,
+          m.state,
+          m.district,
+          bc.cosponsor_date
+        FROM bill_cosponsors bc
+        INNER JOIN members m ON bc.member_bioguide_id = m.bioguide_id
+        WHERE bc.bill_id = ?
+        ORDER BY bc.cosponsor_date ASC
+      `)
+      .bind(bill.id)
+      .all();
+
+    // Get enrichment data
+    const enrichment = await db
+      .prepare(`
+        SELECT
+          plain_language_summary,
+          reading_time_minutes,
+          key_points,
+          impact_level,
+          bipartisan_score,
+          current_stage,
+          progress_percentage,
+          tags,
+          enriched_at,
+          model_used,
+          status
+        FROM bill_enrichment
+        WHERE bill_id = ?
+      `)
+      .bind(bill.id)
+      .first();
+
+    // Format response
+    const response: any = {
+      id: bill.id,
+      congress: bill.congress,
+      type: bill.bill_type,
+      number: bill.bill_number,
+      title: bill.title,
+      policyArea: bill.policy_area,
+      originChamber: bill.origin_chamber,
+      introducedDate: bill.introduced_date,
+      latestAction: {
+        date: bill.latest_action_date,
+        text: bill.latest_action_text
+      },
+      sponsor: bill.sponsor_bioguide_id ? {
+        bioguideId: bill.sponsor_bioguide_id,
+        firstName: bill.first_name,
+        middleName: bill.middle_name,
+        lastName: bill.last_name,
+        fullName: [bill.first_name, bill.middle_name, bill.last_name].filter(Boolean).join(' '),
+        party: bill.party,
+        state: bill.state,
+        district: bill.district,
+        imageUrl: bill.image_url
+      } : null,
+      cosponsors: cosponsors.results?.map((row: any) => ({
+        bioguideId: row.bioguide_id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        party: row.party,
+        state: row.state,
+        district: row.district,
+        cosponsorDate: row.cosponsor_date
+      })) || [],
+      text: bill.text,
+      updateDate: bill.update_date
+    };
+
+    // Add enrichment data if available
+    if (enrichment) {
+      response.enrichment = {
+        plainLanguageSummary: enrichment.plain_language_summary,
+        readingTimeMinutes: enrichment.reading_time_minutes,
+        keyPoints: enrichment.key_points ? JSON.parse(enrichment.key_points as string) : null,
+        impactLevel: enrichment.impact_level,
+        bipartisanScore: enrichment.bipartisan_score,
+        currentStage: enrichment.current_stage,
+        progressPercentage: enrichment.progress_percentage,
+        tags: enrichment.tags ? JSON.parse(enrichment.tags as string) : null,
+        enrichedAt: enrichment.enriched_at,
+        modelUsed: enrichment.model_used,
+        status: enrichment.status
+      };
+    }
+
+    return c.json({
+      success: true,
+      bill: response
+    });
+  } catch (error) {
+    console.error('Get bill by ID error:', error);
+    return c.json({
+      error: 'Failed to get bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 /**

@@ -431,6 +431,110 @@ app.get('/api/smartbucket/list/:bucket', async (c) => {
   }
 });
 
+/**
+ * GET /api/indexing/status
+ * Check bill indexing progress and SmartBucket status
+ */
+app.get('/api/indexing/status', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const billTextsBucket = c.env.BILL_TEXTS;
+
+    // Get indexing progress from database
+    const progressResult = await db
+      .prepare('SELECT * FROM indexing_progress WHERE congress = ?')
+      .bind(119)
+      .first<{
+        congress: number;
+        processed_bills: number;
+        updated_at: number;
+        started_at: number;
+        completed_at: number | null;
+      }>();
+
+    // Get total bills count
+    const totalBillsResult = await db
+      .prepare('SELECT COUNT(*) as total FROM bills WHERE congress = ?')
+      .bind(119)
+      .first<{ total: number }>();
+
+    const totalBills = totalBillsResult?.total || 0;
+
+    // List SmartBucket objects
+    const bucketObjects = await billTextsBucket.list({ prefix: 'bills/119/', limit: 1000 });
+
+    // Sample a few bills to verify content
+    const sampleBills: any[] = [];
+    const sampleKeys = bucketObjects.objects.slice(0, 3);
+
+    for (const obj of sampleKeys) {
+      const billObj = await billTextsBucket.get(obj.key);
+      if (billObj) {
+        const text = await billObj.text();
+        sampleBills.push({
+          key: obj.key,
+          size: obj.size,
+          textLength: text.length,
+          preview: text.substring(0, 200) + '...',
+          hasCustomMetadata: !!billObj.customMetadata
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      progress: progressResult ? {
+        processed: progressResult.processed_bills,
+        total: totalBills,
+        percentage: Math.round((progressResult.processed_bills / totalBills) * 100),
+        startedAt: new Date(progressResult.started_at).toISOString(),
+        updatedAt: new Date(progressResult.updated_at).toISOString(),
+        completedAt: progressResult.completed_at ? new Date(progressResult.completed_at).toISOString() : null
+      } : null,
+      smartbucket: {
+        totalObjects: bucketObjects.objects.length,
+        truncated: bucketObjects.truncated,
+        sampleBills
+      }
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/smartbucket/search
+ * Test semantic search on SmartBucket
+ */
+app.post('/api/smartbucket/search', async (c) => {
+  try {
+    const { query, limit = 5 } = await c.req.json();
+
+    if (!query) {
+      return c.json({ success: false, error: 'Query is required' }, 400);
+    }
+
+    const billTextsBucket = c.env.BILL_TEXTS;
+
+    // Perform semantic search
+    const searchResults = await billTextsBucket.search({ input: query });
+
+    return c.json({
+      success: true,
+      query,
+      results: searchResults
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

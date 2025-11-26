@@ -142,6 +142,12 @@ application "hakivo-new" {
     }
   }
 
+  observer "bill-indexing-observer" {
+    source {
+      queue = "bill-indexing-queue"
+    }
+  }
+
   // Scheduled tasks
   task "daily-brief-scheduler" {
     type = "cron"
@@ -168,12 +174,19 @@ application "hakivo-new" {
     cron = "0 6,18 * * *"
   }
 
+  // Admin utilities
+  service "index-bills-service" {
+    visibility = "public"
+  }
+
   // Message queues
   queue "brief-queue" {}
 
   queue "sync-queue" {}
 
   queue "enrichment-queue" {}
+
+  queue "bill-indexing-queue" {}
 
   // SQL database for application data
   sql_database "app-db" {}

@@ -126,7 +126,7 @@ async function searchNews(keywords: string[], startDate: Date, endDate: Date, nu
     ]
   });
 
-  return response.results.map(result => ({
+  const articles = response.results.map(result => ({
     title: result.title || 'Untitled',
     url: result.url,
     author: result.author || null,
@@ -136,6 +136,80 @@ async function searchNews(keywords: string[], startDate: Date, endDate: Date, nu
     publishedDate: result.publishedDate || new Date().toISOString(),
     score: result.score || 0,
   }));
+
+  // Filter out landing pages and section pages
+  return articles.filter(article => !isLandingPage(article));
+}
+
+// Check if article is a landing page or section page
+function isLandingPage(article: Article): boolean {
+  const url = article.url.toLowerCase();
+  const title = article.title.toLowerCase();
+  const summary = article.summary.toLowerCase();
+
+  // Generic landing page titles
+  const genericTitles = [
+    'business news',
+    'world news',
+    'politics news',
+    'breaking news',
+    'latest news',
+    'top stories',
+    'home',
+    'homepage',
+    'news home',
+    'business | ',
+    'politics | ',
+    'economy | ',
+    '| economy, tech, ai',
+  ];
+
+  // Check if title matches generic patterns
+  if (genericTitles.some(generic => title.includes(generic) || title === generic.replace(' | ', ''))) {
+    console.log(`   🚫 Filtered landing page: "${article.title}"`);
+    return true;
+  }
+
+  // URL patterns that indicate landing pages
+  const landingUrlPatterns = [
+    '/business$',
+    '/business/$',
+    '/politics$',
+    '/politics/$',
+    '/news$',
+    '/news/$',
+    '/world$',
+    '/world/$',
+    '/economy$',
+    '/economy/$',
+    '/latest$',
+    '/latest/$',
+    '/home$',
+    '/home/$',
+  ];
+
+  if (landingUrlPatterns.some(pattern => new RegExp(pattern).test(url))) {
+    console.log(`   🚫 Filtered landing page URL: ${article.url}`);
+    return true;
+  }
+
+  // Summary patterns that indicate section pages
+  const sectionSummaryPatterns = [
+    'page provides the latest',
+    'section covers a variety',
+    'provides updates on various',
+    'covers topics including',
+    'includes coverage of',
+    'page features',
+    'section includes',
+  ];
+
+  if (sectionSummaryPatterns.some(pattern => summary.includes(pattern))) {
+    console.log(`   🚫 Filtered section page: "${article.title}"`);
+    return true;
+  }
+
+  return false;
 }
 
 // Cerebras AI categorization

@@ -22,7 +22,6 @@ export default class extends Task<Env> {
       const db = this.env.APP_DB;
       const exaClient = this.env.EXA_CLIENT;
 
-      let totalArticles = 0;
       let successfulSyncs = 0;
       const errors: Array<{ interest: string; error: string }> = [];
 
@@ -35,6 +34,26 @@ export default class extends Task<Env> {
       // Get all policy interests for AI categorization
       const availableCategories = policyInterestMapping.map(m => m.interest);
       const cerebrasClient = this.env.CEREBRAS_CLIENT;
+
+      // PHASE 1: Collect all articles from all interests
+      type ArticleWithMetadata = {
+        id: string;
+        title: string;
+        summary: string;
+        url: string;
+        author: string | null;
+        text: string;
+        imageUrl: string | null;
+        publishedDate: string;
+        score: number;
+        sourceDomain: string;
+        aiCategory: string;
+        originalInterest: string;
+      };
+
+      const allArticles: ArticleWithMetadata[] = [];
+
+      console.log('📥 PHASE 1: Fetching articles from all interests...');
 
       // Iterate through all 12 policy interests
       for (const mapping of policyInterestMapping) {
@@ -52,10 +71,19 @@ export default class extends Task<Env> {
             25 // Fetch 25 articles per interest (3-day window = ~900 total articles)
           );
 
-          console.log(`   Found ${results.length} articles`);
+          // Filter out landing pages and section pages
+          const filteredResults = results.filter(article => {
+            const isLanding = this.isLandingPage(article);
+            if (isLanding) {
+              console.log(`   🚫 Filtered landing page: "${article.title}"`);
+            }
+            return !isLanding;
+          });
 
-          // Store each article in news_articles table with AI categorization
-          for (const article of results) {
+          console.log(`   Found ${results.length} articles (${filteredResults.length} after filtering)`);
+
+          // Categorize and collect articles
+          for (const article of filteredResults) {
             try {
               // Extract domain from URL
               const url = new URL(article.url);
@@ -63,7 +91,6 @@ export default class extends Task<Env> {
 
               // Use AI to determine correct category (semantic understanding)
               let aiCategory = interest; // Fallback to keyword-based category
-              let categoryChanged = false;
 
               try {
                 const categorization = await cerebrasClient.categorizeNewsArticle(
@@ -72,9 +99,8 @@ export default class extends Task<Env> {
                   availableCategories
                 );
                 aiCategory = categorization.category;
-                categoryChanged = (aiCategory !== interest);
 
-                if (categoryChanged) {
+                if (aiCategory !== interest) {
                   console.log(`   🔄 Recategorized: "${article.title.substring(0, 60)}..."`);
                   console.log(`      ${interest} → ${aiCategory}`);
                 }
@@ -82,33 +108,23 @@ export default class extends Task<Env> {
                 console.warn(`   ⚠️ AI categorization failed, using keyword-based: ${interest}`, error);
               }
 
-              // Insert article with AI-determined category (ignore if duplicate URL)
-              await db
-                .prepare(`
-                  INSERT OR IGNORE INTO news_articles (
-                    id, interest, title, url, author, summary, text,
-                    image_url, published_date, fetched_at, score, source_domain
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `)
-                .bind(
-                  crypto.randomUUID(),
-                  aiCategory, // Use AI-determined category
-                  article.title,
-                  article.url,
-                  article.author,
-                  article.summary,
-                  article.text,
-                  article.imageUrl,
-                  article.publishedDate,
-                  Date.now(),
-                  article.score,
-                  sourceDomain
-                )
-                .run();
-
-              totalArticles++;
+              // Collect article with metadata
+              allArticles.push({
+                id: crypto.randomUUID(),
+                title: article.title,
+                summary: article.summary,
+                url: article.url,
+                author: article.author,
+                text: article.text,
+                imageUrl: article.imageUrl || null,
+                publishedDate: article.publishedDate,
+                score: article.score,
+                sourceDomain,
+                aiCategory,
+                originalInterest: interest
+              });
             } catch (error) {
-              console.warn(`   ⚠️ Failed to store article: ${article.title}`, error);
+              console.warn(`   ⚠️ Failed to process article: ${article.title}`, error);
             }
           }
 
@@ -119,6 +135,177 @@ export default class extends Task<Env> {
           errors.push({ interest, error: errorMsg });
         }
       }
+
+      console.log(`✅ Phase 1 complete: ${allArticles.length} articles collected`);
+
+      // PHASE 2: Group by category and deduplicate
+      console.log('🔍 PHASE 2: Deduplicating articles by category...');
+
+      // Group articles by AI category
+      const articlesByCategory = new Map<string, ArticleWithMetadata[]>();
+      for (const article of allArticles) {
+        const existing = articlesByCategory.get(article.aiCategory) || [];
+        existing.push(article);
+        articlesByCategory.set(article.aiCategory, existing);
+      }
+
+      // Deduplication metrics
+      let totalDuplicatesRemoved = 0;
+      let totalStage1Candidates = 0;
+      let totalStage2Verifications = 0;
+      const uniqueArticles: ArticleWithMetadata[] = [];
+      const categoryMetrics: Array<{
+        category: string;
+        total: number;
+        unique: number;
+        duplicates: number;
+        deduplicationRate: number;
+      }> = [];
+
+      // Track which sources overlap (for source analysis)
+      const sourcePairCounts = new Map<string, number>();
+
+      // Deduplicate each category
+      for (const [category, articles] of articlesByCategory) {
+        console.log(`📂 Category: ${category} (${articles.length} articles)`);
+
+        if (articles.length <= 1) {
+          // No duplicates possible
+          uniqueArticles.push(...articles);
+          categoryMetrics.push({
+            category,
+            total: articles.length,
+            unique: articles.length,
+            duplicates: 0,
+            deduplicationRate: 0
+          });
+          continue;
+        }
+
+        try {
+          const deduplicationResult = await cerebrasClient.deduplicateArticles(
+            articles.map(a => ({
+              id: a.id,
+              title: a.title,
+              summary: a.summary,
+              score: a.score
+            }))
+          );
+
+          // Keep only unique articles
+          const uniqueIds = new Set(deduplicationResult.uniqueArticleIds);
+          const categoryUniqueArticles = articles.filter(a => uniqueIds.has(a.id));
+          uniqueArticles.push(...categoryUniqueArticles);
+
+          // Update metrics
+          totalDuplicatesRemoved += deduplicationResult.stats.duplicatesRemoved;
+          totalStage1Candidates += deduplicationResult.stats.stage1Candidates;
+          totalStage2Verifications += deduplicationResult.stats.stage2Verified;
+
+          const deduplicationRate = (deduplicationResult.stats.duplicatesRemoved / articles.length) * 100;
+
+          categoryMetrics.push({
+            category,
+            total: articles.length,
+            unique: categoryUniqueArticles.length,
+            duplicates: deduplicationResult.stats.duplicatesRemoved,
+            deduplicationRate
+          });
+
+          // Track source pairs for duplicate analysis
+          for (const group of deduplicationResult.duplicateGroups) {
+            const keptArticle = articles.find(a => a.id === group.kept);
+            for (const removedId of group.removed) {
+              const removedArticle = articles.find(a => a.id === removedId);
+              if (keptArticle && removedArticle) {
+                const sourcePair = [keptArticle.sourceDomain, removedArticle.sourceDomain].sort().join(' <-> ');
+                sourcePairCounts.set(sourcePair, (sourcePairCounts.get(sourcePair) || 0) + 1);
+              }
+            }
+          }
+
+          console.log(`   ✅ ${categoryUniqueArticles.length} unique, ${deduplicationResult.stats.duplicatesRemoved} duplicates removed (${deduplicationRate.toFixed(1)}%)`);
+        } catch (error) {
+          console.warn(`   ⚠️ Deduplication failed for ${category}, keeping all articles`, error);
+          uniqueArticles.push(...articles);
+          categoryMetrics.push({
+            category,
+            total: articles.length,
+            unique: articles.length,
+            duplicates: 0,
+            deduplicationRate: 0
+          });
+        }
+      }
+
+      console.log(`✅ Phase 2 complete: ${uniqueArticles.length} unique articles (${totalDuplicatesRemoved} duplicates removed)`);
+
+      // Log detailed deduplication metrics
+      console.log('\n📊 DEDUPLICATION METRICS:');
+      console.log(`   Total articles fetched: ${allArticles.length}`);
+      console.log(`   Unique articles: ${uniqueArticles.length}`);
+      console.log(`   Duplicates removed: ${totalDuplicatesRemoved}`);
+      console.log(`   Overall deduplication rate: ${((totalDuplicatesRemoved / allArticles.length) * 100).toFixed(1)}%`);
+      console.log(`   Stage 1 candidates (>70% similarity): ${totalStage1Candidates}`);
+      console.log(`   Stage 2 LLM verifications: ${totalStage2Verifications}`);
+      console.log(`   LLM efficiency: ${totalStage1Candidates > 0 ? ((totalStage2Verifications / totalStage1Candidates) * 100).toFixed(1) : 0}% of candidates verified`);
+
+      // Category breakdown
+      console.log('\n📋 BY CATEGORY:');
+      for (const metric of categoryMetrics.sort((a, b) => b.duplicates - a.duplicates)) {
+        if (metric.duplicates > 0) {
+          console.log(`   ${metric.category}: ${metric.unique}/${metric.total} unique (${metric.duplicates} dupes, ${metric.deduplicationRate.toFixed(1)}%)`);
+        }
+      }
+
+      // Source overlap analysis (top 5 most duplicated source pairs)
+      if (sourcePairCounts.size > 0) {
+        console.log('\n🔗 TOP SOURCE OVERLAPS:');
+        const topSourcePairs = Array.from(sourcePairCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5);
+        for (const [pair, count] of topSourcePairs) {
+          console.log(`   ${pair}: ${count} duplicates`);
+        }
+      }
+
+      // PHASE 3: Insert unique articles into database
+      console.log('💾 PHASE 3: Inserting unique articles into database...');
+
+      let totalArticles = 0;
+      for (const article of uniqueArticles) {
+        try {
+          // Insert article (ignore if duplicate URL)
+          await db
+            .prepare(`
+              INSERT OR IGNORE INTO news_articles (
+                id, interest, title, url, author, summary, text,
+                image_url, published_date, fetched_at, score, source_domain
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `)
+            .bind(
+              article.id,
+              article.aiCategory,
+              article.title,
+              article.url,
+              article.author,
+              article.summary,
+              article.text,
+              article.imageUrl,
+              article.publishedDate,
+              Date.now(),
+              article.score,
+              article.sourceDomain
+            )
+            .run();
+
+          totalArticles++;
+        } catch (error) {
+          console.warn(`   ⚠️ Failed to store article: ${article.title}`, error);
+        }
+      }
+
+      console.log(`✅ Phase 3 complete: ${totalArticles} articles inserted`)
 
       // Clean up old articles (keep last 7 days)
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -157,5 +344,73 @@ export default class extends Task<Env> {
       console.error('❌ News sync scheduler failed:', error);
       throw error;
     }
+  }
+
+  // Check if article is a landing page or section page
+  private isLandingPage(article: { title: string; url: string; summary: string }): boolean {
+    const url = article.url.toLowerCase();
+    const title = article.title.toLowerCase();
+    const summary = article.summary.toLowerCase();
+
+    // Generic landing page titles
+    const genericTitles = [
+      'business news',
+      'world news',
+      'politics news',
+      'breaking news',
+      'latest news',
+      'top stories',
+      'home',
+      'homepage',
+      'news home',
+      'business | ',
+      'politics | ',
+      'economy | ',
+      '| economy, tech, ai',
+    ];
+
+    // Check if title matches generic patterns
+    if (genericTitles.some(generic => title.includes(generic) || title === generic.replace(' | ', ''))) {
+      return true;
+    }
+
+    // URL patterns that indicate landing pages
+    const landingUrlPatterns = [
+      '/business$',
+      '/business/$',
+      '/politics$',
+      '/politics/$',
+      '/news$',
+      '/news/$',
+      '/world$',
+      '/world/$',
+      '/economy$',
+      '/economy/$',
+      '/latest$',
+      '/latest/$',
+      '/home$',
+      '/home/$',
+    ];
+
+    if (landingUrlPatterns.some(pattern => new RegExp(pattern).test(url))) {
+      return true;
+    }
+
+    // Summary patterns that indicate section pages
+    const sectionSummaryPatterns = [
+      'page provides the latest',
+      'section covers a variety',
+      'provides updates on various',
+      'covers topics including',
+      'includes coverage of',
+      'page features',
+      'section includes',
+    ];
+
+    if (sectionSummaryPatterns.some(pattern => summary.includes(pattern))) {
+      return true;
+    }
+
+    return false;
   }
 }

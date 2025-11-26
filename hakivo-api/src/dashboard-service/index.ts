@@ -1777,6 +1777,122 @@ app.post('/admin/insert-articles', async (c) => {
   }
 });
 
+// Admin endpoint to clean up landing pages from database
+app.post('/admin/cleanup-landing-pages', async (c) => {
+  try {
+    // TEMPORARY: No auth for initial deployment
+    // const auth = await verifyAuth(c.req.header('Authorization'), c.env.JWT_SECRET);
+    // if (!auth) {
+    //   return c.json({ error: 'Unauthorized' }, 401);
+    // }
+
+    console.log('🧹 [ADMIN] Cleaning up landing pages from database...');
+
+    const db = c.env.APP_DB;
+
+    // Generic landing page titles
+    const genericTitles = [
+      '%business news%',
+      '%world news%',
+      '%politics news%',
+      '%breaking news%',
+      '%latest news%',
+      '%top stories%',
+      '%home%',
+      '%homepage%',
+      '%news home%',
+      '%business | %',
+      '%politics | %',
+      '%economy | %',
+      '%| economy, tech, ai%',
+    ];
+
+    // Summary patterns that indicate section pages
+    const sectionSummaryPatterns = [
+      '%page provides the latest%',
+      '%section covers a variety%',
+      '%provides updates on various%',
+      '%covers topics including%',
+      '%includes coverage of%',
+      '%page features%',
+      '%section includes%',
+    ];
+
+    let totalDeleted = 0;
+
+    // Delete by title patterns
+    for (const pattern of genericTitles) {
+      const result = await db
+        .prepare('DELETE FROM news_articles WHERE LOWER(title) LIKE ?')
+        .bind(pattern)
+        .run();
+
+      const deleted = result.meta?.changes || 0;
+      if (deleted > 0) {
+        console.log(`   Deleted ${deleted} articles matching title pattern: ${pattern}`);
+        totalDeleted += deleted;
+      }
+    }
+
+    // Delete by summary patterns
+    for (const pattern of sectionSummaryPatterns) {
+      const result = await db
+        .prepare('DELETE FROM news_articles WHERE LOWER(summary) LIKE ?')
+        .bind(pattern)
+        .run();
+
+      const deleted = result.meta?.changes || 0;
+      if (deleted > 0) {
+        console.log(`   Deleted ${deleted} articles matching summary pattern: ${pattern}`);
+        totalDeleted += deleted;
+      }
+    }
+
+    // Delete by URL patterns (ending in /business, /news, etc.)
+    const urlPatterns = [
+      '%/business',
+      '%/business/',
+      '%/politics',
+      '%/politics/',
+      '%/news',
+      '%/news/',
+      '%/world',
+      '%/world/',
+      '%/economy',
+      '%/economy/',
+      '%/latest',
+      '%/latest/',
+      '%/home',
+      '%/home/',
+    ];
+
+    for (const pattern of urlPatterns) {
+      const result = await db
+        .prepare('DELETE FROM news_articles WHERE LOWER(url) LIKE ?')
+        .bind(pattern)
+        .run();
+
+      const deleted = result.meta?.changes || 0;
+      if (deleted > 0) {
+        console.log(`   Deleted ${deleted} articles matching URL pattern: ${pattern}`);
+        totalDeleted += deleted;
+      }
+    }
+
+    return c.json({
+      success: true,
+      deleted: totalDeleted,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Admin cleanup landing pages error:', error);
+    return c.json({
+      error: 'Failed to cleanup landing pages',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);
