@@ -51,7 +51,7 @@ export function BillCard({ bill }: BillCardProps) {
                 {statusInfo.label}
               </Badge>
             </div>
-            <Link href={`/bill/${bill.id}`} className="hover:underline">
+            <Link href={`/bills/${bill.id}`} className="hover:underline">
               <h3 className="font-semibold text-lg leading-tight text-balance">
                 {bill.title}
               </h3>
@@ -101,7 +101,7 @@ export function BillCard({ bill }: BillCardProps) {
         {/* Actions */}
         <div className="flex items-center gap-2 pt-2">
           <Button size="sm" variant="default" asChild>
-            <Link href={`/bill/${bill.id}`}>
+            <Link href={`/bills/${bill.id}`}>
               <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
               View Details
             </Link>
