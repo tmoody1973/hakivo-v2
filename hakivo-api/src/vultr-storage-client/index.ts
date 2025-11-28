@@ -74,7 +74,9 @@ export default class extends Service<Env> {
     const key = this.generateFileKey(briefId);
     const buffer = audioBuffer instanceof ArrayBuffer ? new Uint8Array(audioBuffer) : audioBuffer;
 
-    console.log(`[VULTR] Uploading to bucket: ${bucketName}, key: ${key}, endpoint: ${endpoint}`);
+    // Debug: log credentials info (first 8 chars of access key only)
+    const accessKeyPrefix = this.env.VULTR_ACCESS_KEY?.substring(0, 8) || 'NOT_SET';
+    console.log(`[VULTR] Uploading to bucket: ${bucketName}, key: ${key}, endpoint: ${endpoint}, accessKey prefix: ${accessKeyPrefix}...`);
 
     // Build headers with metadata
     const headers: Record<string, string> = {
