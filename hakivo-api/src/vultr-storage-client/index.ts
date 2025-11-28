@@ -18,11 +18,15 @@ export default class extends Service<Env> {
         throw new Error('Missing Vultr S3 credentials: VULTR_ACCESS_KEY or VULTR_SECRET_KEY');
       }
 
+      // Extract region from endpoint (e.g., "sjc1.vultrobjects.com" -> "sjc1")
+      const endpoint = this.env.VULTR_ENDPOINT || '';
+      const region = endpoint.split('.')[0] || 'us-west-1';
+
       this.awsClient = new AwsClient({
         accessKeyId,
         secretAccessKey,
         service: 's3',
-        region: 'auto',
+        region,
       });
     }
 
