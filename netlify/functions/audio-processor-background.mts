@@ -114,6 +114,51 @@ async function updateBriefStatus(
 }
 
 /**
+ * Create a proper WAV file header for raw PCM data
+ * Gemini TTS returns raw PCM (L16) at 24kHz, 16-bit, mono
+ */
+function createWavFile(pcmData: Uint8Array, sampleRate: number = 24000, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const dataSize = pcmData.length;
+  const fileSize = 36 + dataSize; // Header (44 bytes) - 8 bytes for RIFF header = 36 + data
+
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, fileSize, true); // File size - 8
+  writeString(view, 8, 'WAVE');
+
+  // fmt subchunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
+  view.setUint16(22, channels, true); // NumChannels
+  view.setUint32(24, sampleRate, true); // SampleRate
+  view.setUint32(28, byteRate, true); // ByteRate
+  view.setUint16(32, blockAlign, true); // BlockAlign
+  view.setUint16(34, bitsPerSample, true); // BitsPerSample
+
+  // data subchunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true); // Subchunk2Size
+
+  // Copy PCM data
+  const wavArray = new Uint8Array(buffer);
+  wavArray.set(pcmData, 44);
+
+  return wavArray;
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
+/**
  * Generate date-based file key
  * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.wav
  * Note: Gemini TTS returns WAV format audio
@@ -263,13 +308,18 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 
     console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
 
-    // Convert base64 to buffer
-    const audioBuffer = Uint8Array.from(atob(audioData.data), c => c.charCodeAt(0));
-    console.log(`[AUDIO] Audio size: ${audioBuffer.length} bytes`);
+    // Convert base64 to buffer (raw PCM data)
+    const pcmBuffer = Uint8Array.from(atob(audioData.data), c => c.charCodeAt(0));
+    console.log(`[AUDIO] Raw PCM size: ${pcmBuffer.length} bytes`);
+
+    // Wrap raw PCM in proper WAV file format
+    // Gemini TTS returns L16 (16-bit linear PCM) at 24kHz, mono
+    const wavBuffer = createWavFile(pcmBuffer, 24000, 1, 16);
+    console.log(`[AUDIO] WAV file size: ${wavBuffer.length} bytes (with header)`);
 
     // Upload to Vultr storage directly
     console.log('[AUDIO] Uploading to Vultr storage...');
-    const audioUrl = await uploadAudio(brief.id, audioBuffer, audioData.mimeType || 'audio/wav');
+    const audioUrl = await uploadAudio(brief.id, wavBuffer, 'audio/wav');
     console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
 
     // Update brief with completed status and audio URL
