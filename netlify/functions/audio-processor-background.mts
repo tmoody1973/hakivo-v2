@@ -166,7 +166,6 @@ async function uploadAudio(
     Key: key,
     Body: audioBuffer,
     ContentType: mimeType,
-    ACL: 'public-read',
     CacheControl: 'public, max-age=31536000',
     Metadata: {
       briefId,
