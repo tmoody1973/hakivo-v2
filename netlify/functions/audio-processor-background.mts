@@ -1,12 +1,14 @@
 /**
- * Netlify Scheduled Function for Audio Processing
+ * Netlify Background Function for Audio Processing
  *
- * Runs every 2 minutes to poll for briefs with status='script_ready'
- * and processes audio generation using Gemini TTS.
+ * Polls database for briefs with status='script_ready' and processes
+ * audio generation using Gemini TTS.
  *
- * This approach avoids the POST body issue with background functions
- * and allows up to 15 minutes of processing time per invocation.
+ * Background functions get 15-minute timeout (vs 10s for regular functions).
+ * This function polls the database instead of using POST body since
+ * background functions have a known issue where POST bodies are empty.
  */
+import type { Context } from "@netlify/functions";
 
 // Gemini TTS voice pairs for brief audio generation
 const VOICE_PAIRS = [
@@ -247,16 +249,20 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 }
 
 /**
- * Main scheduled function handler
+ * Background function handler - polls database for briefs to process
+ *
+ * This is a BACKGROUND FUNCTION (15 min timeout) that polls for briefs.
+ * It must be triggered via HTTP call, but ignores the request body
+ * (since background functions have empty POST bodies).
  */
-export default async () => {
-  console.log('[AUDIO] Scheduled function triggered');
+export default async (_req: Request, _context: Context) => {
+  console.log('[AUDIO] Background function triggered');
 
   // Get Gemini API key
   const geminiApiKey = Netlify.env.get('GEMINI_API_KEY');
   if (!geminiApiKey) {
     console.error('[AUDIO] GEMINI_API_KEY not configured');
-    return;
+    return; // Background functions return empty 202
   }
 
   // Query for briefs ready for audio
@@ -269,16 +275,12 @@ export default async () => {
 
   console.log(`[AUDIO] Found ${briefs.length} brief(s) ready for audio`);
 
-  // Process one brief at a time (to stay within timeout)
+  // Process one brief at a time
   for (const brief of briefs) {
     await processBrief(brief, geminiApiKey);
   }
 
-  console.log('[AUDIO] Scheduled function complete');
+  console.log('[AUDIO] Background function complete');
 };
 
-// Netlify scheduled function configuration
-// Runs every 2 minutes
-export const config = {
-  schedule: "*/2 * * * *"
-};
+// No config needed - background functions use the -background filename suffix
