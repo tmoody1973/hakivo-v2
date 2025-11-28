@@ -1,13 +1,14 @@
 import type { Context } from "@netlify/functions";
 
 /**
- * Netlify Background Function for Gemini TTS Audio Generation
+ * Netlify Function for Gemini TTS Audio Generation
  *
- * This function runs asynchronously with a 15-minute timeout,
- * perfect for generating audio from brief scripts using Google Gemini TTS.
+ * Uses context.waitUntil() to process audio asynchronously while
+ * immediately returning 202 to the caller.
  *
- * Triggered by POST request with briefId and script in body.
- * Immediately returns 202 and processes audio in background.
+ * This approach allows access to the request body before returning,
+ * unlike the -background suffix naming convention which has a known
+ * issue where POST bodies are empty.
  */
 
 // Gemini TTS voice pairs for brief audio generation
@@ -81,7 +82,7 @@ async function updateBriefStatus(
   });
 
   if (!response.ok) {
-    console.error(`[AUDIO-BG] Failed to update brief status: ${response.status}`);
+    console.error(`[AUDIO] Failed to update brief status: ${response.status}`);
   }
 }
 
@@ -118,53 +119,31 @@ async function uploadAudio(
   return result.url;
 }
 
-export default async (req: Request, context: Context) => {
-  console.log('[AUDIO-BG] Background function started');
-  console.log('[AUDIO-BG] Request method:', req.method);
-  console.log('[AUDIO-BG] Content-Type:', req.headers.get('content-type'));
+/**
+ * Process audio generation asynchronously
+ */
+async function processAudioGeneration(briefId: string, script: string): Promise<void> {
+  console.log(`[AUDIO] Starting audio generation for brief: ${briefId}`);
+  console.log(`[AUDIO] Script length: ${script.length} characters`);
 
   try {
-    // Read the body as text first for debugging
-    const bodyText = await req.text();
-    console.log('[AUDIO-BG] Body length:', bodyText.length);
-    console.log('[AUDIO-BG] Body preview:', bodyText.substring(0, 200));
-
-    if (!bodyText || bodyText.length === 0) {
-      console.error('[AUDIO-BG] Empty request body received');
-      return;
-    }
-
-    const body = JSON.parse(bodyText) as { briefId: string; script: string };
-    const { briefId, script } = body;
-
-    if (!briefId || !script) {
-      console.error('[AUDIO-BG] Missing briefId or script');
-      return; // Background functions don't return responses
-    }
-
-    console.log(`[AUDIO-BG] Processing brief: ${briefId}`);
-    console.log(`[AUDIO-BG] Script length: ${script.length} characters`);
-
     // Get Gemini API key from environment
     const geminiApiKey = Netlify.env.get('GEMINI_API_KEY');
     if (!geminiApiKey) {
-      console.error('[AUDIO-BG] GEMINI_API_KEY not configured');
+      console.error('[AUDIO] GEMINI_API_KEY not configured');
       await updateBriefStatus(briefId, 'audio_failed', null);
       return;
     }
 
-    // Update status to generating
-    await updateBriefStatus(briefId, 'generating', null);
-
     // Select voice pair
     const voicePair = selectVoicePair(briefId);
-    console.log(`[AUDIO-BG] Using voices: ${voicePair.names}`);
+    console.log(`[AUDIO] Using voices: ${voicePair.names}`);
 
     // Convert script to dialogue format
     const dialoguePrompt = convertToDialoguePrompt(script, voicePair.hostA, voicePair.hostB);
 
     // Call Gemini TTS API
-    console.log('[AUDIO-BG] Calling Gemini TTS API...');
+    console.log('[AUDIO] Calling Gemini TTS API...');
     const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
@@ -200,7 +179,7 @@ export default async (req: Request, context: Context) => {
 
     if (!ttsResponse.ok) {
       const errorText = await ttsResponse.text();
-      console.error(`[AUDIO-BG] Gemini TTS error ${ttsResponse.status}: ${errorText}`);
+      console.error(`[AUDIO] Gemini TTS error ${ttsResponse.status}: ${errorText}`);
       await updateBriefStatus(briefId, 'audio_failed', null);
       return;
     }
@@ -221,38 +200,96 @@ export default async (req: Request, context: Context) => {
     // Extract audio data
     const audioData = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData;
     if (!audioData) {
-      console.error('[AUDIO-BG] No audio data in Gemini response');
+      console.error('[AUDIO] No audio data in Gemini response');
       await updateBriefStatus(briefId, 'audio_failed', null);
       return;
     }
 
-    console.log(`[AUDIO-BG] Gemini TTS returned ${audioData.mimeType} audio`);
+    console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
 
     // Convert base64 to buffer
     const audioBuffer = Uint8Array.from(atob(audioData.data), c => c.charCodeAt(0));
-    console.log(`[AUDIO-BG] Audio size: ${audioBuffer.length} bytes`);
+    console.log(`[AUDIO] Audio size: ${audioBuffer.length} bytes`);
 
     // Upload to Vultr storage
-    console.log('[AUDIO-BG] Uploading to Vultr storage...');
+    console.log('[AUDIO] Uploading to Vultr storage...');
     const audioUrl = await uploadAudio(briefId, audioBuffer, audioData.mimeType || 'audio/wav');
-    console.log(`[AUDIO-BG] Uploaded to: ${audioUrl}`);
+    console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
 
     // Update brief with completed status and audio URL
     await updateBriefStatus(briefId, 'completed', audioUrl);
 
-    console.log(`[AUDIO-BG] Successfully processed brief ${briefId}`);
+    console.log(`[AUDIO] Successfully processed brief ${briefId}`);
 
   } catch (error) {
-    console.error('[AUDIO-BG] Background function error:', error);
-    // Try to update status if we have the briefId
-    try {
-      const body = await req.clone().json() as { briefId?: string };
-      if (body.briefId) {
-        await updateBriefStatus(body.briefId, 'audio_failed', null);
-      }
-    } catch {
-      // Ignore parse errors
+    console.error('[AUDIO] Audio generation error:', error);
+    await updateBriefStatus(briefId, 'audio_failed', null);
+  }
+}
+
+export default async (req: Request, context: Context) => {
+  console.log('[AUDIO] Function invoked');
+  console.log('[AUDIO] Request method:', req.method);
+  console.log('[AUDIO] Content-Type:', req.headers.get('content-type'));
+
+  // Only accept POST requests
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  try {
+    // Parse body BEFORE returning - this is the key difference from -background naming
+    const bodyText = await req.text();
+    console.log('[AUDIO] Body length:', bodyText.length);
+
+    if (!bodyText || bodyText.length === 0) {
+      console.error('[AUDIO] Empty request body');
+      return new Response(JSON.stringify({ error: 'Empty request body' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
+
+    const body = JSON.parse(bodyText) as { briefId: string; script: string };
+    const { briefId, script } = body;
+
+    if (!briefId || !script) {
+      console.error('[AUDIO] Missing briefId or script');
+      return new Response(JSON.stringify({ error: 'Missing briefId or script' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`[AUDIO] Accepted request for brief: ${briefId}`);
+    console.log(`[AUDIO] Script preview: ${script.substring(0, 100)}...`);
+
+    // Use context.waitUntil to process asynchronously
+    // This allows the function to return immediately while processing continues
+    context.waitUntil(processAudioGeneration(briefId, script));
+
+    // Return 202 Accepted immediately
+    return new Response(JSON.stringify({
+      status: 'accepted',
+      briefId,
+      message: 'Audio generation started'
+    }), {
+      status: 202,
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('[AUDIO] Request parsing error:', error);
+    return new Response(JSON.stringify({
+      error: 'Invalid request',
+      details: error instanceof Error ? error.message : String(error)
+    }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 };
 
