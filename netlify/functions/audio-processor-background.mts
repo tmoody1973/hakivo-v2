@@ -2,13 +2,14 @@
  * Netlify Background Function for Audio Processing
  *
  * Polls database for briefs with status='script_ready' and processes
- * audio generation using Gemini TTS.
+ * audio generation using Gemini TTS, then uploads directly to Vultr.
  *
  * Background functions get 15-minute timeout (vs 10s for regular functions).
  * This function polls the database instead of using POST body since
  * background functions have a known issue where POST bodies are empty.
  */
 import type { Context } from "@netlify/functions";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // Gemini TTS voice pairs for brief audio generation
 const VOICE_PAIRS = [
@@ -24,9 +25,6 @@ const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/mo
 
 // Raindrop db-admin URL for database queries
 const DB_ADMIN_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
-
-// Vultr storage service URL
-const VULTR_SERVICE_URL = 'https://svc-01kb53a44776kpj56vejj2z46g.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 interface Brief {
   id: string;
@@ -116,33 +114,69 @@ async function updateBriefStatus(
 }
 
 /**
- * Upload audio to Vultr S3-compatible storage
+ * Generate date-based file key
+ * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.mp3
+ */
+function generateFileKey(briefId: string): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const ts = date.getTime();
+
+  return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.mp3`;
+}
+
+/**
+ * Upload audio directly to Vultr S3-compatible storage using AWS SDK
  */
 async function uploadAudio(
   briefId: string,
   audioBuffer: Uint8Array,
   mimeType: string
 ): Promise<string> {
-  // Convert Uint8Array to base64 for JSON transport
-  const base64Audio = Buffer.from(audioBuffer).toString('base64');
+  const endpoint = Netlify.env.get('VULTR_ENDPOINT') || 'sjc1.vultrobjects.com';
+  const accessKeyId = Netlify.env.get('VULTR_ACCESS_KEY');
+  const secretAccessKey = Netlify.env.get('VULTR_SECRET_KEY');
+  const bucketName = Netlify.env.get('VULTR_BUCKET_NAME') || 'hakivo';
 
-  const response = await fetch(`${VULTR_SERVICE_URL}/upload`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      briefId,
-      audioBase64: base64Audio,
-      mimeType,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Vultr upload failed: ${response.status} - ${errorText}`);
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error('Missing Vultr S3 credentials: VULTR_ACCESS_KEY or VULTR_SECRET_KEY');
   }
 
-  const result = await response.json() as { url: string };
-  return result.url;
+  console.log(`[AUDIO] Vultr config - endpoint: ${endpoint}, bucket: ${bucketName}, accessKey prefix: ${accessKeyId.substring(0, 8)}...`);
+
+  const s3Client = new S3Client({
+    endpoint: `https://${endpoint}`,
+    region: 'us-east-1', // Vultr uses us-east-1 for S3 signature signing
+    forcePathStyle: true, // Required for S3-compatible storage
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+
+  const key = generateFileKey(briefId);
+
+  console.log(`[AUDIO] Uploading to Vultr: bucket=${bucketName}, key=${key}, size=${audioBuffer.length} bytes`);
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: audioBuffer,
+    ContentType: mimeType,
+    CacheControl: 'public, max-age=31536000',
+    Metadata: {
+      briefId,
+      generatedAt: new Date().toISOString(),
+    },
+  }));
+
+  // Generate public URL (path-style)
+  const url = `https://${endpoint}/${bucketName}/${key}`;
+  console.log(`[AUDIO] Upload successful: ${url}`);
+
+  return url;
 }
 
 /**
@@ -232,7 +266,7 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
     const audioBuffer = Uint8Array.from(atob(audioData.data), c => c.charCodeAt(0));
     console.log(`[AUDIO] Audio size: ${audioBuffer.length} bytes`);
 
-    // Upload to Vultr storage
+    // Upload to Vultr storage directly
     console.log('[AUDIO] Uploading to Vultr storage...');
     const audioUrl = await uploadAudio(brief.id, audioBuffer, audioData.mimeType || 'audio/wav');
     console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
