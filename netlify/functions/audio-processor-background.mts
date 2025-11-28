@@ -115,7 +115,8 @@ async function updateBriefStatus(
 
 /**
  * Generate date-based file key
- * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.mp3
+ * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.wav
+ * Note: Gemini TTS returns WAV format audio
  */
 function generateFileKey(briefId: string): string {
   const date = new Date();
@@ -124,7 +125,7 @@ function generateFileKey(briefId: string): string {
   const day = String(date.getDate()).padStart(2, '0');
   const ts = date.getTime();
 
-  return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.mp3`;
+  return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.wav`;
 }
 
 /**
@@ -165,6 +166,7 @@ async function uploadAudio(
     Key: key,
     Body: audioBuffer,
     ContentType: mimeType,
+    ACL: 'public-read',
     CacheControl: 'public, max-age=31536000',
     Metadata: {
       briefId,
