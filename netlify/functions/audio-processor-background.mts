@@ -10,6 +10,12 @@
  */
 import type { Context } from "@netlify/functions";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
+import wav from "wav";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegPath from "@ffmpeg-installer/ffmpeg";
 
 // Gemini TTS voice pairs for brief audio generation
 const VOICE_PAIRS = [
@@ -113,55 +119,54 @@ async function updateBriefStatus(
   }
 }
 
+// Set ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegPath.path);
+
 /**
- * Create a proper WAV file header for raw PCM data
+ * Save PCM data as a proper WAV file using the wav library
  * Gemini TTS returns raw PCM (L16) at 24kHz, 16-bit, mono
  */
-function createWavFile(pcmData: Uint8Array, sampleRate: number = 24000, channels: number = 1, bitsPerSample: number = 16): Uint8Array {
-  const byteRate = sampleRate * channels * (bitsPerSample / 8);
-  const blockAlign = channels * (bitsPerSample / 8);
-  const dataSize = pcmData.length;
-  const fileSize = 36 + dataSize; // Header (44 bytes) - 8 bytes for RIFF header = 36 + data
+async function saveWavFile(
+  filePath: string,
+  pcmData: Buffer,
+  channels: number = 1,
+  sampleRate: number = 24000,
+  sampleWidth: number = 2 // bytes per sample (16-bit = 2)
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const writer = new wav.FileWriter(filePath, {
+      channels,
+      sampleRate,
+      bitDepth: sampleWidth * 8,
+    });
 
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
+    writer.on('finish', resolve);
+    writer.on('error', reject);
 
-  // RIFF header
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, fileSize, true); // File size - 8
-  writeString(view, 8, 'WAVE');
-
-  // fmt subchunk
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
-  view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
-  view.setUint16(22, channels, true); // NumChannels
-  view.setUint32(24, sampleRate, true); // SampleRate
-  view.setUint32(28, byteRate, true); // ByteRate
-  view.setUint16(32, blockAlign, true); // BlockAlign
-  view.setUint16(34, bitsPerSample, true); // BitsPerSample
-
-  // data subchunk
-  writeString(view, 36, 'data');
-  view.setUint32(40, dataSize, true); // Subchunk2Size
-
-  // Copy PCM data
-  const wavArray = new Uint8Array(buffer);
-  wavArray.set(pcmData, 44);
-
-  return wavArray;
+    writer.write(pcmData);
+    writer.end();
+  });
 }
 
-function writeString(view: DataView, offset: number, str: string): void {
-  for (let i = 0; i < str.length; i++) {
-    view.setUint8(offset + i, str.charCodeAt(i));
-  }
+/**
+ * Convert WAV file to MP3 using ffmpeg
+ */
+async function convertWavToMp3(wavPath: string, mp3Path: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(wavPath)
+      .audioCodec('libmp3lame')
+      .audioBitrate('128k')
+      .audioChannels(1)
+      .audioFrequency(24000)
+      .on('end', () => resolve())
+      .on('error', (err: Error) => reject(err))
+      .save(mp3Path);
+  });
 }
 
 /**
  * Generate date-based file key
- * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.wav
- * Note: Gemini TTS returns WAV format audio
+ * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.mp3
  */
 function generateFileKey(briefId: string): string {
   const date = new Date();
@@ -170,7 +175,7 @@ function generateFileKey(briefId: string): string {
   const day = String(date.getDate()).padStart(2, '0');
   const ts = date.getTime();
 
-  return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.wav`;
+  return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.mp3`;
 }
 
 /**
@@ -309,23 +314,59 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
     console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
 
     // Convert base64 to buffer (raw PCM data)
-    const pcmBuffer = Uint8Array.from(atob(audioData.data), c => c.charCodeAt(0));
+    const pcmBuffer = Buffer.from(audioData.data, 'base64');
     console.log(`[AUDIO] Raw PCM size: ${pcmBuffer.length} bytes`);
 
-    // Wrap raw PCM in proper WAV file format
-    // Gemini TTS returns L16 (16-bit linear PCM) at 24kHz, mono
-    const wavBuffer = createWavFile(pcmBuffer, 24000, 1, 16);
-    console.log(`[AUDIO] WAV file size: ${wavBuffer.length} bytes (with header)`);
+    // Create temp directory for audio processing
+    const tempDir = os.tmpdir();
+    const wavPath = path.join(tempDir, `brief-${brief.id}.wav`);
+    const mp3Path = path.join(tempDir, `brief-${brief.id}.mp3`);
 
-    // Upload to Vultr storage directly
-    console.log('[AUDIO] Uploading to Vultr storage...');
-    const audioUrl = await uploadAudio(brief.id, wavBuffer, 'audio/wav');
-    console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
+    try {
+      // Save PCM data as proper WAV file using wav library
+      console.log(`[AUDIO] Saving WAV file to ${wavPath}...`);
+      await saveWavFile(wavPath, pcmBuffer, 1, 24000, 2);
+      const wavStats = fs.statSync(wavPath);
+      console.log(`[AUDIO] WAV file created: ${wavStats.size} bytes`);
 
-    // Update brief with completed status and audio URL
-    await updateBriefStatus(brief.id, 'completed', audioUrl);
+      // Convert WAV to MP3 using ffmpeg
+      console.log(`[AUDIO] Converting to MP3...`);
+      await convertWavToMp3(wavPath, mp3Path);
+      const mp3Stats = fs.statSync(mp3Path);
+      console.log(`[AUDIO] MP3 file created: ${mp3Stats.size} bytes`);
 
-    console.log(`[AUDIO] Successfully processed brief ${brief.id}`);
+      // Read MP3 file for upload
+      const mp3Buffer = fs.readFileSync(mp3Path);
+
+      // Upload to Vultr storage directly
+      console.log('[AUDIO] Uploading MP3 to Vultr storage...');
+      const audioUrl = await uploadAudio(brief.id, new Uint8Array(mp3Buffer), 'audio/mpeg');
+
+      // Clean up temp files
+      try {
+        fs.unlinkSync(wavPath);
+        fs.unlinkSync(mp3Path);
+      } catch (cleanupError) {
+        console.warn('[AUDIO] Failed to clean up temp files:', cleanupError);
+      }
+
+      console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
+
+      // Update brief with completed status and audio URL
+      await updateBriefStatus(brief.id, 'completed', audioUrl);
+
+      console.log(`[AUDIO] Successfully processed brief ${brief.id}`);
+
+    } catch (conversionError) {
+      // Clean up temp files on error
+      try {
+        if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);
+        if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw conversionError; // Re-throw to outer catch
+    }
 
   } catch (error) {
     console.error('[AUDIO] Audio generation error:', error);
