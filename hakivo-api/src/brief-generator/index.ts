@@ -8,9 +8,10 @@ import { Env } from './raindrop.gen';
  * - Stage 1-4: Content gathering (user prefs, bills, actions, news)
  * - Stage 5: Script generation (Cerebras AI)
  * - Stage 6: Article generation (Cerebras AI)
- * - Stage 7: Trigger async audio generation (Netlify Background Function)
+ * - Stage 7: Set status to 'script_ready' for Netlify scheduled function
  *
- * Audio generation is handled by Netlify Background Function:
+ * Audio generation is handled by Netlify Scheduled Function (audio-processor):
+ * - Runs every 2 minutes, polls for briefs with status='script_ready'
  * - 15-minute timeout (vs 30s observer limit)
  * - Uses Gemini TTS with multi-speaker dialogue
  * - Updates brief status to 'completed' or 'audio_failed' when done
@@ -185,45 +186,20 @@ export default class extends Each<Body, Env> {
       // Continue without article - non-fatal
     }
 
-    // ==================== STAGE 7: TRIGGER AUDIO GENERATION (Netlify Background) ====================
-    console.log(`[STAGE-7] Saving script and triggering Netlify background function...`);
+    // ==================== STAGE 7: SAVE AND MARK FOR AUDIO PROCESSING ====================
+    console.log(`[STAGE-7] Saving script and marking for audio processing...`);
 
-    // Save the script and set status to generating
+    // Save the script and set status to 'script_ready'
+    // Netlify scheduled function (audio-processor) polls for this status every 2 minutes
     await db.prepare(`
       UPDATE briefs
       SET status = ?, title = ?, script = ?, content = ?, updated_at = ?
       WHERE id = ?
-    `).bind('generating', headline, script, article, Date.now(), briefId).run();
+    `).bind('script_ready', headline, script, article, Date.now(), briefId).run();
 
-    // Trigger Netlify background function for async audio generation
-    // Background function will update status to 'completed' or 'audio_failed'
-    const netlifyUrl = 'https://hakivo-v2.netlify.app/api/generate-audio-background';
-
-    try {
-      console.log(`[STAGE-7] Calling Netlify background function: ${netlifyUrl}`);
-      const bgResponse = await fetch(netlifyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ briefId, script })
-      });
-
-      if (bgResponse.status === 202) {
-        console.log(`✅ [STAGE-7] Background function accepted (202). Audio will be generated async.`);
-      } else {
-        console.log(`⚠️ [STAGE-7] Unexpected response: ${bgResponse.status}. Audio generation may still proceed.`);
-      }
-    } catch (triggerError) {
-      const errorMessage = triggerError instanceof Error ? triggerError.message : String(triggerError);
-      console.error(`[STAGE-7] Failed to trigger background function:`, errorMessage);
-      // Mark as script_ready so audio-retry-scheduler can pick it up later
-      await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
-        .bind('script_ready', Date.now(), briefId).run();
-      console.log(`⚠️ [BRIEF-GEN] Script saved, audio will be retried by scheduler`);
-      return;
-    }
-
-    // Brief generation complete - audio is being processed in background
-    console.log(`✅ [BRIEF-GEN] Script ready, audio generating in background. Total time: ${Date.now() - startTime}ms`);
+    // Brief generation complete - audio will be processed by Netlify scheduled function
+    console.log(`✅ [BRIEF-GEN] Script saved with status='script_ready'. Audio will be processed by Netlify scheduler.`);
+    console.log(`✅ [BRIEF-GEN] Total time: ${Date.now() - startTime}ms`);
   }
 
   /**
