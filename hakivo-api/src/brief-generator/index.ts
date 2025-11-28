@@ -197,7 +197,7 @@ export default class extends Each<Body, Env> {
 
     // Trigger Netlify background function for async audio generation
     // Background function will update status to 'completed' or 'audio_failed'
-    const netlifyUrl = 'https://www.hakivo.us/api/generate-audio-background';
+    const netlifyUrl = 'https://hakivo-v2.netlify.app/api/generate-audio-background';
 
     try {
       console.log(`[STAGE-7] Calling Netlify background function: ${netlifyUrl}`);
