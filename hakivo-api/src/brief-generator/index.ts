@@ -108,21 +108,31 @@ export default class extends Each<Body, Env> {
     console.log(`📋 [STAGE-1] User interests (${policyInterests.length}): ${policyInterests.join(', ')}`);
     console.log(`[STAGE-1] Complete. Elapsed: ${Date.now() - startTime}ms`);
 
-    // ==================== STAGE 2: FETCH BILLS ====================
-    console.log(`[STAGE-2] Fetching bills for interests...`);
+    // ==================== STAGE 2: GET RECENTLY FEATURED BILLS (for deduplication) ====================
+    console.log(`[STAGE-2a] Getting recently featured bills to avoid duplication...`);
+    let recentlyFeaturedBillIds: string[] = [];
+    try {
+      recentlyFeaturedBillIds = await this.getRecentlyFeaturedBills(userId, 7); // Last 7 days
+      console.log(`[STAGE-2a] Found ${recentlyFeaturedBillIds.length} recently featured bills to exclude`);
+    } catch (recentError) {
+      console.warn(`[STAGE-2a] Failed to get recent bills (non-fatal):`, recentError);
+    }
+
+    // ==================== STAGE 2b: FETCH BILLS ====================
+    console.log(`[STAGE-2b] Fetching bills for interests...`);
     let bills: any[];
     try {
-      bills = await this.getBillsByInterests(policyInterests, startDate, endDate);
-      console.log(`[STAGE-2] Got ${bills.length} bills. Elapsed: ${Date.now() - startTime}ms`);
+      bills = await this.getBillsByInterests(policyInterests, startDate, endDate, recentlyFeaturedBillIds);
+      console.log(`[STAGE-2b] Got ${bills.length} bills. Elapsed: ${Date.now() - startTime}ms`);
     } catch (billError) {
-      console.error(`[STAGE-2] FAILED:`, billError);
+      console.error(`[STAGE-2b] FAILED:`, billError);
       await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
         .bind('failed', Date.now(), briefId).run();
       return;
     }
 
     if (bills.length === 0) {
-      console.log(`⚠️ [STAGE-2] No bills found matching interests`);
+      console.log(`⚠️ [STAGE-2b] No bills found matching interests`);
       await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
         .bind('failed', Date.now(), briefId).run();
       return;
@@ -189,13 +199,27 @@ export default class extends Each<Body, Env> {
     // ==================== STAGE 7: SAVE AND MARK FOR AUDIO PROCESSING ====================
     console.log(`[STAGE-7] Saving script and marking for audio processing...`);
 
+    // Select featured image from news articles (first non-null image)
+    let featuredImage: string | null = null;
+    for (const article of newsArticles) {
+      if (article.imageUrl) {
+        featuredImage = article.imageUrl;
+        console.log(`[STAGE-7] Selected featured image: ${featuredImage}`);
+        break;
+      }
+    }
+
     // Save the script and set status to 'script_ready'
     // Netlify scheduled function (audio-processor) polls for this status every 2 minutes
     await db.prepare(`
       UPDATE briefs
-      SET status = ?, title = ?, script = ?, content = ?, updated_at = ?
+      SET status = ?, title = ?, script = ?, content = ?, featured_image = ?, updated_at = ?
       WHERE id = ?
-    `).bind('script_ready', headline, script, article, Date.now(), briefId).run();
+    `).bind('script_ready', headline, script, article, featuredImage, Date.now(), briefId).run();
+
+    // Save featured bills for deduplication in future briefs
+    const featuredBillIds = billsWithActions.map((b: any) => b.id);
+    await this.saveFeaturedBills(briefId, featuredBillIds);
 
     // Brief generation complete - audio will be processed by Netlify scheduled function
     console.log(`✅ [BRIEF-GEN] Script saved with status='script_ready'. Audio will be processed by Netlify scheduler.`);
@@ -214,11 +238,64 @@ export default class extends Each<Body, Env> {
   }
 
   /**
+   * Get bill IDs that were featured in user's recent briefs (for deduplication)
+   * This ensures each day's brief has fresh content
+   */
+  private async getRecentlyFeaturedBills(userId: string, daysBack: number = 7): Promise<string[]> {
+    const db = this.env.APP_DB;
+    const cutoffTime = Date.now() - (daysBack * 24 * 60 * 60 * 1000);
+
+    const result = await db
+      .prepare(`
+        SELECT DISTINCT bb.bill_id
+        FROM brief_bills bb
+        JOIN briefs b ON bb.brief_id = b.id
+        WHERE b.user_id = ?
+          AND b.created_at > ?
+          AND b.status = 'completed'
+      `)
+      .bind(userId, cutoffTime)
+      .all();
+
+    return (result.results || []).map((r: any) => r.bill_id);
+  }
+
+  /**
+   * Save which bills were featured in this brief (for future deduplication)
+   */
+  private async saveFeaturedBills(briefId: string, billIds: string[]): Promise<void> {
+    if (billIds.length === 0) return;
+
+    const db = this.env.APP_DB;
+
+    // Insert each bill featured in this brief
+    for (const billId of billIds) {
+      try {
+        await db
+          .prepare('INSERT INTO brief_bills (brief_id, bill_id, section_type) VALUES (?, ?, ?)')
+          .bind(briefId, billId, 'featured')
+          .run();
+      } catch (insertError) {
+        // Ignore duplicate key errors
+        console.warn(`[SAVE-BILLS] Could not save bill ${billId}: ${insertError}`);
+      }
+    }
+
+    console.log(`✓ Saved ${billIds.length} featured bills for deduplication`);
+  }
+
+  /**
    * Get bills matching user's policy interests
    * Prioritizes interest matching over date - finds most recent bills that match interests
    * Maps user-friendly interest names to Congress.gov policy_area values
+   * Excludes bills that were recently featured to ensure fresh content daily
    */
-  private async getBillsByInterests(interests: string[], _startDate: string, _endDate: string): Promise<any[]> {
+  private async getBillsByInterests(
+    interests: string[],
+    _startDate: string,
+    _endDate: string,
+    excludeBillIds: string[] = []
+  ): Promise<any[]> {
     const db = this.env.APP_DB;
 
     // Map user interests to policy_area values
@@ -323,15 +400,24 @@ export default class extends Each<Body, Env> {
       }
     }
 
-    // Sort all found bills by latest_action_date and return top 15
-    allBills.sort((a, b) => {
+    // Filter out recently featured bills to avoid duplication
+    const excludeSet = new Set(excludeBillIds);
+    const freshBills = allBills.filter(b => !excludeSet.has(b.id));
+
+    if (excludeBillIds.length > 0) {
+      console.log(`✓ Excluded ${allBills.length - freshBills.length} recently featured bills`);
+    }
+
+    // Sort all found bills by latest_action_date and return top 5 for focused coverage
+    // (Changed from 15 to 5 for "The Daily" style - focused on 2-3 main stories)
+    freshBills.sort((a, b) => {
       const dateA = a.latest_action_date || '';
       const dateB = b.latest_action_date || '';
       return dateB.localeCompare(dateA);
     });
 
-    console.log(`✓ Total ${allBills.length} bills matching user interests`);
-    return allBills.slice(0, 15);
+    console.log(`✓ Total ${freshBills.length} fresh bills matching user interests`);
+    return freshBills.slice(0, 5);
   }
 
   /**
@@ -396,33 +482,40 @@ export default class extends Each<Body, Env> {
   }
 
   /**
-   * Generate brief script using Cerebras in NPR/Marketplace style
-   * Generates 6-8 minute dialogue with emotional cues for natural speech
+   * Generate brief script in "The Daily" style from New York Times
+   * Structure: Cold Open → Top Story → Headlines → Spotlight → Hakivo Outro
+   * Focused on 2-3 key pieces of legislation with personalized news
    */
   private async generateScript(type: string, bills: any[], newsArticles: any[]): Promise<{
     script: string;
     headline: string;
   }> {
-    const billsSummary = bills.map((bill: any) => {
-      // Format recent actions if available
-      const actionsText = bill.actions && bill.actions.length > 0
-        ? bill.actions.slice(0, 3).map((a: any) => `    • ${a.action_date}: ${a.action_text}`).join('\n')
-        : `    • ${bill.latest_action_date}: ${bill.latest_action_text}`;
+    // Separate bills: first one is TOP STORY, rest are SPOTLIGHT
+    const topStoryBill = bills[0];
+    const spotlightBills = bills.slice(1, 3); // Max 2 more bills for spotlight
 
-      return `- ${String(bill.bill_type).toUpperCase()} ${bill.bill_number}: ${bill.title}
-  Policy Area: ${bill.policy_area || 'General'}
-  Sponsor: ${bill.first_name || 'Unknown'} ${bill.last_name || ''} (${bill.party || '?'}-${bill.state || '?'})
-  Recent Actions:
-${actionsText}
-  Bill URL: https://www.congress.gov/bill/${bill.congress}th-congress/${bill.bill_type.toLowerCase()}/${bill.bill_number}`;
-    }).join('\n\n');
+    // Format top story bill with full context
+    const topStoryText = topStoryBill ? `
+BILL: ${String(topStoryBill.bill_type).toUpperCase()} ${topStoryBill.bill_number}
+TITLE: ${topStoryBill.title}
+POLICY AREA: ${topStoryBill.policy_area || 'General'}
+SPONSOR: ${topStoryBill.first_name || 'Unknown'} ${topStoryBill.last_name || ''} (${topStoryBill.party || '?'}-${topStoryBill.state || '?'})
+RECENT ACTIONS:
+${topStoryBill.actions && topStoryBill.actions.length > 0
+  ? topStoryBill.actions.slice(0, 3).map((a: any) => `  • ${a.action_date}: ${a.action_text}`).join('\n')
+  : `  • ${topStoryBill.latest_action_date}: ${topStoryBill.latest_action_text}`}
+URL: https://www.congress.gov/bill/${topStoryBill.congress}th-congress/${topStoryBill.bill_type.toLowerCase()}/${topStoryBill.bill_number}` : 'No top story available';
 
-    const newsSummary = newsArticles.map((article: any) =>
-      `- ${article.title}
-  Summary: ${article.summary}
-  Source: ${article.url}
-  Published: ${article.publishedAt || 'Recent'}`
-    ).join('\n\n');
+    // Format spotlight bills (shorter summaries)
+    const spotlightText = spotlightBills.map((bill: any) => `
+BILL: ${String(bill.bill_type).toUpperCase()} ${bill.bill_number} - ${bill.title}
+SPONSOR: ${bill.first_name || ''} ${bill.last_name || ''} (${bill.party || '?'}-${bill.state || '?'})
+LATEST: ${bill.latest_action_text}`).join('\n');
+
+    // Format news headlines (quick hits, max 3)
+    const newsHeadlines = newsArticles.slice(0, 3).map((article: any) =>
+      `• ${article.title} (${article.publishedAt || 'Recent'})`
+    ).join('\n');
 
     // Get today's date for context
     const today = new Date().toLocaleDateString('en-US', {
@@ -435,56 +528,75 @@ ${actionsText}
     const messages = [
       {
         role: 'system' as const,
-        content: `You are an expert scriptwriter for NPR's Marketplace and Morning Edition podcasts.
-Write in a conversational, engaging tone that's warm but informative - like Kai Ryssdal or Steve Inskeep.
-Format scripts as natural dialogue between two co-hosts:
-- HOST A: The main host who leads the conversation
-- HOST B: The co-host who adds analysis, asks clarifying questions, and provides context
+        content: `You are a scriptwriter for "Hakivo Daily" - a civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
 
-IMPORTANT FORMATTING RULES:
-1. Every line MUST start with "HOST A:" or "HOST B:"
-2. Include emotional cues in brackets at the start of dialogue lines: [cheerfully], [thoughtfully], [with concern], [excitedly], [in a more serious tone], [laughing], [curiously]
-3. Use natural conversational transitions - don't just list topics
-4. Include verbal pauses and natural speech patterns
-5. Make it sound like a real conversation, not a scripted read
+SHOW FORMAT (follow this structure exactly):
 
-CONTENT STYLE:
-- Open with a warm, engaging intro that hooks the listener
-- Weave news stories and legislative updates together narratively
-- Explain complex legislative terms in plain language
-- Include brief analysis of why bills matter to everyday people
-- Use specific examples to illustrate impact
-- End with a forward-looking summary and sign-off
+1. COLD OPEN (15-20 seconds)
+   - A compelling hook that teases today's top story
+   - Example: "A bill that could change how millions of Americans access healthcare just cleared a major hurdle..."
 
-TARGET LENGTH: ${type === 'daily' ? '6-8 minutes' : '10-15 minutes'} of spoken content (approximately ${type === 'daily' ? '1200-1600' : '2000-3000'} words)`
+2. INTRO (20-30 seconds)
+   - "From Hakivo, I'm [HOST A]. It's ${today}. Here's what you need to know today."
+
+3. TOP STORY (2-3 minutes)
+   - Deep dive into the most significant legislative development
+   - Why it matters to everyday people
+   - What happens next
+   - Natural back-and-forth between hosts
+
+4. NEWS HEADLINES (45-60 seconds)
+   - Quick hits on 2-3 related news stories
+   - Brief context, keep it moving
+
+5. LEGISLATION SPOTLIGHT (1-2 minutes)
+   - Quick look at 1-2 other bills worth watching
+   - Why they're on your radar
+
+6. HAKIVO OUTRO (30-45 seconds) - REQUIRED, MUST INCLUDE:
+   - "That's today's Hakivo Daily."
+   - Encourage diving deeper: "Want to track these bills? Open Hakivo to follow [bill name] and get alerts when it moves."
+   - "You can read the full text, see your representatives' positions, and make your voice heard."
+   - "We'll be back tomorrow with more. Until then, stay informed, stay engaged."
+
+FORMATTING RULES:
+- Every line MUST start with "HOST A:" or "HOST B:"
+- Include emotional cues in brackets: [thoughtfully], [with urgency], [warmly], [seriously]
+- Keep HOST B's role as adding context, asking good questions, providing analysis
+- Natural conversational flow - not a list of facts
+- Plain language - no jargon
+
+TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`
       },
       {
         role: 'user' as const,
-        content: `Generate a ${type} audio briefing script for ${today}.
+        content: `Generate today's Hakivo Daily script for ${today}.
 
-=== LEGISLATIVE UPDATES ===
-${billsSummary}
+=== TODAY'S TOP STORY ===
+${topStoryText}
 
-=== RELATED NEWS ===
-${newsSummary || 'No recent news articles found.'}
+=== LEGISLATION SPOTLIGHT ===
+${spotlightText || 'No additional bills for spotlight'}
+
+=== NEWS HEADLINES ===
+${newsHeadlines || 'No recent news headlines'}
 
 === REQUIREMENTS ===
-1. Create an engaging, conversational dialogue between HOST A and HOST B
-2. Open with a catchy hook that draws listeners in
-3. Cover all provided bills and news, weaving them into a cohesive narrative
-4. Include emotional cues in [brackets] before dialogue for natural delivery
-5. Add transitions that sound natural ("Speaking of which...", "And that brings us to...", "But here's the thing...")
-6. Include brief moments of light banter to keep it engaging
-7. End with a warm sign-off
+1. Follow the exact show structure: Cold Open → Intro → Top Story → Headlines → Spotlight → Hakivo Outro
+2. Make the TOP STORY the heart of the episode - really explain why it matters
+3. The HAKIVO OUTRO is REQUIRED - promote Hakivo as the civic engagement hub
+4. Every line starts with "HOST A:" or "HOST B:"
+5. Include emotional cues in [brackets]
+6. Make it conversational and engaging, not a news read
 
-Also generate a HEADLINE - a catchy, unique title for this briefing (max 10 words).
+Generate a HEADLINE first (catchy, max 10 words, reflects top story).
 
 Format your response EXACTLY as:
-HEADLINE: [Your catchy headline here]
+HEADLINE: [Your headline here]
 
 SCRIPT:
-HOST A: [emotional cue] dialogue text...
-HOST B: [emotional cue] dialogue text...
+HOST A: [emotional cue] dialogue...
+HOST B: [emotional cue] dialogue...
 ...`
       }
     ];
@@ -575,45 +687,47 @@ Summary: ${n.summary}`
     const messages = [
       {
         role: 'system' as const,
-        content: `You are a senior NPR correspondent writing a detailed news article for the web.
+        content: `You are a senior correspondent writing a detailed news article for Hakivo, a civic engagement platform.
 Write in the style of NPR's long-form journalism - informative, engaging, and accessible to general audiences.
 
 ARTICLE STRUCTURE (follow exactly):
 1. LEAD PARAGRAPH: A compelling hook that summarizes the most important news
 2. NUT GRAF: Context paragraph explaining why this matters
-3. BODY SECTIONS: 3-5 sections covering different bills/news with subheadings
-4. QUOTES/ANALYSIS: Include analysis of implications
-5. WHAT'S NEXT: Forward-looking conclusion
+3. BODY SECTIONS: 2-3 sections covering the key bills with subheadings
+4. ANALYSIS: Include analysis of implications for everyday Americans
+5. WHAT'S NEXT: Forward-looking section on upcoming developments
+6. TAKE ACTION (REQUIRED): End with a call to action encouraging readers to:
+   - Track these bills on Hakivo for updates
+   - See how their representatives have voted
+   - Make their voice heard
 
 FORMATTING REQUIREMENTS:
 - Use markdown formatting
 - Use ## for section headers
 - Include hyperlinks in format: [text](url)
 - Link ALL bill references to congress.gov
-- Link ALL news references to source articles
 - Bold key terms and bill names on first mention
-- Include relevant statistics when available
-- Write 600-900 words for daily, 1200-1500 for weekly
+- Write 500-700 words for daily, 900-1200 for weekly (focused, not comprehensive)
 
 TONE:
 - Authoritative but accessible
 - Explain legislative jargon in plain language
 - Include "why this matters" context
-- Be objective and balanced`
+- End with empowering call to action`
       },
       {
         role: 'user' as const,
-        content: `Write a detailed news article for: "${headline}"
+        content: `Write a focused news article for: "${headline}"
 Date: ${today}
 Type: ${type} briefing
 
-=== LEGISLATIVE UPDATES (include hyperlinks to all) ===
+=== KEY LEGISLATION (include hyperlinks) ===
 ${billsContext}
 
-=== RELATED NEWS (include hyperlinks to all) ===
+=== RELATED NEWS ===
 ${newsContext}
 
-Write a comprehensive, NPR-style article that:
+Write a focused Hakivo article that:
 1. Opens with an engaging lead that hooks readers
 2. Explains what's happening and why it matters
 3. Links to every bill and news source mentioned

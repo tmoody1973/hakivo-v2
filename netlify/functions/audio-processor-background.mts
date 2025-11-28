@@ -10,12 +10,8 @@
  */
 import type { Context } from "@netlify/functions";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import * as fs from "fs";
-import * as path from "path";
-import * as os from "os";
-import wav from "wav";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "@ffmpeg-installer/ffmpeg";
+// @ts-expect-error - lamejs doesn't have TypeScript definitions
+import lamejs from "lamejs";
 
 // Gemini TTS voice pairs for brief audio generation
 const VOICE_PAIRS = [
@@ -119,49 +115,52 @@ async function updateBriefStatus(
   }
 }
 
-// Set ffmpeg path
-ffmpeg.setFfmpegPath(ffmpegPath.path);
-
 /**
- * Save PCM data as a proper WAV file using the wav library
- * Gemini TTS returns raw PCM (L16) at 24kHz, 16-bit, mono
+ * Convert raw PCM (16-bit signed, mono, 24kHz) to MP3 using lamejs
+ * This is a pure JavaScript encoder - no native dependencies needed!
  */
-async function saveWavFile(
-  filePath: string,
-  pcmData: Buffer,
-  channels: number = 1,
-  sampleRate: number = 24000,
-  sampleWidth: number = 2 // bytes per sample (16-bit = 2)
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const writer = new wav.FileWriter(filePath, {
-      channels,
-      sampleRate,
-      bitDepth: sampleWidth * 8,
-    });
+function encodePcmToMp3(pcmBuffer: Buffer, sampleRate: number = 24000, channels: number = 1): Uint8Array {
+  console.log(`[AUDIO] Encoding PCM to MP3: ${pcmBuffer.length} bytes, ${sampleRate}Hz, ${channels} channel(s)`);
 
-    writer.on('finish', resolve);
-    writer.on('error', reject);
+  // Create MP3 encoder (128kbps)
+  const mp3encoder = new lamejs.Mp3Encoder(channels, sampleRate, 128);
 
-    writer.write(pcmData);
-    writer.end();
-  });
-}
+  // Convert Buffer to Int16Array properly
+  // Node.js Buffers can share ArrayBuffers, so we need to copy the data
+  const arrayBuffer = new ArrayBuffer(pcmBuffer.length);
+  new Uint8Array(arrayBuffer).set(new Uint8Array(pcmBuffer));
+  const samples = new Int16Array(arrayBuffer);
+  console.log(`[AUDIO] PCM samples: ${samples.length}`);
 
-/**
- * Convert WAV file to MP3 using ffmpeg
- */
-async function convertWavToMp3(wavPath: string, mp3Path: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ffmpeg(wavPath)
-      .audioCodec('libmp3lame')
-      .audioBitrate('128k')
-      .audioChannels(1)
-      .audioFrequency(24000)
-      .on('end', () => resolve())
-      .on('error', (err: Error) => reject(err))
-      .save(mp3Path);
-  });
+  // Encode in chunks (lamejs recommends 1152 samples per chunk)
+  const sampleBlockSize = 1152;
+  const mp3Data: Uint8Array[] = [];
+
+  for (let i = 0; i < samples.length; i += sampleBlockSize) {
+    const sampleChunk = samples.subarray(i, i + sampleBlockSize);
+    const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+    if (mp3buf.length > 0) {
+      mp3Data.push(new Uint8Array(mp3buf));
+    }
+  }
+
+  // Flush remaining data
+  const mp3buf = mp3encoder.flush();
+  if (mp3buf.length > 0) {
+    mp3Data.push(new Uint8Array(mp3buf));
+  }
+
+  // Combine all chunks into single Uint8Array
+  const totalLength = mp3Data.reduce((acc, chunk) => acc + chunk.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of mp3Data) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  console.log(`[AUDIO] MP3 encoded: ${result.length} bytes`);
+  return result;
 }
 
 /**
@@ -313,60 +312,24 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 
     console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
 
-    // Convert base64 to buffer (raw PCM data)
+    // Convert base64 to buffer (raw PCM data - 16-bit signed, 24kHz, mono)
     const pcmBuffer = Buffer.from(audioData.data, 'base64');
     console.log(`[AUDIO] Raw PCM size: ${pcmBuffer.length} bytes`);
 
-    // Create temp directory for audio processing
-    const tempDir = os.tmpdir();
-    const wavPath = path.join(tempDir, `brief-${brief.id}.wav`);
-    const mp3Path = path.join(tempDir, `brief-${brief.id}.mp3`);
+    // Convert PCM to MP3 using lamejs (pure JavaScript - no native dependencies!)
+    console.log('[AUDIO] Converting PCM to MP3 using lamejs...');
+    const mp3Buffer = encodePcmToMp3(pcmBuffer, 24000, 1);
 
-    try {
-      // Save PCM data as proper WAV file using wav library
-      console.log(`[AUDIO] Saving WAV file to ${wavPath}...`);
-      await saveWavFile(wavPath, pcmBuffer, 1, 24000, 2);
-      const wavStats = fs.statSync(wavPath);
-      console.log(`[AUDIO] WAV file created: ${wavStats.size} bytes`);
+    // Upload to Vultr storage directly
+    console.log('[AUDIO] Uploading MP3 to Vultr storage...');
+    const audioUrl = await uploadAudio(brief.id, mp3Buffer, 'audio/mpeg');
 
-      // Convert WAV to MP3 using ffmpeg
-      console.log(`[AUDIO] Converting to MP3...`);
-      await convertWavToMp3(wavPath, mp3Path);
-      const mp3Stats = fs.statSync(mp3Path);
-      console.log(`[AUDIO] MP3 file created: ${mp3Stats.size} bytes`);
+    console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
 
-      // Read MP3 file for upload
-      const mp3Buffer = fs.readFileSync(mp3Path);
+    // Update brief with completed status and audio URL
+    await updateBriefStatus(brief.id, 'completed', audioUrl);
 
-      // Upload to Vultr storage directly
-      console.log('[AUDIO] Uploading MP3 to Vultr storage...');
-      const audioUrl = await uploadAudio(brief.id, new Uint8Array(mp3Buffer), 'audio/mpeg');
-
-      // Clean up temp files
-      try {
-        fs.unlinkSync(wavPath);
-        fs.unlinkSync(mp3Path);
-      } catch (cleanupError) {
-        console.warn('[AUDIO] Failed to clean up temp files:', cleanupError);
-      }
-
-      console.log(`[AUDIO] Uploaded to: ${audioUrl}`);
-
-      // Update brief with completed status and audio URL
-      await updateBriefStatus(brief.id, 'completed', audioUrl);
-
-      console.log(`[AUDIO] Successfully processed brief ${brief.id}`);
-
-    } catch (conversionError) {
-      // Clean up temp files on error
-      try {
-        if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath);
-        if (fs.existsSync(mp3Path)) fs.unlinkSync(mp3Path);
-      } catch {
-        // Ignore cleanup errors
-      }
-      throw conversionError; // Re-throw to outer catch
-    }
+    console.log(`[AUDIO] Successfully processed brief ${brief.id}`);
 
   } catch (error) {
     console.error('[AUDIO] Audio generation error:', error);

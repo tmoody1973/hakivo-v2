@@ -1394,6 +1394,51 @@ app.post('/auth/onboarding', async (c) => {
 
     console.log(`✓ Onboarding completed for user: ${user.userId}`);
 
+    // ==================== GENERATE FIRST DAILY BRIEF ====================
+    // Immediately trigger a brief so new users don't have to wait until 7 AM
+    try {
+      const briefId = crypto.randomUUID();
+      const now = Date.now();
+      const briefEndDate = new Date();
+      const briefStartDate = new Date();
+      briefStartDate.setDate(briefStartDate.getDate() - 1); // Last 24 hours
+
+      // Create brief record
+      await db
+        .prepare(`
+          INSERT INTO briefs (
+            id, user_id, type, title, start_date, end_date, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .bind(
+          briefId,
+          user.userId,
+          'daily',
+          `Your First Daily Brief - ${briefEndDate.toLocaleDateString()}`,
+          briefStartDate.toISOString().split('T')[0],
+          briefEndDate.toISOString().split('T')[0],
+          'pending',
+          now,
+          now
+        )
+        .run();
+
+      // Enqueue brief generation
+      await c.env.BRIEF_QUEUE.send({
+        briefId,
+        userId: user.userId,
+        type: 'daily',
+        startDate: briefStartDate.toISOString(),
+        endDate: briefEndDate.toISOString(),
+        requestedAt: now
+      });
+
+      console.log(`✓ First daily brief enqueued for new user: ${user.userId} (briefId: ${briefId})`);
+    } catch (briefError) {
+      // Non-fatal - user can still use the app, brief will come at next scheduled run
+      console.error(`⚠️ Failed to enqueue first brief for ${user.userId}:`, briefError);
+    }
+
     return c.json({
       success: true,
       message: 'Onboarding completed successfully',

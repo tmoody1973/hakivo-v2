@@ -377,6 +377,7 @@ app.get('/briefs/:briefId', async (c) => {
       audioUrl: brief.audio_url,
       audioDuration: brief.audio_duration,
       characterCount: brief.character_count,
+      featuredImage: brief.featured_image,
       createdAt: brief.created_at,
       updatedAt: brief.updated_at
     };
@@ -448,6 +449,7 @@ app.get('/briefs', async (c) => {
       audioUrl: row.audio_url,
       audioDuration: row.audio_duration,
       characterCount: row.character_count,
+      featuredImage: row.featured_image,
       createdAt: row.created_at,
       updatedAt: row.updated_at
     })) || [];
