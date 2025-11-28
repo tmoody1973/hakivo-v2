@@ -128,7 +128,7 @@ async function processAudioGeneration(briefId: string, script: string): Promise<
 
   try {
     // Get Gemini API key from environment
-    const geminiApiKey = Netlify.env.get('GEMINI_API_KEY');
+    const geminiApiKey = process.env.GEMINI_API_KEY;
     if (!geminiApiKey) {
       console.error('[AUDIO] GEMINI_API_KEY not configured');
       await updateBriefStatus(briefId, 'audio_failed', null);
