@@ -120,9 +120,21 @@ async function uploadAudio(
 
 export default async (req: Request, context: Context) => {
   console.log('[AUDIO-BG] Background function started');
+  console.log('[AUDIO-BG] Request method:', req.method);
+  console.log('[AUDIO-BG] Content-Type:', req.headers.get('content-type'));
 
   try {
-    const body = await req.json() as { briefId: string; script: string };
+    // Read the body as text first for debugging
+    const bodyText = await req.text();
+    console.log('[AUDIO-BG] Body length:', bodyText.length);
+    console.log('[AUDIO-BG] Body preview:', bodyText.substring(0, 200));
+
+    if (!bodyText || bodyText.length === 0) {
+      console.error('[AUDIO-BG] Empty request body received');
+      return;
+    }
+
+    const body = JSON.parse(bodyText) as { briefId: string; script: string };
     const { briefId, script } = body;
 
     if (!briefId || !script) {
