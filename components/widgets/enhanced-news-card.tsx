@@ -40,6 +40,19 @@ export function EnhancedNewsCard({ article }: EnhancedNewsCardProps) {
   const publishedDate = new Date(article.publishedDate)
   const timeAgo = getTimeAgo(publishedDate)
 
+  // Clean up author text - Exa sometimes returns extra metadata
+  const cleanAuthor = (author: string | null): string | null => {
+    if (!author) return null
+    // Remove common suffixes like "US News Reporter", "ShareNewsweek", "Trust Project member", etc.
+    let clean = author
+      .replace(/\s*(US News Reporter|News Reporter|Reporter|Share|ShareNewsweek|is a Trust Project member|Trust Project member|Staff Writer|Correspondent|Editor|Contributor).*$/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    // If nothing left or too short, skip
+    if (clean.length < 2) return null
+    return clean
+  }
+
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader className="pb-3 pt-3 px-4">
@@ -84,7 +97,7 @@ export function EnhancedNewsCard({ article }: EnhancedNewsCardProps) {
             <div className="flex items-center justify-between pt-1">
               <span className="text-xs text-muted-foreground truncate">
                 {article.sourceDomain}
-                {article.author && ` • ${article.author}`}
+                {cleanAuthor(article.author) && ` • ${cleanAuthor(article.author)}`}
               </span>
               <Button size="sm" variant="ghost" asChild className="h-6 text-xs px-2 flex-shrink-0">
                 <Link href={article.url} target="_blank" rel="noopener noreferrer">

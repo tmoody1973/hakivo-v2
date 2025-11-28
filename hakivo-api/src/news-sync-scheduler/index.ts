@@ -367,6 +367,10 @@ export default class extends Task<Env> {
       'politics | ',
       'economy | ',
       '| economy, tech, ai',
+      'research news',
+      'climate news',
+      'tech news',
+      'science news',
     ];
 
     // Check if title matches generic patterns
@@ -374,26 +378,68 @@ export default class extends Task<Env> {
       return true;
     }
 
-    // URL patterns that indicate landing pages
+    // URL patterns that indicate landing pages (section pages, not articles)
     const landingUrlPatterns = [
-      '/business$',
-      '/business/$',
-      '/politics$',
-      '/politics/$',
-      '/news$',
-      '/news/$',
-      '/world$',
-      '/world/$',
-      '/economy$',
-      '/economy/$',
-      '/latest$',
-      '/latest/$',
-      '/home$',
-      '/home/$',
+      // Main sections ending in category name
+      /\/business\/?$/,
+      /\/politics\/?$/,
+      /\/news\/?$/,
+      /\/world\/?$/,
+      /\/economy\/?$/,
+      /\/latest\/?$/,
+      /\/home\/?$/,
+      /\/tech\/?$/,
+      /\/science\/?$/,
+      /\/health\/?$/,
+      /\/climate\/?$/,
+      /\/opinion\/?$/,
+      /\/sports\/?$/,
+      /\/entertainment\/?$/,
+      // Regional section pages (e.g., /world/canada, /world/europe)
+      /\/world\/[a-z]+\/?$/,
+      // Topic section pages (e.g., /green, /citylab, /markets)
+      /\/green\/?$/,
+      /\/citylab\/?$/,
+      /\/markets\/?$/,
+      /\/energy\/?$/,
+      /\/technology\/?$/,
+      /\/environment\/?$/,
+      // NPR-style sections (e.g., /sections/research-news)
+      /\/sections\/[a-z-]+\/?$/,
+      // Category pages (e.g., /category/politics)
+      /\/category\/[a-z-]+\/?$/,
+      /\/categories\/[a-z-]+\/?$/,
+      // Tag pages
+      /\/tag\/[a-z-]+\/?$/,
+      /\/tags\/[a-z-]+\/?$/,
+      // Topic pages
+      /\/topic\/[a-z-]+\/?$/,
+      /\/topics\/[a-z-]+\/?$/,
     ];
 
-    if (landingUrlPatterns.some(pattern => new RegExp(pattern).test(url))) {
+    if (landingUrlPatterns.some(pattern => pattern.test(url))) {
       return true;
+    }
+
+    // Check URL path segment count - landing pages usually have 1-2 path segments
+    // Real articles typically have more segments or date-based paths
+    try {
+      const urlObj = new URL(article.url);
+      const pathSegments = urlObj.pathname.split('/').filter(s => s.length > 0);
+
+      // If URL has only 1-2 short segments and no numbers (dates/IDs), likely a section page
+      if (pathSegments.length <= 2) {
+        const hasDateOrId = pathSegments.some(seg =>
+          /\d{4}/.test(seg) || // Year like 2024
+          /^\d+$/.test(seg) || // Numeric ID
+          seg.length > 30      // Long slugs are usually articles
+        );
+        if (!hasDateOrId) {
+          return true;
+        }
+      }
+    } catch {
+      // Invalid URL, skip this check
     }
 
     // Summary patterns that indicate section pages
@@ -405,6 +451,10 @@ export default class extends Task<Env> {
       'includes coverage of',
       'page features',
       'section includes',
+      'find the latest',
+      'browse all',
+      'explore our coverage',
+      'read more about',
     ];
 
     if (sectionSummaryPatterns.some(pattern => summary.includes(pattern))) {
