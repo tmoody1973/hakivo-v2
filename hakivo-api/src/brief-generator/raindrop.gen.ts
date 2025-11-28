@@ -13,6 +13,7 @@ export interface Env {
   APP_DB: SqlDatabase;
   AUDIO_BRIEFS: SmartBucket;
   AUTH_SERVICE: ServiceStub<import('../auth-service/index.js').default>;
+  BILL_INDEXING_QUEUE: Queue<import('../bill-indexing-observer').Body>;
   BILL_TEXTS: SmartBucket;
   BILLS_SERVICE: ServiceStub<import('../bills-service/index.js').default>;
   BRIEFS_SERVICE: ServiceStub<import('../briefs-service/index.js').default>;
@@ -35,6 +36,9 @@ export interface Env {
   GEOCODIO_API_KEY: string;
   GEOCODIO_CLIENT: ServiceStub<import('../geocodio-client/index.js').default>;
   IMAGE_CACHE: KvCache;
+  INDEX_BILLS_SERVICE: ServiceStub<import('../index-bills-service/index.js').default>;
+  INNGEST_EVENT_KEY: string;
+  INNGEST_SIGNING_KEY: string;
   JWT_SECRET: string;
   logger: Logger;
   mem: KvCache;

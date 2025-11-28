@@ -29,6 +29,7 @@
     "@workos-inc/node": "^7.14.0",
     "@workos/mcp-docs-server": "^0.1.0",
     "ai-labs-claude-skills": "^2.0.1",
+    "aws4fetch": "^1.0.20",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "exa-js": "^1.0",

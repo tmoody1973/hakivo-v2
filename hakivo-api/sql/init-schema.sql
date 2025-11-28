@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS briefs (
   audio_url TEXT,
   duration INTEGER,
   file_size INTEGER,
+  feature_image_url TEXT,
   article TEXT,
   article_word_count INTEGER,
   listened INTEGER DEFAULT 0,
@@ -73,8 +74,27 @@ CREATE TABLE IF NOT EXISTS briefs (
   article_read_time INTEGER,
   created_at INTEGER NOT NULL,
   completed_at INTEGER,
+  last_content_date INTEGER,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Brief Content Deduplication Log
+-- Tracks which news articles and bill actions have been used in briefs
+-- to ensure each daily brief has fresh, unique content
+CREATE TABLE IF NOT EXISTS briefs_content_log (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  brief_id TEXT NOT NULL,
+  content_type TEXT NOT NULL, -- 'news_article' or 'bill_action'
+  content_id TEXT NOT NULL,   -- Article URL or bill action ID
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (brief_id) REFERENCES briefs(id) ON DELETE CASCADE
+);
+
+-- Index for efficient deduplication queries
+CREATE INDEX IF NOT EXISTS idx_briefs_content_log_user_type ON briefs_content_log(user_id, content_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_briefs_content_log_content ON briefs_content_log(user_id, content_id);
 
 -- RAG Chat System
 CREATE TABLE IF NOT EXISTS chat_sessions (

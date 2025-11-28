@@ -1,36 +1,32 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { AwsClient } from 'aws4fetch';
 
 export default class extends Service<Env> {
-  private s3Client: S3Client | null = null;
+  private awsClient: AwsClient | null = null;
 
   /**
-   * Initialize S3 client with Vultr credentials
+   * Initialize AWS client with Vultr credentials
+   * Uses aws4fetch which is Cloudflare Workers compatible
    */
-  private getS3Client(): S3Client {
-    if (!this.s3Client) {
-      const endpoint = this.env.VULTR_ENDPOINT;
+  private getAwsClient(): AwsClient {
+    if (!this.awsClient) {
       const accessKeyId = this.env.VULTR_ACCESS_KEY;
       const secretAccessKey = this.env.VULTR_SECRET_KEY;
 
-      if (!endpoint || !accessKeyId || !secretAccessKey) {
-        throw new Error('Missing Vultr S3 credentials: VULTR_ENDPOINT, VULTR_ACCESS_KEY, or VULTR_SECRET_KEY');
+      if (!accessKeyId || !secretAccessKey) {
+        throw new Error('Missing Vultr S3 credentials: VULTR_ACCESS_KEY or VULTR_SECRET_KEY');
       }
 
-      this.s3Client = new S3Client({
-        endpoint: `https://${endpoint}`,
+      this.awsClient = new AwsClient({
+        accessKeyId,
+        secretAccessKey,
+        service: 's3',
         region: 'auto',
-        credentials: {
-          accessKeyId,
-          secretAccessKey
-        },
-        forcePathStyle: true // Use path-style URLs for better compatibility
       });
     }
 
-    return this.s3Client;
+    return this.awsClient;
   }
 
   /**
@@ -61,8 +57,13 @@ export default class extends Service<Env> {
     contentType: string = 'audio/mpeg',
     metadata?: Record<string, string>
   ): Promise<{ key: string; url: string; size: number }> {
-    const s3 = this.getS3Client();
+    const aws = this.getAwsClient();
+    const endpoint = this.env.VULTR_ENDPOINT;
     const bucketName = this.env.VULTR_BUCKET_NAME;
+
+    if (!endpoint) {
+      throw new Error('VULTR_ENDPOINT environment variable is not set');
+    }
 
     if (!bucketName) {
       throw new Error('VULTR_BUCKET_NAME environment variable is not set');
@@ -71,27 +72,43 @@ export default class extends Service<Env> {
     const key = this.generateFileKey(briefId);
     const buffer = audioBuffer instanceof ArrayBuffer ? new Uint8Array(audioBuffer) : audioBuffer;
 
-    console.log(`[VULTR] Uploading to bucket: ${bucketName}, key: ${key}, endpoint: ${this.env.VULTR_ENDPOINT}`);
+    console.log(`[VULTR] Uploading to bucket: ${bucketName}, key: ${key}, endpoint: ${endpoint}`);
 
-    const command = new PutObjectCommand({
-      Bucket: bucketName,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType,
-      Metadata: {
-        briefId,
-        uploadedAt: new Date().toISOString(),
-        ...metadata
+    // Build headers with metadata
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'x-amz-meta-briefid': briefId,
+      'x-amz-meta-uploadedat': new Date().toISOString(),
+    };
+
+    // Add custom metadata
+    if (metadata) {
+      for (const [metaKey, value] of Object.entries(metadata)) {
+        headers[`x-amz-meta-${metaKey.toLowerCase()}`] = value;
       }
+    }
+
+    // Construct the S3 URL (path-style)
+    const uploadUrl = `https://${endpoint}/${bucketName}/${key}`;
+
+    // Sign and send the request using aws4fetch
+    // Convert to ArrayBuffer for proper BodyInit compatibility
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const response = await aws.fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: arrayBuffer,
     });
 
-    await s3.send(command);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`S3 upload failed: ${response.status} - ${errorText}`);
+    }
 
     // Generate public URL (path-style)
-    const endpoint = this.env.VULTR_ENDPOINT;
     const url = `https://${endpoint}/${bucketName}/${key}`;
 
-    console.log(`✓ Audio uploaded to Vultr: ${key} (${buffer.length} bytes)`);
+    console.log(`[VULTR] Audio uploaded: ${key} (${buffer.length} bytes)`);
 
     return {
       key,
@@ -101,53 +118,28 @@ export default class extends Service<Env> {
   }
 
   /**
-   * Get presigned URL for temporary access
-   * @param key - File key
-   * @param expiresIn - Expiration time in seconds (default: 3600 = 1 hour)
-   * @returns Presigned URL
-   */
-  async getPresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
-    const s3 = this.getS3Client();
-    const bucketName = this.env.VULTR_BUCKET_NAME;
-
-    if (!bucketName) {
-      throw new Error('VULTR_BUCKET_NAME environment variable is not set');
-    }
-
-    const command = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: key
-    });
-
-    const url = await getSignedUrl(s3, command, { expiresIn });
-
-    return url;
-  }
-
-  /**
    * Check if file exists in storage
    * @param key - File key
    * @returns True if file exists
    */
   async fileExists(key: string): Promise<boolean> {
-    const s3 = this.getS3Client();
+    const aws = this.getAwsClient();
+    const endpoint = this.env.VULTR_ENDPOINT;
     const bucketName = this.env.VULTR_BUCKET_NAME;
 
-    if (!bucketName) {
-      throw new Error('VULTR_BUCKET_NAME environment variable is not set');
+    if (!endpoint || !bucketName) {
+      throw new Error('VULTR_ENDPOINT or VULTR_BUCKET_NAME environment variable is not set');
     }
 
+    const headUrl = `https://${endpoint}/${bucketName}/${key}`;
+
     try {
-      await s3.send(new HeadObjectCommand({
-        Bucket: bucketName,
-        Key: key
-      }));
-      return true;
-    } catch (error: any) {
-      if (error.name === 'NotFound') {
-        return false;
-      }
-      throw error;
+      const response = await aws.fetch(headUrl, {
+        method: 'HEAD',
+      });
+      return response.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -162,23 +154,38 @@ export default class extends Service<Env> {
     contentType: string;
     metadata?: Record<string, string>;
   }> {
-    const s3 = this.getS3Client();
+    const aws = this.getAwsClient();
+    const endpoint = this.env.VULTR_ENDPOINT;
     const bucketName = this.env.VULTR_BUCKET_NAME;
 
-    if (!bucketName) {
-      throw new Error('VULTR_BUCKET_NAME environment variable is not set');
+    if (!endpoint || !bucketName) {
+      throw new Error('VULTR_ENDPOINT or VULTR_BUCKET_NAME environment variable is not set');
     }
 
-    const response = await s3.send(new HeadObjectCommand({
-      Bucket: bucketName,
-      Key: key
-    }));
+    const headUrl = `https://${endpoint}/${bucketName}/${key}`;
+
+    const response = await aws.fetch(headUrl, {
+      method: 'HEAD',
+    });
+
+    if (!response.ok) {
+      throw new Error(`File not found: ${key}`);
+    }
+
+    // Extract metadata from headers
+    const extractedMetadata: Record<string, string> = {};
+    response.headers.forEach((value, headerKey) => {
+      if (headerKey.toLowerCase().startsWith('x-amz-meta-')) {
+        const metaKey = headerKey.substring(11); // Remove 'x-amz-meta-'
+        extractedMetadata[metaKey] = value;
+      }
+    });
 
     return {
-      size: response.ContentLength || 0,
-      lastModified: response.LastModified || new Date(),
-      contentType: response.ContentType || 'application/octet-stream',
-      metadata: response.Metadata
+      size: parseInt(response.headers.get('content-length') || '0', 10),
+      lastModified: new Date(response.headers.get('last-modified') || Date.now()),
+      contentType: response.headers.get('content-type') || 'application/octet-stream',
+      metadata: Object.keys(extractedMetadata).length > 0 ? extractedMetadata : undefined,
     };
   }
 
