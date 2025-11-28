@@ -61,6 +61,14 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "INNGEST_EVENT_KEY" {
+    secret = true
+  }
+
+  env "INNGEST_SIGNING_KEY" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -89,6 +97,12 @@ application "hakivo-new" {
   service "db-admin" {
     visibility = "private"
   }
+
+  // Inngest webhook handler - disabled due to edge runtime compatibility issues
+  // The Inngest SDK has dependencies that don't work with Cloudflare Workers edge runtime
+  // service "inngest-service" {
+  //   visibility = "public"
+  // }
 
   // Private internal services
   service "user-service" {
@@ -120,6 +134,10 @@ application "hakivo-new" {
   }
 
   service "vultr-storage-client" {
+    visibility = "public"
+  }
+
+  service "gemini-tts-client" {
     visibility = "private"
   }
 
@@ -172,6 +190,13 @@ application "hakivo-new" {
   task "congress-actions-scheduler" {
     type = "cron"
     cron = "0 6,18 * * *"
+  }
+
+  // Audio retry task - processes script_ready briefs
+  // Uses 4-min fetch timeout, processes 1 brief per run
+  task "audio-retry-scheduler" {
+    type = "cron"
+    cron = "*/5 * * * *"  // Every 5 minutes
   }
 
   // Admin utilities

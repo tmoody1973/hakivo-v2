@@ -26,7 +26,7 @@ export default class extends Service<Env> {
           accessKeyId,
           secretAccessKey
         },
-        forcePathStyle: false // Vultr uses virtual-hosted-style URLs
+        forcePathStyle: true // Use path-style URLs for better compatibility
       });
     }
 
@@ -71,6 +71,8 @@ export default class extends Service<Env> {
     const key = this.generateFileKey(briefId);
     const buffer = audioBuffer instanceof ArrayBuffer ? new Uint8Array(audioBuffer) : audioBuffer;
 
+    console.log(`[VULTR] Uploading to bucket: ${bucketName}, key: ${key}, endpoint: ${this.env.VULTR_ENDPOINT}`);
+
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
@@ -85,9 +87,9 @@ export default class extends Service<Env> {
 
     await s3.send(command);
 
-    // Generate public URL
+    // Generate public URL (path-style)
     const endpoint = this.env.VULTR_ENDPOINT;
-    const url = `https://${bucketName}.${endpoint}/${key}`;
+    const url = `https://${endpoint}/${bucketName}/${key}`;
 
     console.log(`✓ Audio uploaded to Vultr: ${key} (${buffer.length} bytes)`);
 
@@ -181,10 +183,59 @@ export default class extends Service<Env> {
   }
 
   /**
-   * Required fetch method for Raindrop Service
-   * This is a private service, so fetch returns 501 Not Implemented
+   * HTTP handler for external audio uploads (used by Netlify background functions)
    */
   async fetch(request: Request): Promise<Response> {
-    return new Response('Not Implemented - Private Service', { status: 501 });
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Health check
+    if (request.method === 'GET' && path === '/health') {
+      return new Response(JSON.stringify({ status: 'ok', service: 'vultr-storage-client' }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Upload endpoint for external callers (Netlify background functions)
+    if (request.method === 'POST' && path === '/upload') {
+      try {
+        const body = await request.json() as {
+          briefId: string;
+          audioBase64: string;
+          mimeType?: string;
+        };
+
+        if (!body.briefId || !body.audioBase64) {
+          return new Response(JSON.stringify({ error: 'Missing briefId or audioBase64' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Convert base64 to Uint8Array
+        const audioBuffer = Uint8Array.from(atob(body.audioBase64), c => c.charCodeAt(0));
+
+        // Upload to Vultr
+        const result = await this.uploadAudio(
+          body.briefId,
+          audioBuffer,
+          body.mimeType || 'audio/wav'
+        );
+
+        return new Response(JSON.stringify(result), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('[VULTR] Upload error:', errorMessage);
+        return new Response(JSON.stringify({ error: errorMessage }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    return new Response('Not Found', { status: 404 });
   }
 }

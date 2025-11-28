@@ -2,6 +2,11 @@
   command = "npm run build"
   publish = ".next"
 
+[functions]
+  directory = "netlify/functions"
+  # Increase timeout for background functions (they run async)
+  node_bundler = "esbuild"
+
 [build.environment]
   NODE_ENV = "production"
   # Omit local .env files from secrets scanning
