@@ -371,6 +371,17 @@ export default class extends Task<Env> {
       'climate news',
       'tech news',
       'science news',
+      // News roundup/digest titles
+      'morning news brief',
+      'evening news brief',
+      'news brief',
+      'daily briefing',
+      'morning edition',
+      'evening edition',
+      'news roundup',
+      'weekly roundup',
+      'daily digest',
+      'news digest',
     ];
 
     // Check if title matches generic patterns

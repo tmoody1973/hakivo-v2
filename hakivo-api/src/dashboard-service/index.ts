@@ -1105,6 +1105,7 @@ app.post('/admin/clear-news', async (c) => {
  * GET /latest-actions?limit=20
  * Get latest bill actions from Congress.gov
  * Returns recent legislative activity, updated twice daily
+ * Includes inDatabase flag to indicate if bill can be viewed with full details
  */
 app.get('/latest-actions', async (c) => {
   console.log('📋 Fetching latest bill actions...');
@@ -1122,15 +1123,21 @@ app.get('/latest-actions', async (c) => {
       }, 400);
     }
 
-    // Query latest actions, ordered by action date (most recent first)
+    // Query latest actions with join to check if bill exists in bills table
     const actions = await db
       .prepare(`
         SELECT
-          id, bill_congress, bill_type, bill_number, bill_title,
-          action_date, action_text, latest_action_status, chamber,
-          source_url, fetched_at
-        FROM latest_bill_actions
-        ORDER BY action_date DESC, fetched_at DESC
+          la.id, la.bill_congress, la.bill_type, la.bill_number, la.bill_title,
+          la.action_date, la.action_text, la.latest_action_status, la.chamber,
+          la.source_url, la.fetched_at,
+          CASE WHEN b.id IS NOT NULL THEN 1 ELSE 0 END as in_database,
+          b.id as db_bill_id
+        FROM latest_bill_actions la
+        LEFT JOIN bills b ON
+          b.congress = la.bill_congress AND
+          b.bill_type = la.bill_type AND
+          b.bill_number = la.bill_number
+        ORDER BY la.action_date DESC, la.fetched_at DESC
         LIMIT ?
       `)
       .bind(limit)
@@ -1154,7 +1161,10 @@ app.get('/latest-actions', async (c) => {
         type: action.bill_type,
         number: action.bill_number,
         title: action.bill_title,
-        url: action.source_url
+        url: action.source_url,
+        // Include database info so frontend knows it can link to detail page
+        inDatabase: action.in_database === 1,
+        dbBillId: action.db_bill_id || null
       },
       action: {
         date: action.action_date,
@@ -1805,6 +1815,17 @@ app.post('/admin/cleanup-landing-pages', async (c) => {
       '%politics | %',
       '%economy | %',
       '%| economy, tech, ai%',
+      // News roundup/digest titles
+      '%morning news brief%',
+      '%evening news brief%',
+      '%news brief%',
+      '%daily briefing%',
+      '%morning edition%',
+      '%evening edition%',
+      '%news roundup%',
+      '%weekly roundup%',
+      '%daily digest%',
+      '%news digest%',
     ];
 
     // Summary patterns that indicate section pages

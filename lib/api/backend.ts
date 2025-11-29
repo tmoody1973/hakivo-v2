@@ -1408,6 +1408,7 @@ export async function getBillById(
     type: string;
     number: number;
     title: string;
+    text: string | null;
     policyArea: string | null;
     introducedDate: string | null;
     latestAction?: {

@@ -731,18 +731,20 @@ app.get('/bills/interests', (c) => {
 
 /**
  * GET /bills/:congress/:type/:number
- * Get bill details
+ * Get bill details - auto-fetches from Congress.gov if not in database
  */
 app.get('/bills/:congress/:type/:number', async (c) => {
   try {
     const db = c.env.APP_DB;
+    const congressApiClient = c.env.CONGRESS_API_CLIENT;
 
     const congress = parseInt(c.req.param('congress'));
-    const billType = c.req.param('type');
+    const billType = c.req.param('type').toLowerCase();
     const billNumber = parseInt(c.req.param('number'));
+    const autoFetch = c.req.query('autoFetch') !== 'false'; // Default to true
 
     // Get bill with sponsor details (including new metadata)
-    const bill = await db
+    let bill = await db
       .prepare(`
         SELECT
           b.*,
@@ -759,6 +761,90 @@ app.get('/bills/:congress/:type/:number', async (c) => {
       `)
       .bind(congress, billType, billNumber)
       .first();
+
+    // If bill not found and autoFetch is enabled, try to fetch from Congress.gov
+    if (!bill && autoFetch) {
+      console.log(`📥 Bill ${billType}${billNumber} (Congress ${congress}) not in DB, fetching from Congress.gov...`);
+
+      try {
+        // Fetch bill details from Congress.gov API
+        const apiResponse = await congressApiClient.getBillDetails(congress, billType, billNumber);
+
+        if (apiResponse && apiResponse.bill) {
+          const apiBill = apiResponse.bill;
+
+          // Generate bill ID
+          const billId = `${congress}-${billType}-${billNumber}`;
+
+          // Extract sponsor info if available
+          const sponsorBioguideId = apiBill.sponsors?.[0]?.bioguideId || null;
+
+          // Also fetch bill text (in parallel would be nice but keep it simple)
+          console.log(`📄 Fetching bill text for ${billId}...`);
+          let billText: string | null = null;
+          try {
+            billText = await congressApiClient.getBillText(congress, billType, billNumber);
+            if (billText) {
+              console.log(`✅ Retrieved bill text (${billText.length} chars)`);
+            } else {
+              console.log(`⚠️ No text available for ${billId}`);
+            }
+          } catch (textError) {
+            console.error(`⚠️ Failed to fetch bill text:`, textError);
+          }
+
+          // Insert bill into database (now includes text column)
+          await db
+            .prepare(`
+              INSERT OR REPLACE INTO bills (
+                id, congress, bill_type, bill_number, title, origin_chamber,
+                introduced_date, latest_action_date, latest_action_text,
+                sponsor_bioguide_id, policy_area, update_date, text
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `)
+            .bind(
+              billId,
+              congress,
+              billType,
+              billNumber,
+              apiBill.title || 'Untitled',
+              apiBill.originChamber || null,
+              apiBill.introducedDate || null,
+              apiBill.latestAction?.actionDate || null,
+              apiBill.latestAction?.text || null,
+              sponsorBioguideId,
+              apiBill.policyArea?.name || null,
+              apiBill.updateDate || new Date().toISOString().split('T')[0],
+              billText
+            )
+            .run();
+
+          console.log(`✅ Stored bill ${billId} from Congress.gov${billText ? ' (with text)' : ' (no text)'}`);
+
+          // Fetch the newly inserted bill with sponsor details
+          bill = await db
+            .prepare(`
+              SELECT
+                b.*,
+                m.first_name,
+                m.middle_name,
+                m.last_name,
+                m.party,
+                m.state,
+                m.district,
+                m.image_url
+              FROM bills b
+              LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+              WHERE b.id = ?
+            `)
+            .bind(billId)
+            .first();
+        }
+      } catch (apiError) {
+        console.error(`❌ Failed to fetch bill from Congress.gov:`, apiError);
+        // Continue - will return 404 below
+      }
+    }
 
     if (!bill) {
       return c.json({ error: 'Bill not found' }, 404);

@@ -101,6 +101,91 @@ export default class extends Service<Env> {
   }
 
   /**
+   * Get bill full text from Congress.gov
+   * Fetches the latest text version (formatted text if available, otherwise XML)
+   *
+   * @param congress - Congress number
+   * @param type - Bill type (hr, s, hjres, sjres, etc.)
+   * @param number - Bill number
+   * @returns Bill text as string, or null if not available
+   */
+  async getBillText(
+    congress: number,
+    type: string,
+    number: number
+  ): Promise<string | null> {
+    console.log(`✓ Congress.gov text: ${type}${number} (${congress}th Congress)`);
+
+    try {
+      // First get the text versions to find the latest
+      const textData = await this.makeRequest(`/bill/${congress}/${type}/${number}/text`);
+
+      if (!textData?.textVersions || textData.textVersions.length === 0) {
+        console.log(`  No text versions available for ${type}${number}`);
+        return null;
+      }
+
+      // Get the most recent text version (usually first in list)
+      const latestVersion = textData.textVersions[0];
+
+      // Look for formatted text URL (prefer .htm or .txt over .xml)
+      let textUrl: string | null = null;
+      if (latestVersion.formats) {
+        // Prefer formatted text
+        const formattedFormat = latestVersion.formats.find((f: any) =>
+          f.url?.includes('.htm') || f.type?.toLowerCase() === 'formatted text'
+        );
+        if (formattedFormat?.url) {
+          textUrl = formattedFormat.url;
+        } else {
+          // Fall back to any available format
+          const anyFormat = latestVersion.formats.find((f: any) => f.url);
+          if (anyFormat?.url) {
+            textUrl = anyFormat.url;
+          }
+        }
+      }
+
+      if (!textUrl) {
+        console.log(`  No text URL found for ${type}${number}`);
+        return null;
+      }
+
+      // Fetch the actual text content
+      console.log(`  Fetching text from: ${textUrl}`);
+      const textResponse = await fetch(textUrl);
+
+      if (!textResponse.ok) {
+        console.log(`  Failed to fetch text: ${textResponse.status}`);
+        return null;
+      }
+
+      const text = await textResponse.text();
+
+      // If it's HTML, extract just the text content (basic cleanup)
+      if (textUrl.includes('.htm')) {
+        // Remove HTML tags but keep the structure somewhat readable
+        return text
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<[^>]+>/g, '\n')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/\n\s*\n\s*\n/g, '\n\n')
+          .trim();
+      }
+
+      return text;
+    } catch (error) {
+      console.error(`  Error fetching bill text for ${type}${number}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Get bill updates for tracked bills
    * Used by brief-generator observer
    *

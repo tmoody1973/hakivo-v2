@@ -30,6 +30,9 @@ import {
   Zap,
   Check,
   AlertCircle,
+  FileText,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth/auth-context"
@@ -41,6 +44,7 @@ interface BillData {
   type: string
   number: number
   title: string
+  text: string | null
   policyArea: string | null
   introducedDate: string | null
   latestAction?: {
@@ -137,6 +141,7 @@ export default function BillDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const [showFullText, setShowFullText] = useState(false)
   const { accessToken, isLoading: authLoading } = useAuth()
 
   // Fetch bill data
@@ -728,6 +733,80 @@ export default function BillDetailPage() {
                   })}
                 </p>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Full Bill Text */}
+        {bill.text ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-primary" />
+                  Full Bill Text
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowFullText(!showFullText)}
+                >
+                  {showFullText ? (
+                    <>
+                      <ChevronUp className="h-4 w-4 mr-1" />
+                      Collapse
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4 mr-1" />
+                      Expand
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {showFullText ? (
+                <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono bg-muted/50 p-4 rounded-lg overflow-x-auto max-h-[600px] overflow-y-auto">
+                  {bill.text}
+                </pre>
+              ) : (
+                <div className="space-y-2">
+                  <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono bg-muted/50 p-4 rounded-lg line-clamp-6">
+                    {bill.text.substring(0, 500)}...
+                  </pre>
+                  <p className="text-sm text-muted-foreground">
+                    Click &quot;Expand&quot; to view the full bill text ({Math.round(bill.text.length / 1000)}k characters)
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5 text-muted-foreground" />
+                Full Bill Text
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>Bill text is not yet available.</p>
+                <p className="text-sm mt-1">
+                  Text typically becomes available after a bill is formally introduced.
+                </p>
+                <Button variant="outline" size="sm" className="mt-4" asChild>
+                  <a
+                    href={`https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type.toLowerCase().includes('hr') ? 'house' : 'senate'}-bill/${bill.number}/text`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Check Congress.gov
+                  </a>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
