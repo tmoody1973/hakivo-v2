@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY;
 const BASE_URL = 'https://api.congress.gov/v3';
 
@@ -30,6 +31,31 @@ export async function GET(request: Request) {
   const offset = searchParams.get('offset') || '0';
 
   try {
+    // First, try to fetch from our backend dashboard-service
+    // This gives us cached data with inDatabase flags for better UX
+    try {
+      const backendResponse = await fetch(
+        `${DASHBOARD_API_URL}/latest-actions?limit=${requestedLimit}`,
+        {
+          headers: {
+            'Accept': 'application/json',
+          },
+          next: { revalidate: 300 } // Cache for 5 minutes
+        }
+      );
+
+      if (backendResponse.ok) {
+        const data = await backendResponse.json();
+        console.log('[latest-actions] Fetched from backend:', data.count, 'actions');
+        return NextResponse.json(data);
+      }
+
+      console.log('[latest-actions] Backend returned status:', backendResponse.status, '- falling back to Congress.gov API');
+    } catch (backendError) {
+      console.log('[latest-actions] Backend fetch failed, falling back to Congress.gov API:', backendError);
+    }
+
+    // Fallback: Fetch directly from Congress.gov API
     // Get the current congress number (119th Congress for 2025-2026)
     const congress = 119;
 
@@ -71,7 +97,9 @@ export async function GET(request: Request) {
           type: bill.type,
           number: bill.number,
           title: bill.title,
-          url: bill.url || `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type.toLowerCase()}-bill/${bill.number}`
+          url: bill.url || `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type.toLowerCase()}-bill/${bill.number}`,
+          inDatabase: false, // Direct Congress.gov fallback doesn't know DB status
+          dbBillId: null
         },
         action: {
           date: bill.latestAction?.actionDate || bill.updateDate,

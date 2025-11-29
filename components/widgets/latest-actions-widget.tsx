@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, TrendingUp, List, Bookmark, Sparkles, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertCircle, TrendingUp, List, Bookmark, Sparkles, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface BillAction {
@@ -17,6 +18,8 @@ interface BillAction {
     number: number;
     title: string;
     url: string;
+    inDatabase?: boolean;
+    dbBillId?: string | null;
   };
   action: {
     date: string;
@@ -36,12 +39,15 @@ interface LatestActionsResponse {
 }
 
 const ITEMS_PER_PAGE = 5;
+const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export function LatestActionsWidget() {
+  const router = useRouter();
   const [actions, setActions] = useState<BillAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [loadingBillId, setLoadingBillId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchLatestActions() {
@@ -136,6 +142,49 @@ export function LatestActionsWidget() {
     return `${typeMap[type.toLowerCase()] || type.toUpperCase()} ${number}`;
   };
 
+  // Handle clicking on a bill action - navigate to bill detail page
+  // If bill is not in database, it will be auto-fetched from Congress.gov
+  const handleBillClick = async (action: BillAction) => {
+    const billId = `${action.bill.congress}-${action.bill.type}-${action.bill.number}`;
+    setLoadingBillId(action.id);
+
+    try {
+      // If bill is already in database, navigate directly
+      if (action.bill.inDatabase) {
+        router.push(`/legislation/${action.bill.congress}/${action.bill.type}/${action.bill.number}`);
+        return;
+      }
+
+      // Bill not in database - fetch from Congress.gov via our API (auto-fetch enabled by default)
+      const response = await fetch(
+        `${BILLS_API_URL}/bills/${action.bill.congress}/${action.bill.type}/${action.bill.number}`,
+        { credentials: 'include' }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch bill details');
+      }
+
+      // Update local state to reflect that bill is now in database
+      setActions(prevActions =>
+        prevActions.map(a =>
+          a.id === action.id
+            ? { ...a, bill: { ...a.bill, inDatabase: true } }
+            : a
+        )
+      );
+
+      // Navigate to bill detail page
+      router.push(`/legislation/${action.bill.congress}/${action.bill.type}/${action.bill.number}`);
+    } catch (err) {
+      console.error('Error fetching bill:', err);
+      // Fallback: open Congress.gov URL in new tab
+      window.open(action.bill.url, '_blank');
+    } finally {
+      setLoadingBillId(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -211,19 +260,29 @@ export function LatestActionsWidget() {
               {currentActions.map((action) => (
                 <div
                   key={action.id}
-                  className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                  className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer group"
+                  onClick={() => handleBillClick(action)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && handleBillClick(action)}
                 >
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-mono text-muted-foreground">
+                        <span className="text-xs font-mono text-primary group-hover:underline">
                           {formatBillNumber(action.bill.type, action.bill.number)}
                         </span>
                         <Badge variant="outline" className="text-xs">
                           {action.chamber}
                         </Badge>
+                        {loadingBillId === action.id && (
+                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                        )}
+                        {!action.bill.inDatabase && loadingBillId !== action.id && (
+                          <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
                       </div>
-                      <h4 className="font-medium text-sm line-clamp-1">{action.bill.title}</h4>
+                      <h4 className="font-medium text-sm line-clamp-1 group-hover:text-primary transition-colors">{action.bill.title}</h4>
                     </div>
                     <Badge
                       variant="secondary"
@@ -233,9 +292,14 @@ export function LatestActionsWidget() {
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mb-1 line-clamp-1">{action.action.text}</p>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {formatDistanceToNow(new Date(action.action.date), { addSuffix: true })}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock className="h-3 w-3" />
+                      {formatDistanceToNow(new Date(action.action.date), { addSuffix: true })}
+                    </div>
+                    <span className="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                      View details →
+                    </span>
                   </div>
                 </div>
               ))}
