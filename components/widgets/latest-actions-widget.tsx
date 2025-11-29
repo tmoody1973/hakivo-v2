@@ -151,7 +151,7 @@ export function LatestActionsWidget() {
     try {
       // If bill is already in database, navigate directly
       if (action.bill.inDatabase) {
-        router.push(`/legislation/${action.bill.congress}/${action.bill.type}/${action.bill.number}`);
+        router.push(`/bills/${billId}`);
         return;
       }
 
@@ -175,7 +175,7 @@ export function LatestActionsWidget() {
       );
 
       // Navigate to bill detail page
-      router.push(`/legislation/${action.bill.congress}/${action.bill.type}/${action.bill.number}`);
+      router.push(`/bills/${billId}`);
     } catch (err) {
       console.error('Error fetching bill:', err);
       // Fallback: open Congress.gov URL in new tab
