@@ -865,6 +865,9 @@ app.get('/auth/me', async (c) => {
 /**
  * GET /auth/workos/login
  * Redirect to WorkOS AuthKit for authentication
+ * Query params:
+ *   - mode: 'signup' or 'signin' (default: 'signin')
+ *   - force: 'true' to force showing auth screen even if session exists
  */
 app.get('/auth/workos/login', async (c) => {
   try {
@@ -881,20 +884,24 @@ app.get('/auth/workos/login', async (c) => {
 
     const workos = new WorkOS(workosApiKey);
 
-    // Check if we should force re-authentication (show login screen even if session exists)
+    // Check mode (signup vs signin)
+    const mode = c.req.query('mode') || 'signin';
     const forceLogin = c.req.query('force') === 'true';
+
+    // Determine screen hint based on mode
+    // 'sign-up' shows the create account form
+    // 'sign-in' shows the login form
+    const screenHint = mode === 'signup' ? 'sign-up' : 'sign-in';
 
     // Generate authorization URL
     const authorizationUrl = workos.userManagement.getAuthorizationUrl({
       provider: 'authkit',
       clientId: workosClientId,
       redirectUri: workosRedirectUri,
-      // Use 'sign-up' to force showing the full auth screen (sign-in OR sign-up options)
-      // This prevents auto-authentication with existing WorkOS session
-      screenHint: forceLogin ? 'sign-up' : 'sign-in',
+      screenHint,
     });
 
-    console.log(`✓ Redirecting to WorkOS AuthKit (force login: ${forceLogin}, screenHint: ${forceLogin ? 'sign-up' : 'sign-in'}): ${authorizationUrl}`);
+    console.log(`✓ Redirecting to WorkOS AuthKit (mode: ${mode}, screenHint: ${screenHint}): ${authorizationUrl}`);
 
     return c.redirect(authorizationUrl);
   } catch (error) {

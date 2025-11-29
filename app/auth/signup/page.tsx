@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth/auth-context';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-export default function SignInPage() {
+export default function SignUpPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [isRedirecting, setIsRedirecting] = useState(false);
@@ -21,11 +21,11 @@ export default function SignInPage() {
     }
   }, [isAuthenticated, authLoading, router]);
 
-  const handleSignIn = () => {
+  const handleSignUp = () => {
     setIsRedirecting(true);
-    // Use mode=signin to show the login form
-    const loginUrl = `${API_BASE_URL}/auth/workos/login?mode=signin`;
-    window.location.href = loginUrl;
+    // Use mode=signup to show the signup form
+    const signupUrl = `${API_BASE_URL}/auth/workos/login?mode=signup`;
+    window.location.href = signupUrl;
   };
 
   if (authLoading) {
@@ -51,15 +51,15 @@ export default function SignInPage() {
               H
             </div>
           </div>
-          <CardTitle className="text-3xl">Welcome Back</CardTitle>
+          <CardTitle className="text-3xl">Create Your Account</CardTitle>
           <CardDescription className="text-muted-foreground">
-            Sign in to access your personalized civic briefings
+            Join Hakivo and start receiving personalized civic briefings
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
           <Button
-            onClick={handleSignIn}
+            onClick={handleSignUp}
             disabled={isRedirecting}
             size="lg"
             className="w-full"
@@ -70,21 +70,21 @@ export default function SignInPage() {
                 Redirecting...
               </>
             ) : (
-              'Log In'
+              'Create Account'
             )}
           </Button>
 
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              Don&apos;t have an account?{' '}
-              <Link href="/auth/signup" className="text-primary hover:underline font-medium">
-                Sign up
+              Already have an account?{' '}
+              <Link href="/auth/signin" className="text-primary hover:underline font-medium">
+                Log in
               </Link>
             </p>
           </div>
 
           <p className="text-xs text-center text-muted-foreground pt-2">
-            By signing in, you agree to our Terms of Service and Privacy Policy
+            By signing up, you agree to our Terms of Service and Privacy Policy
           </p>
         </CardContent>
       </Card>
