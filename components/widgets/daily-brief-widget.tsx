@@ -20,6 +20,27 @@ interface Brief {
   createdAt: number;
 }
 
+// Progress steps for brief generation
+const PROGRESS_STEPS = [
+  { status: 'pending', label: 'Queued', description: 'Your brief is in the queue...' },
+  { status: 'processing', label: 'Gathering Content', description: 'Finding legislation matching your interests...' },
+  { status: 'content_gathered', label: 'Analyzing', description: 'Analyzing bills and fetching news...' },
+  { status: 'script_ready', label: 'Generating Audio', description: 'Creating your personalized audio brief...' },
+  { status: 'completed', label: 'Ready', description: 'Your brief is ready!' },
+];
+
+function getProgressInfo(status: string): { currentStep: number; label: string; description: string } {
+  const stepIndex = PROGRESS_STEPS.findIndex(s => s.status === status);
+  if (stepIndex === -1) {
+    return { currentStep: 0, label: 'Starting', description: 'Initializing...' };
+  }
+  return {
+    currentStep: stepIndex,
+    label: PROGRESS_STEPS[stepIndex].label,
+    description: PROGRESS_STEPS[stepIndex].description
+  };
+}
+
 interface TriviaFact {
   fact: string;
   category: string;
@@ -32,6 +53,7 @@ export function DailyBriefWidget() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingBriefId, setGeneratingBriefId] = useState<string | null>(null);
+  const [generationStatus, setGenerationStatus] = useState<string>('pending');
   const [trivia, setTrivia] = useState<TriviaFact | null>(null);
   const [triviaLoading, setTriviaLoading] = useState(false);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -69,6 +91,9 @@ export function DailyBriefWidget() {
       const data = await response.json();
 
       if (data.success && data.brief) {
+        // Update the generation status for progress display
+        setGenerationStatus(data.brief.status);
+
         if (data.brief.status === 'completed' && data.brief.audioUrl) {
           // Brief is ready!
           setBrief({
@@ -84,6 +109,7 @@ export function DailyBriefWidget() {
           });
           setIsGenerating(false);
           setGeneratingBriefId(null);
+          setGenerationStatus('pending');
 
           // Clear polling
           if (pollIntervalRef.current) {
@@ -94,13 +120,14 @@ export function DailyBriefWidget() {
           // Generation failed
           setIsGenerating(false);
           setGeneratingBriefId(null);
+          setGenerationStatus('pending');
 
           if (pollIntervalRef.current) {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
         }
-        // Otherwise keep polling (status is 'pending' or 'generating')
+        // Otherwise keep polling (status is 'pending', 'processing', 'content_gathered', 'script_ready')
       }
     } catch (err) {
       console.error('Error polling brief status:', err);
@@ -127,10 +154,10 @@ export function DailyBriefWidget() {
     // Start fetching trivia
     fetchTrivia();
 
-    // Rotate trivia every 8 seconds
+    // Rotate trivia every 6 seconds
     const triviaInterval = setInterval(() => {
       fetchTrivia();
-    }, 8000);
+    }, 6000);
 
     try {
       console.log('[DailyBriefWidget] Calling /api/briefs/generate...');
@@ -349,8 +376,11 @@ export function DailyBriefWidget() {
     );
   }
 
-  // Brief is generating - show trivia
+  // Brief is generating - show progress steps and trivia
   if (isGenerating) {
+    const progressInfo = getProgressInfo(generationStatus);
+    const totalSteps = PROGRESS_STEPS.length - 1; // Exclude 'completed'
+
     return (
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
@@ -361,10 +391,36 @@ export function DailyBriefWidget() {
           <CardDescription className="text-xs">Your personalized legislative update is being created</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Progress indicator */}
-          <div className="flex items-center justify-center gap-2 py-2">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <span className="text-sm text-muted-foreground">Creating your daily brief...</span>
+          {/* Progress steps */}
+          <div className="space-y-3">
+            {/* Current step indicator */}
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">{progressInfo.label}</p>
+                <p className="text-xs text-muted-foreground">{progressInfo.description}</p>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${Math.min(((progressInfo.currentStep + 1) / totalSteps) * 100, 100)}%` }}
+              />
+            </div>
+
+            {/* Step indicators */}
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              {PROGRESS_STEPS.slice(0, -1).map((step, index) => (
+                <span
+                  key={step.status}
+                  className={index <= progressInfo.currentStep ? 'text-primary font-medium' : ''}
+                >
+                  {step.label}
+                </span>
+              ))}
+            </div>
           </div>
 
           {/* Trivia section */}

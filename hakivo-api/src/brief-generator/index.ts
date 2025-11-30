@@ -298,8 +298,7 @@ export default class extends Each<Body, Env> {
               parts: [{ text: imagePrompt }]
             }],
             generationConfig: {
-              responseModalities: ['image', 'text'],
-              responseMimeType: 'text/plain'
+              responseModalities: ['TEXT', 'IMAGE']
             }
           }),
         }
@@ -837,10 +836,16 @@ ARTICLE STRUCTURE (follow but don't label):
 4. Analysis: What this means going forward
 5. Call to action: End by encouraging civic engagement
 
+INTEGRATING NEWS SOURCES:
+- WEAVE news headlines and reporting into your narrative
+- Reference what major outlets are saying: "According to [source]..." or "As [outlet] reported..."
+- Use news articles to provide additional context and credibility
+- Link to news sources using markdown: [headline](url)
+
 FORMATTING REQUIREMENTS:
 - Use markdown formatting throughout
 - Use ## for meaningful section headers (e.g., "## Border Security Measures", "## What This Means For You")
-- Include hyperlinks: [bill name](congress.gov url)
+- Include hyperlinks: [bill name](congress.gov url) and [news headline](news url)
 - Bold **key terms** and **bill names** on first mention
 - Separate paragraphs with blank lines for readability
 - Write 500-700 words for daily, 900-1200 for weekly
@@ -860,12 +865,13 @@ Type: ${type} briefing
 === KEY LEGISLATION ===
 ${billsContext}
 
-=== RELATED NEWS ===
+=== RELATED NEWS COVERAGE (integrate these into your article) ===
 ${newsContext}
 
 Write the article naturally without any structural labels. Start directly with an engaging opening paragraph.
 Include ## subheadings where they make sense to break up content.
 Link all bills to their congress.gov URLs.
+IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
 End with an empowering note about staying informed.`
       }
     ];
