@@ -49,22 +49,40 @@ export default class extends Service<Env> {
   }>> {
     const client = this.getExaClient();
 
-    // Calculate dynamic date range - last 7 days by default
+    // Calculate dynamic date range - last 14 days by default
     const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
-    const searchStartDate = startDate || sevenDaysAgo;
+    const searchStartDate = startDate || fourteenDaysAgo;
     const searchEndDate = endDate || now;
 
     // Build search query - simpler approach for better results
-    // Just use interest terms with basic policy context
+    // Use interest/keyword terms with policy context
     const policyTerms = interests.length > 0
       ? interests.map(interest => `"${interest}"`).join(' OR ')
       : 'Congress legislation policy';
 
+    // Keywords that already imply policy context (don't need extra "policy" keyword)
+    const policyImpliedKeywords = [
+      'HUD', 'affordable housing', 'housing crisis', 'eviction', 'homelessness',
+      'Medicaid', 'Medicare', 'immigration', 'border', 'Congress', 'legislation',
+      'federal funding', 'federal research'
+    ];
+
+    // Check if any of the interests already imply policy context
+    const hasPolicyContext = interests.some(interest =>
+      policyImpliedKeywords.some(keyword =>
+        interest.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+
     // Lighter exclusions - only exclude clearly off-topic
     const exclusions = '-celebrity -entertainment -sports';
-    const query = `(${policyTerms}) policy ${exclusions}`;
+
+    // Add "policy" keyword only if not already implied by the terms
+    const query = hasPolicyContext
+      ? `(${policyTerms}) ${exclusions}`
+      : `(${policyTerms}) policy ${exclusions}`;
 
     // Request more results to account for filtering (minimum 25)
     const requestLimit = Math.max(limit, 25);
@@ -105,7 +123,26 @@ export default class extends Service<Env> {
           'npr.org',
           'axios.com',
           'bbc.com',
-          'bloomberg.com'
+          'bloomberg.com',
+          // Think tanks & business
+          'brookings.edu',
+          'businessinsider.com',
+          'propublica.org',
+          // Education
+          'edweek.org',
+          // Healthcare
+          'kff.org',
+          'modernhealthcare.com',
+          // Housing
+          'shelterforce.org',
+          'housingwire.com',
+          'nextcity.org',
+          'urban.org',
+          // General quality journalism
+          'vox.com',
+          // Agriculture & Food
+          'agri-pulse.com',
+          'fooddive.com'
         ]
       });
 
@@ -119,7 +156,7 @@ export default class extends Service<Env> {
         // Must have some text content (relaxed to 200 chars)
         if (!result.text || result.text.length < 200) return false;
 
-        // Exclude URLs that look like landing pages
+        // Exclude URLs that look like landing pages or aggregation pages
         const landingPagePatterns = [
           /\/$/, // Ends with /
           /\/category\//,
@@ -127,10 +164,36 @@ export default class extends Service<Env> {
           /\/topics?\//,
           /\/section\//,
           /\/author\//,
+          /\/news-event\//,  // NYT topic pages
+          /\/live\//,        // Live blogs/feeds
+          /\/archive\//,
+          /\/search/,
+          /\?page=/,         // Pagination pages
           /index\.html$/
         ];
 
         if (landingPagePatterns.some(p => p.test(result.url))) return false;
+
+        // Exclude domain-only URLs and short section pages
+        try {
+          const url = new URL(result.url);
+          if (url.pathname === '/' || url.pathname === '') return false;
+
+          // Filter short-path section pages more carefully
+          // Real articles typically have: dates, long slugs, or 3+ segments
+          const pathSegments = url.pathname.split('/').filter(s => s.length > 0);
+
+          if (pathSegments.length <= 2) {
+            const lastSegment = pathSegments[pathSegments.length - 1] || '';
+            const hasDatePattern = /\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(url.pathname);
+            const hasLongSlug = lastSegment.length > 25; // Real article titles are long
+
+            // Allow if it has a date or long slug, otherwise filter
+            if (!hasDatePattern && !hasLongSlug) return false;
+          }
+        } catch {
+          // Invalid URL, skip
+        }
 
         return true;
       });

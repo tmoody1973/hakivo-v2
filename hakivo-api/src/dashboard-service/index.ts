@@ -970,9 +970,9 @@ app.post('/admin/sync-news', async (c) => {
     let successfulSyncs = 0;
     const errors: Array<{ interest: string; error: string }> = [];
 
-    // Define date range (last 7 days for fresh news)
+    // Define date range (last 14 days for fresh news)
     const endDate = new Date();
-    const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const startDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
     console.log(`📅 Fetching news from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
@@ -989,7 +989,7 @@ app.post('/admin/sync-news', async (c) => {
           keywords,
           startDate,
           endDate,
-          15 // Fetch 15 articles per interest
+          20 // Fetch 20 articles per interest
         );
 
         console.log(`   Found ${results.length} articles`);
@@ -1001,7 +1001,7 @@ app.post('/admin/sync-news', async (c) => {
             const url = new URL(article.url);
             const sourceDomain = url.hostname.replace('www.', '');
 
-            // Insert article (ignore if duplicate URL for this interest)
+            // Insert article (ignore if duplicate URL - relies on unique constraint)
             await db
               .prepare(`
                 INSERT OR IGNORE INTO news_articles (
@@ -1094,6 +1094,85 @@ app.post('/admin/clear-news', async (c) => {
 
   } catch (error) {
     console.error('❌ Failed to clear news articles:', error);
+    return c.json({
+      error: 'Clear failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /admin/news-stats
+ * Get article counts per interest
+ * (Admin endpoint for debugging)
+ */
+app.get('/admin/news-stats', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    const result = await db
+      .prepare(`
+        SELECT
+          interest,
+          COUNT(*) as article_count,
+          MIN(published_date) as oldest_article,
+          MAX(published_date) as newest_article
+        FROM news_articles
+        GROUP BY interest
+        ORDER BY article_count DESC
+      `)
+      .all();
+
+    const totalResult = await db
+      .prepare('SELECT COUNT(*) as total FROM news_articles')
+      .first();
+
+    return c.json({
+      success: true,
+      totalArticles: totalResult?.total || 0,
+      byInterest: result.results
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to get news stats:', error);
+    return c.json({
+      error: 'Stats failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /admin/clear-news-by-interest
+ * Clear news articles for a specific interest
+ * (Admin endpoint for refreshing specific interests)
+ */
+app.post('/admin/clear-news-by-interest', async (c) => {
+  try {
+    const { interest } = await c.req.json();
+
+    if (!interest) {
+      return c.json({ error: 'Interest parameter required' }, 400);
+    }
+
+    console.log(`🗑️  Clearing news articles for interest: ${interest}`);
+
+    const db = c.env.APP_DB;
+    const result = await db
+      .prepare('DELETE FROM news_articles WHERE interest = ?')
+      .bind(interest)
+      .run();
+
+    console.log(`✅ Cleared ${result.meta.changes} articles for ${interest}`);
+
+    return c.json({
+      success: true,
+      message: `News articles cleared for ${interest}`,
+      deletedCount: result.meta.changes
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to clear news by interest:', error);
     return c.json({
       error: 'Clear failed',
       message: error instanceof Error ? error.message : 'Unknown error'
