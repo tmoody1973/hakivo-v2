@@ -380,7 +380,8 @@ app.get('/briefs/:briefId', async (c) => {
       .all();
 
     const featuredBills = (billsResult.results || []).map((bill: any) => ({
-      id: bill.id,
+      // Construct proper bill ID in format congress-type-number for frontend routing
+      id: `${bill.congress}-${bill.bill_type?.toLowerCase()}-${bill.bill_number}`,
       congress: bill.congress,
       billType: bill.bill_type,
       billNumber: bill.bill_number,
