@@ -96,7 +96,33 @@ export default class extends Service<Env> {
 
       console.log(`✓ Exa news search: ${response.results.length} articles found`);
 
-      return response.results.map(result => ({
+      // Filter out landing pages and topic pages
+      const filteredResults = response.results.filter(result => {
+        // Must have a published date (landing pages often don't)
+        if (!result.publishedDate) return false;
+
+        // Must have substantial text content (at least 300 chars)
+        if (!result.text || result.text.length < 300) return false;
+
+        // Exclude URLs that look like landing pages
+        const landingPagePatterns = [
+          /\/$/, // Ends with /
+          /\/category\//,
+          /\/tag\//,
+          /\/topics?\//,
+          /\/section\//,
+          /\/author\//,
+          /index\.html$/
+        ];
+
+        if (landingPagePatterns.some(p => p.test(result.url))) return false;
+
+        return true;
+      });
+
+      console.log(`✓ After filtering: ${filteredResults.length} actual articles`);
+
+      return filteredResults.map(result => ({
         title: result.title || 'Untitled',
         url: result.url,
         author: result.author || null,
