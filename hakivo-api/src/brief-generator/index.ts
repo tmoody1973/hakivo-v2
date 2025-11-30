@@ -167,7 +167,7 @@ export default class extends Each<Body, Env> {
       .bind('content_gathered', briefId).run();
 
     // ==================== STAGE 5: GENERATE SCRIPT ====================
-    console.log(`[STAGE-5] Generating script with Cerebras...`);
+    console.log(`[STAGE-5] Generating script with Claude Sonnet 4.5 + Web Search...`);
     let script: string;
     let headline: string;
     try {
@@ -659,12 +659,12 @@ LATEST: ${bill.latest_action_text}`).join('\n');
       day: 'numeric'
     });
 
-    const messages = [
-      {
-        role: 'system' as const,
-        content: `You are a scriptwriter for "Hakivo Daily" - a civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
+    // System prompt for the script generation
+    const systemPrompt = `You are a scriptwriter for "Hakivo Daily" - a civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
 
 IMPORTANT: Write ONLY natural spoken dialogue. NEVER include section labels, headers, or structural markers in the script. The hosts should NEVER say words like "cold open", "intro", "top story", "spotlight", "outro", or any section names. These are just internal guidance for you.
+
+You have WEB SEARCH capability - use it to find the latest updates on these bills and any breaking news that would enhance the script. Search for recent developments, expert opinions, and real-world impacts.
 
 NATURAL FLOW (hosts never announce these sections - they just flow naturally):
 
@@ -703,11 +703,12 @@ CRITICAL FORMATTING RULES:
 - Plain language - no political jargon
 - HOST B adds context, asks clarifying questions, provides analysis
 
-TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`
-      },
-      {
-        role: 'user' as const,
-        content: `Generate today's Hakivo Daily script for ${today}.
+TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`;
+
+    // User prompt with the bill and news data
+    const userPrompt = `Generate today's Hakivo Daily script for ${today}.
+
+First, use web search to find the latest updates and context on the top story bill. This will help make the script more current and informative.
 
 === TODAY'S TOP STORY ===
 ${topStoryText}
@@ -734,14 +735,15 @@ HEADLINE: [Your headline here]
 SCRIPT:
 HOST A: [emotional cue] dialogue...
 HOST B: [emotional cue] dialogue...
-...`
-      }
-    ];
+...`;
 
-    const result = await this.env.CEREBRAS_CLIENT.generateCompletion(
-      messages,
-      0.75, // temperature for creative but coherent output
-      4096  // max tokens for longer scripts
+    // Use Claude Sonnet 4.5 with web search for enhanced, up-to-date content
+    const result = await this.env.CLAUDE_CLIENT.generateWithWebSearch(
+      systemPrompt,
+      userPrompt,
+      4096,  // max tokens for longer scripts
+      0.75,  // temperature for creative but coherent output
+      3      // max 3 web searches to keep costs reasonable
     );
 
     // Parse headline and script from response
@@ -761,7 +763,7 @@ HOST B: [emotional cue] dialogue...
       script = scriptMatch[1]!.trim();
     }
 
-    console.log(`✓ Generated script with Cerebras: ${script.length} characters, headline: "${headline}"`);
+    console.log(`✓ Generated script with Claude Sonnet 4.5: ${script.length} characters, headline: "${headline}", searches: ${result.searchesUsed || 0}`);
 
     return { script, headline };
   }
@@ -821,11 +823,11 @@ Summary: ${n.summary}`
       day: 'numeric'
     });
 
-    const messages = [
-      {
-        role: 'system' as const,
-        content: `You are a senior correspondent writing a detailed news article for Hakivo, a civic engagement platform.
+    // System prompt for article generation
+    const systemPrompt = `You are a senior correspondent writing a detailed news article for Hakivo, a civic engagement platform.
 Write in the style of NPR or The Atlantic - informative, engaging, and accessible to general audiences.
+
+You have WEB SEARCH capability - use it to find additional context, expert analysis, and recent developments that would enrich the article.
 
 CRITICAL: DO NOT include labels like "Lead:", "Nut Graf:", or any structural markers. Write naturally like a published article.
 
@@ -854,13 +856,14 @@ TONE:
 - Professional yet conversational
 - Explain jargon in plain language
 - Focus on impact to readers
-- Empowering, not preachy`
-      },
-      {
-        role: 'user' as const,
-        content: `Write a polished news article for: "${headline}"
+- Empowering, not preachy`;
+
+    // User prompt with context and instructions
+    const userPrompt = `Write a polished news article for: "${headline}"
 Date: ${today}
 Type: ${type} briefing
+
+Use web search to find additional context, expert opinions, or recent developments about the key legislation.
 
 === KEY LEGISLATION ===
 ${billsContext}
@@ -872,20 +875,21 @@ Write the article naturally without any structural labels. Start directly with a
 Include ## subheadings where they make sense to break up content.
 Link all bills to their congress.gov URLs.
 IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
-End with an empowering note about staying informed.`
-      }
-    ];
+End with an empowering note about staying informed.`;
 
-    const result = await this.env.CEREBRAS_CLIENT.generateCompletion(
-      messages,
-      0.6, // temperature - slightly lower for more factual writing
-      3000  // max tokens for detailed article
+    // Use Claude Sonnet 4.5 with web search for enhanced article content
+    const result = await this.env.CLAUDE_CLIENT.generateWithWebSearch(
+      systemPrompt,
+      userPrompt,
+      3000,  // max tokens for detailed article
+      0.6,   // temperature - slightly lower for more factual writing
+      2      // max 2 web searches for articles
     );
 
     const article = result.content;
     const wordCount = article.split(/\s+/).length;
 
-    console.log(`✓ Generated written article: ${wordCount} words`);
+    console.log(`✓ Generated written article with Claude Sonnet 4.5: ${wordCount} words, searches: ${result.searchesUsed || 0}`);
 
     return { article, wordCount };
   }

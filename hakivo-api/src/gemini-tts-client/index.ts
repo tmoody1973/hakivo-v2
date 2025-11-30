@@ -32,9 +32,9 @@ const VOICE_PAIRS = [
 ];
 
 /**
- * Gemini TTS API endpoint
+ * Gemini TTS API endpoint - Using Pro model for better emotional expression
  */
-const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
+const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent';
 
 interface SynthesizeRequest {
   script: string;
@@ -226,30 +226,58 @@ export default class extends Service<Env> {
 
   /**
    * Convert HOST A/HOST B script format to Gemini's named speaker format
+   * with emotional cues converted to natural language prompts
    *
    * Input:
-   *   HOST A: Welcome to today's brief!
-   *   HOST B: Thanks for joining us.
+   *   HOST A: [warmly] Welcome to today's brief!
+   *   HOST B: [excitedly] Thanks for joining us.
    *
    * Output:
-   *   Kore: Welcome to today's brief!
-   *   Puck: Thanks for joining us.
+   *   Kore (speaking warmly): Welcome to today's brief!
+   *   Puck (speaking excitedly): Thanks for joining us.
+   *
+   * Gemini TTS uses natural language descriptions for emotional delivery,
+   * not special markup. This enhances voice expressiveness.
    */
   private convertToDialoguePrompt(script: string, voiceA: string, voiceB: string): string {
     const lines = script.split('\n');
     const convertedLines: string[] = [];
+
+    // Regex to extract emotional cue from [brackets]
+    const emotionRegex = /^\[([^\]]+)\]\s*/;
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
       if (trimmed.startsWith('HOST A:')) {
-        convertedLines.push(`${voiceA}: ${trimmed.substring(7).trim()}`);
+        const dialogue = trimmed.substring(7).trim();
+        const emotionMatch = dialogue.match(emotionRegex);
+
+        if (emotionMatch) {
+          const emotion = emotionMatch[1];
+          const text = dialogue.replace(emotionRegex, '');
+          // Use natural language emotional instruction for Gemini
+          convertedLines.push(`${voiceA} (speaking ${emotion}): ${text}`);
+        } else {
+          convertedLines.push(`${voiceA}: ${dialogue}`);
+        }
       } else if (trimmed.startsWith('HOST B:')) {
-        convertedLines.push(`${voiceB}: ${trimmed.substring(7).trim()}`);
+        const dialogue = trimmed.substring(7).trim();
+        const emotionMatch = dialogue.match(emotionRegex);
+
+        if (emotionMatch) {
+          const emotion = emotionMatch[1];
+          const text = dialogue.replace(emotionRegex, '');
+          // Use natural language emotional instruction for Gemini
+          convertedLines.push(`${voiceB} (speaking ${emotion}): ${text}`);
+        } else {
+          convertedLines.push(`${voiceB}: ${dialogue}`);
+        }
       } else {
-        // Keep other lines as-is (stage directions, etc.)
-        convertedLines.push(trimmed);
+        // Skip stage directions and other non-dialogue lines
+        // (They shouldn't be spoken)
+        continue;
       }
     }
 

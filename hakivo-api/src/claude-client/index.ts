@@ -97,7 +97,7 @@ ${billsSection}
 Generate both the podcast script and written article in JSON format.`;
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: briefType === 'daily' ? 4096 : 8192,
       temperature: 0.7,
       system: systemPrompt,
@@ -165,7 +165,7 @@ Generate both the podcast script and written article in JSON format.`;
     const client = this.getAnthropicClient();
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: maxTokens,
       temperature,
       system: systemPrompt,
@@ -195,6 +195,81 @@ Generate both the podcast script and written article in JSON format.`;
       content: (content as any).text,
       tokensUsed,
       estimatedCost
+    };
+  }
+
+  /**
+   * Generate content with web search for enhanced, up-to-date information
+   * Uses Claude Sonnet 4.5 with web search tool for real-time data
+   *
+   * @param systemPrompt - System prompt
+   * @param userPrompt - User prompt
+   * @param maxTokens - Max tokens (default: 4096)
+   * @param temperature - Temperature (default: 0.7)
+   * @param maxSearches - Max web searches allowed (default: 5)
+   * @returns Generated text with web search results incorporated
+   */
+  async generateWithWebSearch(
+    systemPrompt: string,
+    userPrompt: string,
+    maxTokens: number = 4096,
+    temperature: number = 0.7,
+    maxSearches: number = 5
+  ): Promise<{ content: string; tokensUsed: number; estimatedCost: number; searchesUsed: number }> {
+    const client = this.getAnthropicClient();
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: maxTokens,
+      temperature,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userPrompt
+        }
+      ],
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+          max_uses: maxSearches
+        }
+      ] as any // Type assertion for web search tool
+    });
+
+    if (!response.content || response.content.length === 0) {
+      throw new Error('No content in Claude response');
+    }
+
+    // Extract text content from response (may include tool use blocks)
+    let textContent = '';
+    let searchesUsed = 0;
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        textContent += (block as any).text;
+      } else if (block.type === 'tool_use') {
+        searchesUsed++;
+      }
+    }
+
+    const inputTokens = response.usage.input_tokens;
+    const outputTokens = response.usage.output_tokens;
+    const tokensUsed = inputTokens + outputTokens;
+
+    // Claude Sonnet 4.5 pricing: $3/MTok input, $15/MTok output
+    // Web search: $10 per 1,000 searches
+    const tokenCost = (inputTokens / 1_000_000 * 3) + (outputTokens / 1_000_000 * 15);
+    const searchCost = (searchesUsed / 1000) * 10;
+    const estimatedCost = tokenCost + searchCost;
+
+    console.log(`✓ Claude web search completion: ${tokensUsed} tokens, ${searchesUsed} searches ($${estimatedCost.toFixed(4)})`);
+
+    return {
+      content: textContent,
+      tokensUsed,
+      estimatedCost,
+      searchesUsed
     };
   }
 
