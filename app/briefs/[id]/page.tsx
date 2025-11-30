@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { Play, Pause, Download, Loader2, ArrowLeft, ExternalLink, FileText, User, Calendar } from "lucide-react"
+import { Play, Pause, Download, Loader2, ArrowLeft, ExternalLink, FileText, User, Calendar, Newspaper } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -157,7 +157,7 @@ export default function BriefDetailPage() {
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-        <div className="max-w-5xl mx-auto flex items-center justify-center py-20">
+        <div className="max-w-4xl mx-auto flex items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function BriefDetailPage() {
   if (error || !brief) {
     return (
       <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-        <div className="max-w-5xl mx-auto space-y-6">
+        <div className="max-w-4xl mx-auto space-y-6">
           <Button variant="ghost" asChild>
             <Link href="/briefs" className="text-muted-foreground hover:text-foreground">
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -184,237 +184,242 @@ export default function BriefDetailPage() {
   }
 
   return (
-    <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Back button */}
-        <Button variant="ghost" asChild>
-          <Link href="/briefs" className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Briefs
-          </Link>
-        </Button>
+    <div className="min-h-screen pb-32">
+      {/* Back button */}
+      <div className="px-6 md:px-8 py-4">
+        <div className="max-w-4xl mx-auto">
+          <Button variant="ghost" asChild>
+            <Link href="/briefs" className="text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Briefs
+            </Link>
+          </Button>
+        </div>
+      </div>
 
-        {/* Hero Section */}
-        <div className="space-y-4">
-          <div className="aspect-[21/9] rounded-lg overflow-hidden bg-muted">
-            <img
-              src={brief.featuredImage || "/us-capitol-building-congressional-legislation-brie.jpg"}
-              alt={brief.title}
-              className="w-full h-full object-cover"
-            />
-          </div>
+      {/* Hero Image - Full Width */}
+      <div className="w-full aspect-[21/9] md:aspect-[3/1] overflow-hidden bg-muted">
+        <img
+          src={brief.featuredImage || "/us-capitol-building-congressional-legislation-brie.jpg"}
+          alt={brief.title}
+          className="w-full h-full object-cover"
+        />
+      </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge className="bg-primary/10 text-primary hover:bg-primary/20">
+      {/* Article Content */}
+      <div className="px-6 md:px-8 py-8">
+        <div className="max-w-3xl mx-auto space-y-8">
+          {/* Article Header */}
+          <header className="space-y-4 border-b border-border pb-6">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <Badge className="bg-primary/10 text-primary hover:bg-primary/20 font-medium">
                 {brief.type === 'daily' ? 'Daily Brief' : 'Weekly Brief'}
               </Badge>
-              <span className="text-sm text-muted-foreground">{formatDate(brief.createdAt)}</span>
+              <span>{formatDate(brief.createdAt)}</span>
               {brief.audioDuration && (
                 <>
-                  <span className="text-sm text-muted-foreground">•</span>
-                  <span className="text-sm text-muted-foreground">{formatDuration(brief.audioDuration)}</span>
+                  <span>•</span>
+                  <span>{formatDuration(brief.audioDuration)} listen</span>
                 </>
               )}
             </div>
 
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-serif font-bold tracking-tight leading-tight">
               {brief.title}
             </h1>
 
             {brief.interests && brief.interests.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pt-2">
                 {brief.interests.map((interest: string) => (
-                  <Badge key={interest} variant="outline" className="capitalize">
+                  <Badge key={interest} variant="outline" className="capitalize text-xs">
                     {interest.replace(/_/g, ' ')}
                   </Badge>
                 ))}
               </div>
             )}
-          </div>
-        </div>
+          </header>
 
-        {/* Audio Player */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-              <div className="flex-1 space-y-2">
-                <div className="text-sm font-medium">Audio Brief</div>
-                <div className="text-sm text-muted-foreground">
-                  Listen to the complete audio briefing
+          {/* Audio Player - Compact */}
+          <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg border">
+            <div className="flex-1">
+              <p className="text-sm font-medium">Listen to this brief</p>
+              <p className="text-xs text-muted-foreground">Audio version available</p>
+            </div>
+            {brief.audioUrl ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="rounded-full"
+                  onClick={handlePlayClick}
+                >
+                  {isThisBriefPlaying ? (
+                    <>
+                      <Pause className="mr-1 h-3 w-3 fill-current" />
+                      Playing
+                    </>
+                  ) : (
+                    <>
+                      <Play className="mr-1 h-3 w-3 fill-current" />
+                      Play
+                    </>
+                  )}
+                </Button>
+                <Button size="sm" variant="ghost" asChild>
+                  <a href={brief.audioUrl} download>
+                    <Download className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
+            ) : (
+              <Badge variant="outline" className="text-xs">Generating...</Badge>
+            )}
+          </div>
+
+          {/* Article Body - Tabs for Written/Transcript */}
+          <Tabs defaultValue="article" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-2 max-w-xs">
+              <TabsTrigger value="article" className="text-sm">
+                <Newspaper className="mr-2 h-4 w-4" />
+                Article
+              </TabsTrigger>
+              <TabsTrigger value="transcript" className="text-sm">
+                <FileText className="mr-2 h-4 w-4" />
+                Transcript
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="article" className="mt-0">
+              {brief.content ? (
+                <article className="prose prose-lg prose-slate dark:prose-invert max-w-none
+                  prose-headings:font-serif prose-headings:font-bold prose-headings:tracking-tight
+                  prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-4 prose-h2:border-b prose-h2:border-border prose-h2:pb-2
+                  prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
+                  prose-p:text-base prose-p:leading-7 prose-p:text-foreground/90 prose-p:mb-5
+                  prose-p:first-of-type:text-lg prose-p:first-of-type:leading-8 prose-p:first-of-type:font-medium
+                  prose-strong:text-foreground prose-strong:font-semibold
+                  prose-a:text-primary prose-a:font-medium prose-a:no-underline hover:prose-a:underline
+                  prose-ul:my-4 prose-ul:text-foreground/90 prose-li:my-1
+                  prose-blockquote:border-l-4 prose-blockquote:border-primary prose-blockquote:bg-muted/50
+                  prose-blockquote:py-2 prose-blockquote:px-4 prose-blockquote:rounded-r-lg
+                  prose-blockquote:not-italic prose-blockquote:text-foreground/80
+                  [&>p:first-of-type]:first-letter:text-5xl [&>p:first-of-type]:first-letter:font-serif
+                  [&>p:first-of-type]:first-letter:font-bold [&>p:first-of-type]:first-letter:mr-2
+                  [&>p:first-of-type]:first-letter:float-left [&>p:first-of-type]:first-letter:leading-none
+                  [&>p:first-of-type]:first-letter:text-primary
+                ">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {brief.content}
+                  </ReactMarkdown>
+                </article>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Newspaper className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Written article not available for this brief.</p>
                 </div>
-              </div>
+              )}
+            </TabsContent>
 
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                {brief.audioUrl ? (
-                  <>
-                    <Button
-                      size="lg"
-                      className="rounded-full px-6"
-                      onClick={handlePlayClick}
-                    >
-                      {isThisBriefPlaying ? (
-                        <>
-                          <Pause className="mr-2 h-4 w-4 fill-current" />
-                          Playing...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="mr-2 h-4 w-4 fill-current" />
-                          Play {formatDuration(brief.audioDuration)}
-                        </>
-                      )}
-                    </Button>
-                    <Button size="lg" variant="outline" asChild>
-                      <a href={brief.audioUrl} download>
-                        <Download className="mr-2 h-4 w-4" />
-                        Download
-                      </a>
-                    </Button>
-                  </>
-                ) : (
-                  <Badge variant="outline">Audio generating...</Badge>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Featured Bills Section */}
-        {brief.featuredBills && brief.featuredBills.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Featured Legislation
-            </h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              {brief.featuredBills.map((bill) => (
-                <Card key={bill.id} className="hover:bg-accent/50 transition-colors">
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <Badge variant="secondary" className="font-mono">
-                        {bill.billType.toUpperCase()} {bill.billNumber}
-                      </Badge>
-                      {bill.policyArea && (
-                        <Badge variant="outline" className="text-xs">
-                          {bill.policyArea}
-                        </Badge>
-                      )}
-                    </div>
-                    <CardTitle className="text-base leading-tight line-clamp-2">
-                      {bill.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <User className="h-4 w-4" />
-                      <span>{bill.sponsor.name} ({bill.sponsor.party}-{bill.sponsor.state})</span>
-                    </div>
-                    {bill.latestActionText && (
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Calendar className="h-3 w-3" />
-                          <span>Latest Action: {bill.latestActionDate}</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {bill.latestActionText}
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex gap-2 pt-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/bills/${bill.id}`}>
-                          View on Hakivo
-                        </Link>
-                      </Button>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={bill.congressUrl} target="_blank" rel="noopener noreferrer">
-                          Congress.gov <ExternalLink className="ml-1 h-3 w-3" />
-                        </a>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Tabs */}
-        <Tabs defaultValue="article" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="article">Written Detail</TabsTrigger>
-            <TabsTrigger value="transcript">Transcript</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="article" className="space-y-4">
-            <Card>
-              <CardContent className="p-6">
-                {brief.content ? (
-                  <article className="prose prose-invert max-w-none prose-headings:text-foreground prose-headings:font-semibold prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-4 prose-h3:text-lg prose-p:text-muted-foreground prose-p:leading-relaxed prose-strong:text-foreground prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-ul:text-muted-foreground prose-li:text-muted-foreground prose-blockquote:border-primary prose-blockquote:text-muted-foreground">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {brief.content}
-                    </ReactMarkdown>
-                  </article>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Written detail not available for this brief.
+            <TabsContent value="transcript" className="mt-0">
+              <div className="bg-muted/30 rounded-lg p-6 border">
+                <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-4 font-medium">
+                    Audio Transcript
                   </p>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="transcript" className="space-y-4">
-            <Card>
-              <CardContent className="p-6">
-                <div className="prose prose-invert max-w-none">
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                  <div className="whitespace-pre-wrap text-sm leading-7 text-foreground/90 font-mono">
                     {getTranscript()}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </div>
+            </TabsContent>
+          </Tabs>
 
-        {/* News Articles Section */}
-        {brief.newsArticles && brief.newsArticles.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Related News</h2>
-            <div className="grid gap-3">
-              {brief.newsArticles.map((article, idx) => (
-                <Card key={idx} className="hover:bg-accent/50 transition-colors">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-1 flex-1">
-                        <a
-                          href={article.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium hover:text-primary transition-colors line-clamp-2"
-                        >
-                          {article.title}
-                        </a>
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {article.summary}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Source: {article.source}
-                        </p>
+          {/* Featured Bills Section */}
+          {brief.featuredBills && brief.featuredBills.length > 0 && (
+            <section className="space-y-4 pt-6 border-t border-border">
+              <h2 className="text-xl font-serif font-bold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Featured Legislation
+              </h2>
+              <div className="grid gap-4">
+                {brief.featuredBills.map((bill) => (
+                  <Card key={bill.id} className="hover:bg-accent/50 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col md:flex-row md:items-start gap-4">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="secondary" className="font-mono text-xs">
+                              {bill.billType.toUpperCase()} {bill.billNumber}
+                            </Badge>
+                            {bill.policyArea && (
+                              <Badge variant="outline" className="text-xs">
+                                {bill.policyArea}
+                              </Badge>
+                            )}
+                          </div>
+                          <h3 className="font-medium leading-snug">
+                            {bill.title}
+                          </h3>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <User className="h-3 w-3" />
+                            <span>{bill.sponsor.name} ({bill.sponsor.party}-{bill.sponsor.state})</span>
+                          </div>
+                          {bill.latestActionText && (
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Latest:</span> {bill.latestActionText}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2 md:flex-col">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/bills/${bill.id}`}>
+                              View Details
+                            </Link>
+                          </Button>
+                          <Button variant="ghost" size="sm" asChild>
+                            <a href={bill.congressUrl} target="_blank" rel="noopener noreferrer">
+                              Congress.gov <ExternalLink className="ml-1 h-3 w-3" />
+                            </a>
+                          </Button>
+                        </div>
                       </div>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={article.url} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* News Articles Section */}
+          {brief.newsArticles && brief.newsArticles.length > 0 && (
+            <section className="space-y-4 pt-6 border-t border-border">
+              <h2 className="text-xl font-serif font-bold">Related News</h2>
+              <div className="grid gap-3">
+                {brief.newsArticles.map((article, idx) => (
+                  <a
+                    key={idx}
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block p-4 rounded-lg border hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <p className="font-medium group-hover:text-primary transition-colors line-clamp-2">
+                        {article.title}
+                      </p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {article.summary}
+                      </p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <ExternalLink className="h-3 w-3" />
+                        {article.source}
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
       </div>
     </div>
   )
