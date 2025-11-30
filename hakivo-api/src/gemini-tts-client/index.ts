@@ -225,12 +225,15 @@ export default class extends Service<Env> {
   }
 
   /**
-   * Convert HOST A/HOST B script format to Gemini's named speaker format
+   * Convert script format to Gemini's named speaker format
    * with emotional cues converted to natural language prompts
    *
+   * Supports both legacy (HOST A/HOST B) and named speakers (ARABELLA/MARK etc.)
+   *
    * Input:
-   *   HOST A: [warmly] Welcome to today's brief!
-   *   HOST B: [excitedly] Thanks for joining us.
+   *   ARABELLA: [warmly] Welcome to today's brief!
+   *   MARK: [excitedly] Thanks for joining us.
+   *   (or HOST A:/HOST B: format)
    *
    * Output:
    *   Kore (speaking warmly): Welcome to today's brief!
@@ -246,39 +249,47 @@ export default class extends Service<Env> {
     // Regex to extract emotional cue from [brackets]
     const emotionRegex = /^\[([^\]]+)\]\s*/;
 
+    // Regex to match speaker labels - supports named hosts or HOST A/B
+    // Matches: "ARABELLA:", "MARK:", "HOST A:", "HOST B:", etc.
+    const speakerRegex = /^([A-Z][A-Z\s]+):\s*/;
+
+    // Track which speakers we've seen to assign voices
+    let firstSpeaker: string | null = null;
+    let secondSpeaker: string | null = null;
+
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      if (trimmed.startsWith('HOST A:')) {
-        const dialogue = trimmed.substring(7).trim();
+      const speakerMatch = trimmed.match(speakerRegex);
+      if (speakerMatch) {
+        const speaker = speakerMatch[1]!.trim();
+        const dialogue = trimmed.substring(speakerMatch[0].length).trim();
+
+        // Assign voices based on order of appearance
+        if (!firstSpeaker) {
+          firstSpeaker = speaker;
+        } else if (!secondSpeaker && speaker !== firstSpeaker) {
+          secondSpeaker = speaker;
+        }
+
+        // Determine which voice to use
+        const isHostA = speaker === firstSpeaker || speaker === 'HOST A';
+        const voice = isHostA ? voiceA : voiceB;
+
+        // Extract emotional cue if present
         const emotionMatch = dialogue.match(emotionRegex);
 
         if (emotionMatch) {
           const emotion = emotionMatch[1];
           const text = dialogue.replace(emotionRegex, '');
           // Use natural language emotional instruction for Gemini
-          convertedLines.push(`${voiceA} (speaking ${emotion}): ${text}`);
+          convertedLines.push(`${voice} (speaking ${emotion}): ${text}`);
         } else {
-          convertedLines.push(`${voiceA}: ${dialogue}`);
+          convertedLines.push(`${voice}: ${dialogue}`);
         }
-      } else if (trimmed.startsWith('HOST B:')) {
-        const dialogue = trimmed.substring(7).trim();
-        const emotionMatch = dialogue.match(emotionRegex);
-
-        if (emotionMatch) {
-          const emotion = emotionMatch[1];
-          const text = dialogue.replace(emotionRegex, '');
-          // Use natural language emotional instruction for Gemini
-          convertedLines.push(`${voiceB} (speaking ${emotion}): ${text}`);
-        } else {
-          convertedLines.push(`${voiceB}: ${dialogue}`);
-        }
-      } else {
-        // Skip stage directions and other non-dialogue lines
-        // (They shouldn't be spoken)
-        continue;
       }
+      // Skip non-dialogue lines (stage directions, headers, etc.)
     }
 
     return convertedLines.join('\n');

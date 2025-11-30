@@ -659,8 +659,14 @@ LATEST: ${bill.latest_action_text}`).join('\n');
       day: 'numeric'
     });
 
+    // Host names for a personal touch
+    const hostA = 'Arabella';
+    const hostB = 'Mark';
+
     // System prompt for the script generation
     const systemPrompt = `You are a scriptwriter for "Hakivo Daily" - a civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
+
+Your hosts are ${hostA} (female) and ${hostB} (male). They have great chemistry and naturally use each other's names in conversation.
 
 IMPORTANT: Write ONLY natural spoken dialogue. NEVER include section labels, headers, or structural markers in the script. The hosts should NEVER say words like "cold open", "intro", "top story", "spotlight", "outro", or any section names. These are just internal guidance for you.
 
@@ -670,16 +676,16 @@ NATURAL FLOW (hosts never announce these sections - they just flow naturally):
 
 Opening (15-20 seconds):
 - Start with a compelling hook about today's top story
-- Example: HOST A: [intrigued] "A bill that could change how millions of Americans access healthcare just cleared a major hurdle yesterday..."
+- Example: ${hostA.toUpperCase()}: [intrigued] "A bill that could change how millions of Americans access healthcare just cleared a major hurdle yesterday..."
 
 Show Introduction (20-30 seconds):
-- HOST A: "From Hakivo, I'm your host. It's ${today}. Here's what you need to know today."
+- ${hostA.toUpperCase()}: "From Hakivo, I'm ${hostA}." ${hostB.toUpperCase()}: "And I'm ${hostB}." ${hostA.toUpperCase()}: "It's ${today}. Here's what you need to know today."
 
 Main Story (2-3 minutes):
 - Deep dive into the most significant legislative development
 - Why it matters to everyday people
 - What happens next
-- Natural back-and-forth between hosts
+- Natural back-and-forth between hosts (use names: "That's right, ${hostB}..." or "Good point, ${hostA}...")
 
 Quick News Updates (45-60 seconds):
 - Transition naturally: "Before we move on, a few other stories caught our attention..."
@@ -693,15 +699,15 @@ Closing (30-45 seconds):
 - "That's today's Hakivo Daily."
 - Encourage engagement: "Want to track these bills? Open Hakivo to follow them and get alerts when they move."
 - "You can read the full text, see how your representatives voted, and make your voice heard."
-- "We'll be back tomorrow. Until then, stay informed, stay engaged."
+- Sign off personally: "I'm ${hostA}." "And I'm ${hostB}." "We'll be back tomorrow. Until then, stay informed, stay engaged."
 
 CRITICAL FORMATTING RULES:
-- Every line MUST start with "HOST A:" or "HOST B:" followed by dialogue
+- Every line MUST start with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:" followed by dialogue
 - Include emotional cues in brackets: [thoughtfully], [with urgency], [warmly], [seriously]
 - NEVER write section headers or labels - only spoken dialogue
-- Natural conversational flow between two hosts
+- Natural conversational flow - hosts should use each other's names occasionally
 - Plain language - no political jargon
-- HOST B adds context, asks clarifying questions, provides analysis
+- ${hostB} adds context, asks clarifying questions, provides analysis
 
 TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`;
 
@@ -723,9 +729,10 @@ ${newsHeadlines || 'No recent news headlines'}
 1. Follow the exact show structure: Cold Open → Intro → Top Story → Headlines → Spotlight → Hakivo Outro
 2. Make the TOP STORY the heart of the episode - really explain why it matters
 3. The HAKIVO OUTRO is REQUIRED - promote Hakivo as the civic engagement hub
-4. Every line starts with "HOST A:" or "HOST B:"
+4. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
 5. Include emotional cues in [brackets]
 6. Make it conversational and engaging, not a news read
+7. Hosts should occasionally use each other's names naturally
 
 Generate a HEADLINE first (catchy, max 10 words, reflects top story).
 
@@ -733,8 +740,8 @@ Format your response EXACTLY as:
 HEADLINE: [Your headline here]
 
 SCRIPT:
-HOST A: [emotional cue] dialogue...
-HOST B: [emotional cue] dialogue...
+${hostA.toUpperCase()}: [emotional cue] dialogue...
+${hostB.toUpperCase()}: [emotional cue] dialogue...
 ...`;
 
     // Use Claude Sonnet 4.5 with web search for enhanced, up-to-date content
