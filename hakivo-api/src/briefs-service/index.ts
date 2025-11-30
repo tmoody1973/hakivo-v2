@@ -363,6 +363,50 @@ app.get('/briefs/:briefId', async (c) => {
       return c.json({ error: 'Brief not found' }, 404);
     }
 
+    // Get featured bills for this brief
+    const billsResult = await db
+      .prepare(`
+        SELECT
+          b.id, b.congress, b.bill_type, b.bill_number, b.title,
+          b.policy_area, b.latest_action_date, b.latest_action_text,
+          b.sponsor_bioguide_id,
+          m.first_name, m.last_name, m.party, m.state
+        FROM brief_bills bb
+        JOIN bills b ON bb.bill_id = b.id
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE bb.brief_id = ?
+      `)
+      .bind(briefId)
+      .all();
+
+    const featuredBills = (billsResult.results || []).map((bill: any) => ({
+      id: bill.id,
+      congress: bill.congress,
+      billType: bill.bill_type,
+      billNumber: bill.bill_number,
+      title: bill.title,
+      policyArea: bill.policy_area,
+      latestActionDate: bill.latest_action_date,
+      latestActionText: bill.latest_action_text,
+      sponsor: {
+        name: `${bill.first_name || ''} ${bill.last_name || ''}`.trim() || 'Unknown',
+        party: bill.party || '?',
+        state: bill.state || '?'
+      },
+      congressUrl: `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.bill_type?.toLowerCase()}/${bill.bill_number}`
+    }));
+
+    // Parse news from JSON if stored in content metadata
+    let newsArticles: any[] = [];
+    try {
+      // Check if there's news JSON stored
+      if (brief.news_json) {
+        newsArticles = JSON.parse(brief.news_json as string);
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+
     // Format response (mapped to actual database schema)
     const response = {
       id: brief.id,
@@ -379,7 +423,10 @@ app.get('/briefs/:briefId', async (c) => {
       characterCount: brief.character_count,
       featuredImage: brief.featured_image,
       createdAt: brief.created_at,
-      updatedAt: brief.updated_at
+      updatedAt: brief.updated_at,
+      // Include structured data
+      featuredBills,
+      newsArticles
     };
 
     return c.json({

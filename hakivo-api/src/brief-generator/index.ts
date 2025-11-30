@@ -196,26 +196,58 @@ export default class extends Each<Body, Env> {
       // Continue without article - non-fatal
     }
 
-    // ==================== STAGE 7: SAVE AND MARK FOR AUDIO PROCESSING ====================
-    console.log(`[STAGE-7] Saving script and marking for audio processing...`);
+    // ==================== STAGE 7: GENERATE FEATURE IMAGE ====================
+    console.log(`[STAGE-7] Generating feature image with Gemini...`);
 
-    // Select featured image from news articles (first non-null image)
+    // Generate photo-realistic feature image using Gemini 2.5 Flash Image
     let featuredImage: string | null = null;
-    for (const article of newsArticles) {
-      if (article.imageUrl) {
-        featuredImage = article.imageUrl;
-        console.log(`[STAGE-7] Selected featured image: ${featuredImage}`);
-        break;
+    try {
+      featuredImage = await this.generateFeatureImage(headline, policyInterests, briefId);
+      if (featuredImage) {
+        console.log(`[STAGE-7] Generated feature image: ${featuredImage}`);
+      } else {
+        // Fallback: Try to get image from news articles
+        console.log(`[STAGE-7] Image generation returned null, checking news articles...`);
+        for (const article of newsArticles) {
+          if (article.imageUrl) {
+            featuredImage = article.imageUrl;
+            console.log(`[STAGE-7] Using fallback image from news: ${featuredImage}`);
+            break;
+          }
+        }
+      }
+    } catch (imageError) {
+      console.error(`[STAGE-7] Image generation error (non-fatal):`, imageError);
+      // Fallback: Try to get image from news articles
+      for (const article of newsArticles) {
+        if (article.imageUrl) {
+          featuredImage = article.imageUrl;
+          console.log(`[STAGE-7] Using fallback image from news: ${featuredImage}`);
+          break;
+        }
       }
     }
+
+    // ==================== STAGE 8: SAVE AND MARK FOR AUDIO PROCESSING ====================
+    console.log(`[STAGE-8] Saving script and marking for audio processing...`);
+
+    // Format news articles for storage
+    const newsJson = newsArticles.length > 0 ? JSON.stringify(
+      newsArticles.slice(0, 5).map((article: any) => ({
+        title: article.title,
+        url: article.url,
+        summary: article.summary,
+        source: article.url ? new URL(article.url).hostname.replace('www.', '') : 'Unknown'
+      }))
+    ) : null;
 
     // Save the script and set status to 'script_ready'
     // Netlify scheduled function (audio-processor) polls for this status every 2 minutes
     await db.prepare(`
       UPDATE briefs
-      SET status = ?, title = ?, script = ?, content = ?, featured_image = ?, updated_at = ?
+      SET status = ?, title = ?, script = ?, content = ?, featured_image = ?, news_json = ?, updated_at = ?
       WHERE id = ?
-    `).bind('script_ready', headline, script, article, featuredImage, Date.now(), briefId).run();
+    `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
     // Save featured bills for deduplication in future briefs
     const featuredBillIds = billsWithActions.map((b: any) => b.id);
@@ -224,6 +256,109 @@ export default class extends Each<Body, Env> {
     // Brief generation complete - audio will be processed by Netlify scheduled function
     console.log(`✅ [BRIEF-GEN] Script saved with status='script_ready'. Audio will be processed by Netlify scheduler.`);
     console.log(`✅ [BRIEF-GEN] Total time: ${Date.now() - startTime}ms`);
+  }
+
+  /**
+   * Generate a photo-realistic feature image for the brief using Gemini 2.5 Flash Image
+   * @param headline - Brief headline for image prompt
+   * @param policyAreas - Policy areas to include in the prompt
+   * @param briefId - Brief ID for file naming
+   * @returns URL of the uploaded image, or null if generation fails
+   */
+  private async generateFeatureImage(
+    headline: string,
+    policyAreas: string[],
+    briefId: string
+  ): Promise<string | null> {
+    try {
+      console.log(`[IMAGE-GEN] Generating feature image for: "${headline}"`);
+
+      // Create a prompt for photo-realistic civic/political imagery
+      const policyContext = policyAreas.slice(0, 3).join(', ') || 'legislation';
+      const imagePrompt = `Photo-realistic editorial image for a news article about ${policyContext}. The image should convey the essence of: "${headline}". Style: Professional news photography, clean composition, natural lighting, suitable for a civic engagement platform. Include subtle American civic imagery like the Capitol building, congressional setting, or professional political environment. No text overlays, no artificial elements, photojournalistic quality.`;
+
+      console.log(`[IMAGE-GEN] Prompt: ${imagePrompt.substring(0, 100)}...`);
+
+      // Call Gemini 2.5 Flash Image API
+      const geminiApiKey = this.env.GEMINI_API_KEY;
+      if (!geminiApiKey) {
+        console.warn('[IMAGE-GEN] GEMINI_API_KEY not set, skipping image generation');
+        return null;
+      }
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: imagePrompt }]
+            }],
+            generationConfig: {
+              responseModalities: ['image', 'text'],
+              responseMimeType: 'text/plain'
+            }
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[IMAGE-GEN] Gemini API error: ${response.status} - ${errorText}`);
+        return null;
+      }
+
+      const result = await response.json();
+
+      // Extract image data from response
+      const candidates = result.candidates;
+      if (!candidates || candidates.length === 0) {
+        console.warn('[IMAGE-GEN] No candidates in Gemini response');
+        return null;
+      }
+
+      const parts = candidates[0]?.content?.parts;
+      if (!parts || parts.length === 0) {
+        console.warn('[IMAGE-GEN] No parts in Gemini response');
+        return null;
+      }
+
+      // Find the image part
+      const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'));
+      if (!imagePart?.inlineData) {
+        console.warn('[IMAGE-GEN] No image data in Gemini response');
+        return null;
+      }
+
+      const { mimeType, data: base64Data } = imagePart.inlineData;
+      console.log(`[IMAGE-GEN] Received image: ${mimeType}, ${base64Data.length} base64 chars`);
+
+      // Convert base64 to Uint8Array
+      const binaryString = atob(base64Data);
+      const imageBuffer = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        imageBuffer[i] = binaryString.charCodeAt(i);
+      }
+
+      // Upload to Vultr storage
+      const uploadResult = await this.env.VULTR_STORAGE_CLIENT.uploadImage(
+        briefId,
+        imageBuffer,
+        mimeType,
+        { headline: headline.substring(0, 100) }
+      );
+
+      console.log(`[IMAGE-GEN] Image uploaded: ${uploadResult.url}`);
+      return uploadResult.url;
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`[IMAGE-GEN] Failed to generate image: ${errorMessage}`);
+      return null;
+    }
   }
 
   /**
@@ -530,41 +665,44 @@ LATEST: ${bill.latest_action_text}`).join('\n');
         role: 'system' as const,
         content: `You are a scriptwriter for "Hakivo Daily" - a civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
 
-SHOW FORMAT (follow this structure exactly):
+IMPORTANT: Write ONLY natural spoken dialogue. NEVER include section labels, headers, or structural markers in the script. The hosts should NEVER say words like "cold open", "intro", "top story", "spotlight", "outro", or any section names. These are just internal guidance for you.
 
-1. COLD OPEN (15-20 seconds)
-   - A compelling hook that teases today's top story
-   - Example: "A bill that could change how millions of Americans access healthcare just cleared a major hurdle..."
+NATURAL FLOW (hosts never announce these sections - they just flow naturally):
 
-2. INTRO (20-30 seconds)
-   - "From Hakivo, I'm [HOST A]. It's ${today}. Here's what you need to know today."
+Opening (15-20 seconds):
+- Start with a compelling hook about today's top story
+- Example: HOST A: [intrigued] "A bill that could change how millions of Americans access healthcare just cleared a major hurdle yesterday..."
 
-3. TOP STORY (2-3 minutes)
-   - Deep dive into the most significant legislative development
-   - Why it matters to everyday people
-   - What happens next
-   - Natural back-and-forth between hosts
+Show Introduction (20-30 seconds):
+- HOST A: "From Hakivo, I'm your host. It's ${today}. Here's what you need to know today."
 
-4. NEWS HEADLINES (45-60 seconds)
-   - Quick hits on 2-3 related news stories
-   - Brief context, keep it moving
+Main Story (2-3 minutes):
+- Deep dive into the most significant legislative development
+- Why it matters to everyday people
+- What happens next
+- Natural back-and-forth between hosts
 
-5. LEGISLATION SPOTLIGHT (1-2 minutes)
-   - Quick look at 1-2 other bills worth watching
-   - Why they're on your radar
+Quick News Updates (45-60 seconds):
+- Transition naturally: "Before we move on, a few other stories caught our attention..."
+- Quick hits on 2-3 related news stories
 
-6. HAKIVO OUTRO (30-45 seconds) - REQUIRED, MUST INCLUDE:
-   - "That's today's Hakivo Daily."
-   - Encourage diving deeper: "Want to track these bills? Open Hakivo to follow [bill name] and get alerts when it moves."
-   - "You can read the full text, see your representatives' positions, and make your voice heard."
-   - "We'll be back tomorrow with more. Until then, stay informed, stay engaged."
+Other Bills Worth Watching (1-2 minutes):
+- Transition naturally: "There's another bill moving through Congress that connects to this..."
+- Quick look at 1-2 other relevant bills
 
-FORMATTING RULES:
-- Every line MUST start with "HOST A:" or "HOST B:"
+Closing (30-45 seconds):
+- "That's today's Hakivo Daily."
+- Encourage engagement: "Want to track these bills? Open Hakivo to follow them and get alerts when they move."
+- "You can read the full text, see how your representatives voted, and make your voice heard."
+- "We'll be back tomorrow. Until then, stay informed, stay engaged."
+
+CRITICAL FORMATTING RULES:
+- Every line MUST start with "HOST A:" or "HOST B:" followed by dialogue
 - Include emotional cues in brackets: [thoughtfully], [with urgency], [warmly], [seriously]
-- Keep HOST B's role as adding context, asking good questions, providing analysis
-- Natural conversational flow - not a list of facts
-- Plain language - no jargon
+- NEVER write section headers or labels - only spoken dialogue
+- Natural conversational flow between two hosts
+- Plain language - no political jargon
+- HOST B adds context, asks clarifying questions, provides analysis
 
 TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`
       },

@@ -773,8 +773,8 @@ app.get('/bills/:congress/:type/:number', async (c) => {
         if (apiResponse && apiResponse.bill) {
           const apiBill = apiResponse.bill;
 
-          // Generate bill ID
-          const billId = `${congress}-${billType}-${billNumber}`;
+          // Generate bill ID (lowercase for consistency)
+          const billId = `${congress}-${billType.toLowerCase()}-${billNumber}`;
 
           // Extract sponsor info if available
           const sponsorBioguideId = apiBill.sponsors?.[0]?.bioguideId || null;
@@ -1037,13 +1037,14 @@ app.post('/bills/:congress/:type/:number/analyze', async (c) => {
   try {
     const db = c.env.APP_DB;
     const queue = c.env.ENRICHMENT_QUEUE;
+    const congressApiClient = c.env.CONGRESS_API_CLIENT;
 
     const congress = parseInt(c.req.param('congress'));
     const billType = c.req.param('type');
     const billNumber = parseInt(c.req.param('number'));
 
-    // Construct bill_id
-    const billId = `${congress}-${billType}-${billNumber}`;
+    // Construct bill_id (lowercase for consistency)
+    const billId = `${congress}-${billType.toLowerCase()}-${billNumber}`;
 
     // Check if bill exists
     const bill = await db
@@ -1081,11 +1082,33 @@ app.post('/bills/:congress/:type/:number/analyze', async (c) => {
     }
 
     // Check if bill has text to analyze
-    const billText = bill.text as string | null | undefined;
+    let billText = bill.text as string | null | undefined;
+
+    // If no text, try to fetch it from Congress.gov
+    if (!billText || billText.length < 100) {
+      console.log(`📄 Bill ${billId} missing text, fetching from Congress.gov...`);
+      try {
+        // Congress.gov API requires lowercase bill type
+        billText = await congressApiClient.getBillText(congress, billType.toLowerCase(), billNumber);
+
+        if (billText && billText.length >= 100) {
+          // Store the text for future use
+          await db
+            .prepare('UPDATE bills SET text = ? WHERE id = ?')
+            .bind(billText, bill.id)
+            .run();
+          console.log(`✅ Fetched and stored bill text (${billText.length} chars)`);
+        }
+      } catch (textError) {
+        console.error(`❌ Failed to fetch bill text:`, textError);
+      }
+    }
+
+    // Check again after attempting to fetch
     if (!billText || billText.length < 100) {
       return c.json({
         error: 'Bill text not available for analysis',
-        message: 'Cannot analyze bill without full text'
+        message: 'Cannot analyze bill without full text. The bill text may not yet be published on Congress.gov.'
       }, 400);
     }
 

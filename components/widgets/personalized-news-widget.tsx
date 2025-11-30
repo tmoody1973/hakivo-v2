@@ -69,16 +69,16 @@ export function PersonalizedNewsWidget() {
     const now = new Date()
     const published = new Date(publishedDate)
     const diffInMs = now.getTime() - published.getTime()
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60))
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24))
 
-    // Handle negative time (future dates) gracefully
-    if (diffInMs < 0) return 'Just now'
-    if (diffInHours < 1) return 'Just now'
-    if (diffInHours < 24) return `${diffInHours}h ago`
-    const diffInDays = Math.floor(diffInHours / 24)
+    // Handle invalid or future dates (bad data from API)
+    if (isNaN(diffInDays) || diffInDays < 0) {
+      return 'Recent'
+    }
+
+    if (diffInDays === 0) return 'Today'
     if (diffInDays === 1) return 'Yesterday'
-    if (diffInDays < 7) return `${diffInDays}d ago`
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)}w ago`
+    if (diffInDays < 7) return `${diffInDays} days ago`
     return published.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   }
 

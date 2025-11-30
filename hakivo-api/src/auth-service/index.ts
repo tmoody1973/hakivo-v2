@@ -111,7 +111,7 @@ async function generateAccessToken(userId: string, email: string, env: any): Pro
   const token = await new jose.SignJWT({ userId, email })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('15m') // Short-lived access token
+    .setExpirationTime('1h') // Access token valid for 1 hour (was 15m)
     .sign(secret);
 
   return token;

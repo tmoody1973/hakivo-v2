@@ -1,11 +1,12 @@
 "use client"
 import type React from "react"
-import { Play, Clock, Bookmark, Download, Pause, Loader2 } from 'lucide-react'
+import { Play, Clock, Bookmark, Download, Pause, Loader2, Sparkles } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAuth } from "@/lib/auth/auth-context"
+import { useAudioPlayer, type AudioTrack } from "@/lib/audio/audio-player-context"
 
 interface Brief {
   id: string;
@@ -19,13 +20,209 @@ interface Brief {
   createdAt: number;
 }
 
+interface TriviaFact {
+  fact: string;
+  category: string;
+}
+
 export function DailyBriefWidget() {
   const { accessToken, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { play, pause, currentTrack, isPlaying } = useAudioPlayer();
   const [brief, setBrief] = useState<Brief | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingBriefId, setGeneratingBriefId] = useState<string | null>(null);
+  const [trivia, setTrivia] = useState<TriviaFact | null>(null);
+  const [triviaLoading, setTriviaLoading] = useState(false);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Check if this brief is currently playing in the persistent player
+  const isThisBriefPlaying = brief && currentTrack?.id === brief.id && isPlaying;
+
+  // Fetch trivia fact
+  const fetchTrivia = useCallback(async () => {
+    setTriviaLoading(true);
+    try {
+      const response = await fetch('/api/trivia');
+      if (response.ok) {
+        const data = await response.json();
+        setTrivia({ fact: data.fact, category: data.category });
+      }
+    } catch (err) {
+      console.error('Error fetching trivia:', err);
+    } finally {
+      setTriviaLoading(false);
+    }
+  }, []);
+
+  // Poll for brief status
+  const pollBriefStatus = useCallback(async (briefId: string) => {
+    try {
+      const response = await fetch(`/api/briefs/status/${briefId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+
+      if (data.success && data.brief) {
+        if (data.brief.status === 'completed' && data.brief.audioUrl) {
+          // Brief is ready!
+          setBrief({
+            id: data.brief.id,
+            type: 'daily',
+            title: data.brief.title || "Today's Legislative Brief",
+            headline: '',
+            status: data.brief.status,
+            audioUrl: data.brief.audioUrl,
+            audioDuration: data.brief.audioDuration,
+            featuredImage: data.brief.featuredImage,
+            createdAt: data.brief.createdAt,
+          });
+          setIsGenerating(false);
+          setGeneratingBriefId(null);
+
+          // Clear polling
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+        } else if (data.brief.status === 'failed') {
+          // Generation failed
+          setIsGenerating(false);
+          setGeneratingBriefId(null);
+
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+        }
+        // Otherwise keep polling (status is 'pending' or 'generating')
+      }
+    } catch (err) {
+      console.error('Error polling brief status:', err);
+    }
+  }, [accessToken]);
+
+  // Trigger on-demand brief generation
+  const triggerBriefGeneration = useCallback(async () => {
+    console.log('[DailyBriefWidget] triggerBriefGeneration called, accessToken:', !!accessToken, 'isGenerating:', isGenerating);
+
+    if (!accessToken) {
+      console.error('[DailyBriefWidget] No access token available');
+      return;
+    }
+
+    if (isGenerating) {
+      console.log('[DailyBriefWidget] Already generating, skipping');
+      return;
+    }
+
+    setIsGenerating(true);
+    console.log('[DailyBriefWidget] Starting brief generation...');
+
+    // Start fetching trivia
+    fetchTrivia();
+
+    // Rotate trivia every 8 seconds
+    const triviaInterval = setInterval(() => {
+      fetchTrivia();
+    }, 8000);
+
+    try {
+      console.log('[DailyBriefWidget] Calling /api/briefs/generate...');
+      const response = await fetch('/api/briefs/generate', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[DailyBriefWidget] Generate response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[DailyBriefWidget] Generate failed:', response.status, errorText);
+        setIsGenerating(false);
+        clearInterval(triviaInterval);
+        return;
+      }
+
+      const data = await response.json();
+      console.log('[DailyBriefWidget] Generate response data:', data);
+
+      if (data.success) {
+        if (data.status === 'completed' || data.audioUrl) {
+          // Brief already exists, fetch it
+          fetchLatestBrief();
+          setIsGenerating(false);
+          clearInterval(triviaInterval);
+        } else if (data.briefId) {
+          // Brief is being generated, start polling
+          setGeneratingBriefId(data.briefId);
+
+          // Poll every 3 seconds
+          pollIntervalRef.current = setInterval(() => {
+            pollBriefStatus(data.briefId);
+          }, 3000);
+
+          // Stop trivia rotation when brief is ready (handled in pollBriefStatus)
+          // Store the trivia interval to clear it later
+          const checkReady = setInterval(() => {
+            if (!isGenerating) {
+              clearInterval(triviaInterval);
+              clearInterval(checkReady);
+            }
+          }, 1000);
+        }
+      } else {
+        console.error('[DailyBriefWidget] Generate response not successful:', data);
+        setIsGenerating(false);
+        clearInterval(triviaInterval);
+      }
+    } catch (err) {
+      console.error('[DailyBriefWidget] Error triggering brief generation:', err);
+      setIsGenerating(false);
+      clearInterval(triviaInterval);
+    }
+  }, [accessToken, isGenerating, fetchTrivia, pollBriefStatus]);
+
+  // Check if today's brief exists
+  const checkTodaysBrief = useCallback(async () => {
+    try {
+      const response = await fetch('/api/briefs?limit=1&status=completed', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+
+      if (data.success && data.briefs && data.briefs.length > 0) {
+        const latestBrief = data.briefs[0];
+
+        // Check if it's from today
+        const briefDate = new Date(latestBrief.createdAt);
+        const today = new Date();
+        const isToday = briefDate.toDateString() === today.toDateString();
+
+        if (isToday) {
+          return latestBrief;
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Error checking today\'s brief:', err);
+      return null;
+    }
+  }, [accessToken]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -38,6 +235,15 @@ export function DailyBriefWidget() {
     fetchLatestBrief();
   }, [isAuthenticated, accessToken, authLoading]);
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
   const fetchLatestBrief = async () => {
     try {
       const response = await fetch('/api/briefs?limit=1&status=completed', {
@@ -46,15 +252,34 @@ export function DailyBriefWidget() {
         },
       });
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        setBrief(null);
+        return;
+      }
 
       const data = await response.json();
 
       if (data.success && data.briefs && data.briefs.length > 0) {
-        setBrief(data.briefs[0]);
+        const latestBrief = data.briefs[0];
+
+        // Check if brief is from today - if not, show generate button
+        const briefDate = new Date(latestBrief.createdAt);
+        const today = new Date();
+        const isToday = briefDate.toDateString() === today.toDateString();
+
+        if (isToday) {
+          setBrief(latestBrief);
+        } else {
+          // Brief is from a previous day - prompt user to generate today's
+          console.log('[DailyBriefWidget] Latest brief is from', briefDate.toDateString(), ', not today');
+          setBrief(null);
+        }
+      } else {
+        setBrief(null);
       }
     } catch (err) {
       console.error('Error fetching brief:', err);
+      setBrief(null);
     } finally {
       setIsLoading(false);
     }
@@ -75,34 +300,33 @@ export function DailyBriefWidget() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const formatCurrentTime = (seconds: number, total: number | null) => {
-    const current = Math.floor(seconds);
-    const remaining = (total || 0) - current;
-    const mins = Math.floor(remaining / 60);
-    const secs = remaining % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const togglePlayback = () => {
-    if (!brief?.audioUrl) return;
-
-    if (!audioRef.current) {
-      audioRef.current = new Audio(brief.audioUrl);
-      audioRef.current.addEventListener('timeupdate', () => {
-        setCurrentTime(audioRef.current?.currentTime || 0);
-      });
-      audioRef.current.addEventListener('ended', () => {
-        setIsPlaying(false);
-        setCurrentTime(0);
-      });
+  const handlePlayClick = () => {
+    console.log('[DailyBriefWidget] handlePlayClick called, brief:', brief?.id, brief?.audioUrl);
+    if (!brief?.audioUrl) {
+      console.log('[DailyBriefWidget] No audio URL, returning');
+      return;
     }
 
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
+    // If this brief is already playing, pause it
+    if (isThisBriefPlaying) {
+      console.log('[DailyBriefWidget] Brief already playing, pausing');
+      pause();
+      return;
     }
-    setIsPlaying(!isPlaying);
+
+    // Create track object and dispatch to persistent player
+    const track: AudioTrack = {
+      id: brief.id,
+      title: brief.title,
+      type: 'brief',
+      audioUrl: brief.audioUrl,
+      imageUrl: brief.featuredImage,
+      duration: brief.audioDuration || undefined,
+      createdAt: new Date(brief.createdAt).toISOString(),
+    };
+
+    console.log('[DailyBriefWidget] Playing track:', track);
+    play(track);
   };
 
   // Loading state
@@ -125,7 +349,63 @@ export function DailyBriefWidget() {
     );
   }
 
-  // No brief available
+  // Brief is generating - show trivia
+  if (isGenerating) {
+    return (
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Radio className="h-4 w-4 text-primary animate-pulse" />
+            Generating Your Brief
+          </CardTitle>
+          <CardDescription className="text-xs">Your personalized legislative update is being created</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Progress indicator */}
+          <div className="flex items-center justify-center gap-2 py-2">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground">Creating your daily brief...</span>
+          </div>
+
+          {/* Trivia section */}
+          {trivia && (
+            <div className="bg-primary/5 rounded-lg p-4 border border-primary/10">
+              <div className="flex items-start gap-3">
+                <Sparkles className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    {trivia.category}
+                  </Badge>
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {trivia.fact}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!trivia && triviaLoading && (
+            <div className="bg-muted/50 rounded-lg p-4 animate-pulse">
+              <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+              <div className="h-4 bg-muted rounded w-full"></div>
+              <div className="h-4 bg-muted rounded w-2/3 mt-2"></div>
+            </div>
+          )}
+
+          <div className="pt-2 border-t">
+            <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground h-8 text-xs" asChild>
+              <Link href="/briefs">
+                <Clock className="mr-2 h-3.5 w-3.5" />
+                View Past Briefs
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // No brief available - offer to generate
   if (!brief) {
     return (
       <Card className="overflow-hidden">
@@ -136,11 +416,18 @@ export function DailyBriefWidget() {
           </CardTitle>
           <CardDescription className="text-xs">Your personalized legislative update</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">
-            <p className="text-sm text-muted-foreground">
-              Your first daily brief is being generated. Check back soon!
+        <CardContent className="space-y-4">
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              No brief available yet for today. Generate one now!
             </p>
+            <Button
+              onClick={triggerBriefGeneration}
+              className="rounded-full px-6"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Generate Today's Brief
+            </Button>
           </div>
           <div className="pt-2 border-t">
             <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground h-8 text-xs" asChild>
@@ -192,13 +479,13 @@ export function DailyBriefWidget() {
               {brief.audioUrl ? (
                 <Button
                   size="sm"
-                  onClick={togglePlayback}
+                  onClick={handlePlayClick}
                   className="rounded-full px-5 h-9 bg-primary hover:bg-primary/90"
                 >
-                  {isPlaying ? (
+                  {isThisBriefPlaying ? (
                     <>
                       <Pause className="h-3.5 w-3.5 mr-1.5 fill-current" />
-                      {formatCurrentTime(currentTime, brief.audioDuration)}
+                      Playing...
                     </>
                   ) : (
                     <>

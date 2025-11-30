@@ -96,15 +96,15 @@ export default function HomePage() {
               </p>
 
               {/* Era Comparison */}
-              <div className="flex items-center gap-6 p-6 bg-background/50 rounded-2xl border border-border">
+              <div className="flex items-center justify-center gap-10 p-8 bg-background/50 rounded-2xl border border-border">
                 <div className="text-center">
-                  <span className="block text-2xl font-bold text-primary">1975</span>
-                  <span className="text-sm text-muted-foreground">3-minute cartoon</span>
+                  <span className="block text-4xl font-bold text-primary">1975</span>
+                  <span className="text-base text-muted-foreground">3-minute cartoon</span>
                 </div>
-                <div className="text-2xl text-primary">→</div>
+                <div className="text-3xl text-primary">→</div>
                 <div className="text-center">
-                  <span className="block text-2xl font-bold text-primary">2025</span>
-                  <span className="text-sm text-muted-foreground">Your personal civic hub</span>
+                  <span className="block text-4xl font-bold text-primary">2025</span>
+                  <span className="text-base text-muted-foreground">Your personal civic hub</span>
                 </div>
               </div>
             </div>

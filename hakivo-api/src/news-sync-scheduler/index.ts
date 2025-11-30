@@ -76,8 +76,17 @@ export default class extends Task<Env> {
             const isLanding = this.isLandingPage(article);
             if (isLanding) {
               console.log(`   🚫 Filtered landing page: "${article.title}"`);
+              return false;
             }
-            return !isLanding;
+
+            // Filter out articles with suspicious dates (Dec 31 placeholder dates)
+            const hasBadDate = this.hasSuspiciousDate(article.publishedDate);
+            if (hasBadDate) {
+              console.log(`   🚫 Filtered bad date (${article.publishedDate}): "${article.title}"`);
+              return false;
+            }
+
+            return true;
           });
 
           console.log(`   Found ${results.length} articles (${filteredResults.length} after filtering)`);
@@ -343,6 +352,40 @@ export default class extends Task<Env> {
     } catch (error) {
       console.error('❌ News sync scheduler failed:', error);
       throw error;
+    }
+  }
+
+  // Check if date looks like a placeholder (Dec 31, Jan 1, etc.)
+  private hasSuspiciousDate(publishedDate: string): boolean {
+    if (!publishedDate) return true;
+
+    try {
+      const date = new Date(publishedDate);
+      if (isNaN(date.getTime())) return true;
+
+      const month = date.getMonth(); // 0-indexed (0 = Jan, 11 = Dec)
+      const day = date.getDate();
+      const now = new Date();
+      const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Filter out Dec 31 and Jan 1 (common placeholder dates)
+      if ((month === 11 && day === 31) || (month === 0 && day === 1)) {
+        return true;
+      }
+
+      // Filter out dates more than 7 days old (we only want recent news)
+      if (daysDiff > 7) {
+        return true;
+      }
+
+      // Filter out future dates (bad data)
+      if (daysDiff < 0) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      return true;
     }
   }
 

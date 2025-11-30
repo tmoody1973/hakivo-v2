@@ -32,10 +32,10 @@ export default class extends Service<Env> {
   }
 
   /**
-   * Generate date-based file key
+   * Generate date-based file key for audio
    * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.mp3
    */
-  private generateFileKey(briefId: string, timestamp?: Date): string {
+  private generateAudioKey(briefId: string, timestamp?: Date): string {
     const date = timestamp || new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -43,6 +43,20 @@ export default class extends Service<Env> {
     const ts = date.getTime();
 
     return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.mp3`;
+  }
+
+  /**
+   * Generate date-based file key for images
+   * Format: images/YYYY/MM/DD/brief-{briefId}-{timestamp}.png
+   */
+  private generateImageKey(briefId: string, timestamp?: Date): string {
+    const date = timestamp || new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const ts = date.getTime();
+
+    return `images/${year}/${month}/${day}/brief-${briefId}-${ts}.png`;
   }
 
   /**
@@ -71,7 +85,7 @@ export default class extends Service<Env> {
       throw new Error('VULTR_BUCKET_NAME environment variable is not set');
     }
 
-    const key = this.generateFileKey(briefId);
+    const key = this.generateAudioKey(briefId);
     const buffer = audioBuffer instanceof ArrayBuffer ? new Uint8Array(audioBuffer) : audioBuffer;
 
     // Debug: log credentials info (first 8 chars of access key only)
@@ -113,6 +127,79 @@ export default class extends Service<Env> {
     const url = `https://${endpoint}/${bucketName}/${key}`;
 
     console.log(`[VULTR] Audio uploaded: ${key} (${buffer.length} bytes)`);
+
+    return {
+      key,
+      url,
+      size: buffer.length
+    };
+  }
+
+  /**
+   * Upload image file to Vultr object storage
+   * @param briefId - Brief ID for organizing files
+   * @param imageBuffer - Image file buffer
+   * @param contentType - MIME type (default: image/png)
+   * @param metadata - Additional metadata
+   * @returns File key and public URL
+   */
+  async uploadImage(
+    briefId: string,
+    imageBuffer: Uint8Array | ArrayBuffer,
+    contentType: string = 'image/png',
+    metadata?: Record<string, string>
+  ): Promise<{ key: string; url: string; size: number }> {
+    const aws = this.getAwsClient();
+    const endpoint = this.env.VULTR_ENDPOINT;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
+
+    if (!endpoint) {
+      throw new Error('VULTR_ENDPOINT environment variable is not set');
+    }
+
+    if (!bucketName) {
+      throw new Error('VULTR_BUCKET_NAME environment variable is not set');
+    }
+
+    const key = this.generateImageKey(briefId);
+    const buffer = imageBuffer instanceof ArrayBuffer ? new Uint8Array(imageBuffer) : imageBuffer;
+
+    console.log(`[VULTR] Uploading image to bucket: ${bucketName}, key: ${key}`);
+
+    // Build headers with metadata
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'x-amz-meta-briefid': briefId,
+      'x-amz-meta-uploadedat': new Date().toISOString(),
+    };
+
+    // Add custom metadata
+    if (metadata) {
+      for (const [metaKey, value] of Object.entries(metadata)) {
+        headers[`x-amz-meta-${metaKey.toLowerCase()}`] = value;
+      }
+    }
+
+    // Construct the S3 URL (path-style)
+    const uploadUrl = `https://${endpoint}/${bucketName}/${key}`;
+
+    // Sign and send the request using aws4fetch
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const response = await aws.fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: arrayBuffer,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`S3 image upload failed: ${response.status} - ${errorText}`);
+    }
+
+    // Generate public URL (path-style)
+    const url = `https://${endpoint}/${bucketName}/${key}`;
+
+    console.log(`[VULTR] Image uploaded: ${key} (${buffer.length} bytes)`);
 
     return {
       key,

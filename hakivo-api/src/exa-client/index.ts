@@ -56,10 +56,15 @@ export default class extends Service<Env> {
     const searchStartDate = startDate || sevenDaysAgo;
     const searchEndDate = endDate || now;
 
-    // Build search query following Exa integration strategy
-    const keywordQuery = interests.length > 0 ? interests.join(' OR ') : 'Congress legislation';
-    const contextQuery = '(news headline OR article OR bill OR legislation OR law OR congress OR act) site:news headline OR site:article';
-    const query = `${keywordQuery} ${contextQuery}`;
+    // Build search query focused on legislative/policy news
+    // Combine user interests with explicit policy context to filter out off-topic news
+    const policyTerms = interests.length > 0
+      ? interests.map(interest => `("${interest}" (Congress OR legislation OR bill OR policy OR federal OR government))`).join(' OR ')
+      : 'Congress legislation bill';
+
+    // Add explicit exclusions for common off-topic news categories
+    const exclusions = '-celebrity -entertainment -trial -arrest -crime -sports -scandal';
+    const query = `${policyTerms} ${exclusions}`;
 
     try {
       const response = await client.searchAndContents(query, {

@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { ConditionalNav } from "@/components/conditional-nav"
 import { ConditionalPlayer } from "@/components/conditional-player"
 import { AuthProvider } from "@/lib/auth/auth-context"
+import { AudioPlayerProvider } from "@/lib/audio/audio-player-context"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -49,15 +50,17 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`} suppressHydrationWarning>
         <AuthProvider>
-          <div className="flex h-screen flex-col">
-            <ConditionalNav />
+          <AudioPlayerProvider>
+            <div className="flex h-screen flex-col">
+              <ConditionalNav />
 
-            <main className="flex-1 overflow-auto pb-24">
-              {children}
-            </main>
+              <main className="flex-1 overflow-auto pb-24">
+                {children}
+              </main>
 
-            <ConditionalPlayer />
-          </div>
+              <ConditionalPlayer />
+            </div>
+          </AudioPlayerProvider>
         </AuthProvider>
         {/* Analytics component removed */}
       </body>

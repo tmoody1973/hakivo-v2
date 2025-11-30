@@ -113,20 +113,23 @@ export function EnhancedNewsCard({ article }: EnhancedNewsCardProps) {
   )
 }
 
-// Helper function to calculate time ago
+// Helper function to calculate time ago - only show days
 function getTimeAgo(date: Date): string {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMins / 60)
-  const diffDays = Math.floor(diffHours / 24)
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
-  if (diffMins < 60) {
-    return `${diffMins} ${diffMins === 1 ? 'minute' : 'minutes'} ago`
-  } else if (diffHours < 24) {
-    return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`
+  // Handle invalid dates or future dates (bad data from API)
+  if (isNaN(diffDays) || diffDays < 0) {
+    return 'Recent'
+  }
+
+  if (diffDays === 0) {
+    return 'Today'
+  } else if (diffDays === 1) {
+    return 'Yesterday'
   } else if (diffDays < 7) {
-    return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`
+    return `${diffDays} days ago`
   } else {
     return date.toLocaleDateString('en-US', {
       month: 'short',

@@ -1787,6 +1787,60 @@ app.post('/admin/insert-articles', async (c) => {
   }
 });
 
+// Admin endpoint to clean up articles with bad dates (Dec 31 placeholder, old articles)
+app.post('/admin/cleanup-bad-dates', async (c) => {
+  try {
+    console.log('🧹 [ADMIN] Cleaning up articles with bad dates...');
+
+    const db = c.env.APP_DB;
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+    // Delete articles with Dec 31 dates (placeholder)
+    const dec31Result = await db
+      .prepare(`
+        DELETE FROM news_articles
+        WHERE published_date LIKE '%-12-31%'
+      `)
+      .run();
+
+    const dec31Deleted = dec31Result.meta?.changes || 0;
+    console.log(`   Deleted ${dec31Deleted} articles with Dec 31 dates`);
+
+    // Delete articles with Jan 1 dates (placeholder)
+    const jan1Result = await db
+      .prepare(`
+        DELETE FROM news_articles
+        WHERE published_date LIKE '%-01-01%'
+      `)
+      .run();
+
+    const jan1Deleted = jan1Result.meta?.changes || 0;
+    console.log(`   Deleted ${jan1Deleted} articles with Jan 1 dates`);
+
+    // Also clear the user views for these articles so they don't appear in rotation
+    await db
+      .prepare('DELETE FROM user_article_views WHERE article_id NOT IN (SELECT id FROM news_articles)')
+      .run();
+
+    return c.json({
+      success: true,
+      deleted: {
+        dec31: dec31Deleted,
+        jan1: jan1Deleted,
+        total: dec31Deleted + jan1Deleted
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Admin cleanup bad dates error:', error);
+    return c.json({
+      error: 'Failed to cleanup bad dates',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 // Admin endpoint to clean up landing pages from database
 app.post('/admin/cleanup-landing-pages', async (c) => {
   try {
@@ -1909,6 +1963,199 @@ app.post('/admin/cleanup-landing-pages', async (c) => {
     console.error('Admin cleanup landing pages error:', error);
     return c.json({
       error: 'Failed to cleanup landing pages',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /trivia
+ * Get congressional/legislative trivia fact
+ * Used to entertain users while briefs are generating
+ */
+app.get('/trivia', async (c) => {
+  try {
+    console.log('[/trivia] Generating congressional trivia...');
+
+    const cerebrasClient = c.env.CEREBRAS_CLIENT;
+    const result = await cerebrasClient.generateTrivia();
+
+    console.log(`[/trivia] Generated trivia: ${result.fact.slice(0, 50)}...`);
+
+    return c.json({
+      success: true,
+      fact: result.fact,
+      category: result.category
+    });
+  } catch (error) {
+    console.error('Trivia generation error:', error);
+
+    // Return a fallback trivia fact
+    const fallbackFacts = [
+      { fact: 'Did you know? The Capitol Building has 540 rooms and approximately 850 doorways!', category: 'Capitol Building' },
+      { fact: 'Did you know? Congress has passed over 20,000 laws since the first Congress in 1789!', category: 'Legislative Records' },
+      { fact: 'Did you know? The longest filibuster in Senate history lasted 24 hours and 18 minutes, by Strom Thurmond in 1957!', category: 'Senate History' },
+      { fact: 'Did you know? The House of Representatives has had 11,000 members throughout history!', category: 'House of Representatives' },
+      { fact: 'Did you know? The Constitution was signed by only 39 of the 55 delegates to the Constitutional Convention!', category: 'Constitutional History' }
+    ];
+
+    const fallback = fallbackFacts[Math.floor(Math.random() * fallbackFacts.length)];
+
+    return c.json({
+      success: true,
+      fact: fallback!.fact,
+      category: fallback!.category,
+      fallback: true
+    });
+  }
+});
+
+/**
+ * POST /briefs/generate
+ * Trigger on-demand brief generation if user doesn't have today's brief
+ * Returns the brief status (generating, ready, etc.)
+ */
+app.post('/briefs/generate', async (c) => {
+  try {
+    // Require authentication
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Check if user already has today's brief
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTimestamp = today.getTime();
+
+    const existingBrief = await db
+      .prepare(`
+        SELECT id, status, audio_url, created_at
+        FROM briefs
+        WHERE user_id = ? AND type = 'daily' AND created_at >= ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `)
+      .bind(auth.userId, todayTimestamp)
+      .first();
+
+    if (existingBrief) {
+      console.log(`[/briefs/generate] User ${auth.userId} already has today's brief: ${existingBrief.id}`);
+
+      return c.json({
+        success: true,
+        status: existingBrief.status,
+        briefId: existingBrief.id,
+        audioUrl: existingBrief.audio_url,
+        message: 'Brief already exists for today'
+      });
+    }
+
+    // Generate new brief ID
+    const briefId = crypto.randomUUID();
+    const now = Date.now();
+    const briefEndDate = new Date();
+    const briefStartDate = new Date(briefEndDate);
+    briefStartDate.setDate(briefStartDate.getDate() - 1);
+
+    console.log(`[/briefs/generate] Creating new brief ${briefId} for user ${auth.userId}`);
+
+    // Create brief record in pending state with placeholder title and dates
+    await db
+      .prepare(`
+        INSERT INTO briefs (id, user_id, type, status, title, start_date, end_date, created_at, updated_at)
+        VALUES (?, ?, 'daily', 'pending', ?, ?, ?, ?, ?)
+      `)
+      .bind(briefId, auth.userId, 'Generating Your Brief...', briefStartDate.toISOString(), briefEndDate.toISOString(), now, now)
+      .run();
+
+    // Queue brief generation - use the same format as briefs-service
+
+    const briefQueue = c.env.BRIEF_QUEUE;
+    await briefQueue.send({
+      briefId,
+      userId: auth.userId,
+      type: 'daily',
+      startDate: briefStartDate.toISOString(),
+      endDate: briefEndDate.toISOString(),
+      requestedAt: now
+    });
+
+    console.log(`[/briefs/generate] Queued brief generation for ${briefId}`);
+
+    return c.json({
+      success: true,
+      status: 'generating',
+      briefId,
+      message: 'Brief generation started'
+    });
+  } catch (error) {
+    console.error('Brief generation trigger error:', error);
+    return c.json({
+      error: 'Failed to trigger brief generation',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /briefs/status/:id
+ * Check the status of a brief being generated
+ */
+app.get('/briefs/status/:id', async (c) => {
+  try {
+    // Check for token in query parameter first (to avoid CORS preflight)
+    const tokenParam = c.req.query('token');
+    let auth;
+
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return c.json({ error: 'Server configuration error' }, 500);
+    }
+
+    if (tokenParam) {
+      auth = await verifyAuth(`Bearer ${tokenParam}`, jwtSecret);
+      if (!auth) {
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+    } else {
+      auth = await requireAuth(c);
+      if (auth instanceof Response) return auth;
+    }
+
+    const briefId = c.req.param('id');
+    const db = c.env.APP_DB;
+
+    const brief = await db
+      .prepare(`
+        SELECT id, status, title, audio_url, audio_duration, featured_image, created_at
+        FROM briefs
+        WHERE id = ? AND user_id = ?
+        LIMIT 1
+      `)
+      .bind(briefId, auth.userId)
+      .first();
+
+    if (!brief) {
+      return c.json({ error: 'Brief not found' }, 404);
+    }
+
+    return c.json({
+      success: true,
+      brief: {
+        id: brief.id,
+        status: brief.status,
+        title: brief.title,
+        audioUrl: brief.audio_url,
+        audioDuration: brief.audio_duration,
+        featuredImage: brief.featured_image,
+        createdAt: brief.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Brief status check error:', error);
+    return c.json({
+      error: 'Failed to check brief status',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

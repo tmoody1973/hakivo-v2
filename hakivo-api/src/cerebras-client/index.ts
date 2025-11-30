@@ -355,12 +355,100 @@ Return JSON with the category name (must exactly match one from the list).`
   }
 
   /**
+   * Generate a random congressional/legislative trivia fact
+   * Used to entertain users while briefs are generating
+   *
+   * @mcp-tool
+   * @mcp-description Generate fun congressional trivia to display during loading
+   * @mcp-returns A trivia fact about Congress, legislation, or US government
+   * @mcp-cost ~$0.0001 per trivia fact (Cerebras gpt-oss-120b)
+   *
+   * @example
+   * ```ts
+   * const trivia = await cerebrasClient.generateTrivia();
+   * // Returns: { fact: "Did you know? The longest Senate filibuster was 24 hours and 18 minutes...", category: "Senate" }
+   * ```
+   */
+  async generateTrivia(): Promise<{ fact: string; category: string; tokensUsed: number }> {
+    const categories = [
+      'Senate history',
+      'House of Representatives',
+      'Famous legislation',
+      'Presidential vetoes',
+      'Constitutional amendments',
+      'Congressional procedures',
+      'Historic bills',
+      'Capitol building facts',
+      'Congressional firsts',
+      'Legislative records'
+    ];
+
+    const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are a knowledgeable guide to US Congressional history and legislative trivia.
+Generate ONE interesting, accurate, and engaging trivia fact about US Congress, legislation, or government.
+
+The fact should:
+- Be surprising or little-known
+- Be factually accurate
+- Be engaging and fun to read
+- Be 1-3 sentences
+- Start with "Did you know?" or similar engaging opener
+
+Return your response as JSON with this exact structure:
+{
+  "fact": "The trivia fact here",
+  "category": "Category name"
+}`
+      },
+      {
+        role: 'user' as const,
+        content: `Generate a fun trivia fact about: ${randomCategory}
+
+Return JSON only.`
+      }
+    ];
+
+    const result = await this.generateCompletion(messages, 0.9, 200);
+
+    try {
+      // Extract JSON from response
+      let jsonText = result.content.trim();
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      return {
+        fact: parsed.fact || 'Did you know? Congress has passed over 20,000 laws since the first Congress in 1789!',
+        category: parsed.category || randomCategory!,
+        tokensUsed: result.tokensUsed
+      };
+    } catch (error) {
+      console.error('Failed to parse trivia JSON:', error);
+      console.error('Raw response:', result.content);
+
+      // Fallback trivia
+      return {
+        fact: 'Did you know? The Capitol Building has 540 rooms and approximately 850 doorways!',
+        category: 'Capitol building facts',
+        tokensUsed: result.tokensUsed
+      };
+    }
+  }
+
+  /**
    * Calculate Levenshtein distance between two strings
    * Used for Stage 1 fast string similarity filtering
-   *
-   * @private
+   * @internal
    */
-  private levenshteinDistance(str1: string, str2: string): number {
+  _levenshteinDistance(str1: string, str2: string): number {
     const len1 = str1.length;
     const len2 = str2.length;
     const matrix: number[][] = [];
@@ -391,14 +479,13 @@ Return JSON with the category name (must exactly match one from the list).`
   /**
    * Calculate similarity percentage between two strings (0-100)
    * Uses normalized Levenshtein distance
-   *
-   * @private
+   * @internal
    */
-  private calculateSimilarity(str1: string, str2: string): number {
+  _calculateSimilarity(str1: string, str2: string): number {
     const maxLen = Math.max(str1.length, str2.length);
     if (maxLen === 0) return 100; // Both empty = identical
 
-    const distance = this.levenshteinDistance(str1.toLowerCase(), str2.toLowerCase());
+    const distance = this._levenshteinDistance(str1.toLowerCase(), str2.toLowerCase());
     const similarity = ((maxLen - distance) / maxLen) * 100;
     return similarity;
   }
@@ -406,10 +493,9 @@ Return JSON with the category name (must exactly match one from the list).`
   /**
    * Compare two articles for semantic duplicate detection
    * Stage 2 (Accurate) - Uses Cerebras LLM for semantic verification
-   *
-   * @private
+   * @internal
    */
-  private async compareArticlesForDuplicates(
+  async _compareArticlesForDuplicates(
     article1: { title: string; summary: string },
     article2: { title: string; summary: string }
   ): Promise<{ isDuplicate: boolean; confidence: number }> {
@@ -552,7 +638,7 @@ Determine if these articles cover the SAME news story. Return JSON.`
         // Skip if already marked as duplicate
         if (duplicateMap.has(article2.id)) continue;
 
-        const similarity = this.calculateSimilarity(article1.title, article2.title);
+        const similarity = this._calculateSimilarity(article1.title, article2.title);
 
         if (similarity >= SIMILARITY_THRESHOLD) {
           candidates.push({ article: article2, similarity, index: j });
@@ -571,7 +657,7 @@ Determine if these articles cover the SAME news story. Return JSON.`
       const duplicatesInGroup: string[] = [];
 
       for (const candidate of topCandidates) {
-        const comparison = await this.compareArticlesForDuplicates(
+        const comparison = await this._compareArticlesForDuplicates(
           { title: article1.title, summary: article1.summary },
           { title: candidate.article.title, summary: candidate.article.summary }
         );
