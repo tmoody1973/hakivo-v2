@@ -56,19 +56,22 @@ export default class extends Service<Env> {
     const searchStartDate = startDate || sevenDaysAgo;
     const searchEndDate = endDate || now;
 
-    // Build search query focused on legislative/policy news
-    // Combine user interests with explicit policy context to filter out off-topic news
+    // Build search query - simpler approach for better results
+    // Just use interest terms with basic policy context
     const policyTerms = interests.length > 0
-      ? interests.map(interest => `("${interest}" (Congress OR legislation OR bill OR policy OR federal OR government))`).join(' OR ')
-      : 'Congress legislation bill';
+      ? interests.map(interest => `"${interest}"`).join(' OR ')
+      : 'Congress legislation policy';
 
-    // Add explicit exclusions for common off-topic news categories
-    const exclusions = '-celebrity -entertainment -trial -arrest -crime -sports -scandal';
-    const query = `${policyTerms} ${exclusions}`;
+    // Lighter exclusions - only exclude clearly off-topic
+    const exclusions = '-celebrity -entertainment -sports';
+    const query = `(${policyTerms}) policy ${exclusions}`;
+
+    // Request more results to account for filtering (minimum 25)
+    const requestLimit = Math.max(limit, 25);
 
     try {
       const response = await client.searchAndContents(query, {
-        numResults: limit,
+        numResults: requestLimit,
         text: true,
         type: 'auto',
         category: 'news',
@@ -78,30 +81,43 @@ export default class extends Service<Env> {
         startPublishedDate: searchStartDate.toISOString(),
         endPublishedDate: searchEndDate.toISOString(),
         includeDomains: [
+          // Major political news
           'punchbowl.news',
           'politico.com',
-          'theguardian.com',
+          'thehill.com',
+          'rollcall.com',
+          // Major newspapers
           'nytimes.com',
+          'washingtonpost.com',
+          'wsj.com',
+          'usatoday.com',
+          'theguardian.com',
+          // Wire services
+          'apnews.com',
+          'reuters.com',
+          // TV news
+          'cnn.com',
           'cbsnews.com',
           'abcnews.com',
+          'nbcnews.com',
+          'foxnews.com',
+          // Other quality sources
           'npr.org',
-          'washingtonpost.com',
-          'rollcall.com',
-          'thehill.com',
-          'ap.com',
-          'cnn.com'
+          'axios.com',
+          'bbc.com',
+          'bloomberg.com'
         ]
       });
 
       console.log(`✓ Exa news search: ${response.results.length} articles found`);
 
-      // Filter out landing pages and topic pages
+      // Filter out landing pages and topic pages (relaxed filter)
       const filteredResults = response.results.filter(result => {
         // Must have a published date (landing pages often don't)
         if (!result.publishedDate) return false;
 
-        // Must have substantial text content (at least 300 chars)
-        if (!result.text || result.text.length < 300) return false;
+        // Must have some text content (relaxed to 200 chars)
+        if (!result.text || result.text.length < 200) return false;
 
         // Exclude URLs that look like landing pages
         const landingPagePatterns = [
