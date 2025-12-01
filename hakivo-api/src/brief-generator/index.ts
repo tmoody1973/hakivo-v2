@@ -196,7 +196,7 @@ export default class extends Each<Body, Env> {
     }
 
     // ==================== STAGE 4: FETCH PERSONALIZED NEWS ====================
-    console.log(`[STAGE-4] Fetching personalized news from Exa...`);
+    console.log(`[STAGE-4] Fetching personalized news from Perplexity...`);
     let newsArticles: any[] = [];
     try {
       // Fetch both national and state-specific news
@@ -276,36 +276,55 @@ export default class extends Each<Body, Env> {
       // Continue without article - non-fatal
     }
 
-    // ==================== STAGE 7: GENERATE FEATURE IMAGE ====================
-    console.log(`[STAGE-7] Generating feature image with Gemini...`);
+    // ==================== STAGE 7: GET FEATURE IMAGE ====================
+    // Cascade: 1) Perplexity images → 2) og:image from URLs → 3) Gemini fallback
+    console.log(`[STAGE-7] Getting feature image...`);
 
-    // Generate photo-realistic feature image using Gemini 2.5 Flash Image
     let featuredImage: string | null = null;
-    try {
-      featuredImage = await this.generateFeatureImage(headline, policyInterests, briefId);
-      if (featuredImage) {
-        console.log(`[STAGE-7] Generated feature image: ${featuredImage}`);
-      } else {
-        // Fallback: Try to get image from news articles
-        console.log(`[STAGE-7] Image generation returned null, checking news articles...`);
-        for (const article of newsArticles) {
-          if (article.imageUrl) {
-            featuredImage = article.imageUrl;
-            console.log(`[STAGE-7] Using fallback image from news: ${featuredImage}`);
-            break;
+
+    // Step 1: Try to get image from Perplexity news response
+    for (const article of newsArticles) {
+      if (article.imageUrl) {
+        featuredImage = article.imageUrl;
+        console.log(`[STAGE-7] Using image from Perplexity: ${featuredImage}`);
+        break;
+      }
+    }
+
+    // Step 2: Try to fetch og:image from news article URLs
+    if (!featuredImage && newsArticles.length > 0) {
+      console.log(`[STAGE-7] No Perplexity images, trying to fetch og:image from news URLs...`);
+      for (const article of newsArticles.slice(0, 3)) { // Try first 3 URLs
+        if (article.url) {
+          try {
+            const ogImage = await this.fetchOgImage(article.url);
+            if (ogImage) {
+              featuredImage = ogImage;
+              console.log(`[STAGE-7] Using og:image from ${article.url}: ${featuredImage}`);
+              break;
+            }
+          } catch (ogError) {
+            console.warn(`[STAGE-7] Failed to fetch og:image from ${article.url}`);
           }
         }
       }
-    } catch (imageError) {
-      console.error(`[STAGE-7] Image generation error (non-fatal):`, imageError);
-      // Fallback: Try to get image from news articles
-      for (const article of newsArticles) {
-        if (article.imageUrl) {
-          featuredImage = article.imageUrl;
-          console.log(`[STAGE-7] Using fallback image from news: ${featuredImage}`);
-          break;
+    }
+
+    // Step 3: Fall back to Gemini image generation
+    if (!featuredImage) {
+      console.log(`[STAGE-7] No og:image found, generating with Gemini...`);
+      try {
+        featuredImage = await this.generateFeatureImage(headline, policyInterests, briefId);
+        if (featuredImage) {
+          console.log(`[STAGE-7] Generated Gemini image: ${featuredImage}`);
         }
+      } catch (imageError) {
+        console.error(`[STAGE-7] Gemini image generation failed (non-fatal):`, imageError);
       }
+    }
+
+    if (!featuredImage) {
+      console.log(`[STAGE-7] No image available - brief will have no featured image`);
     }
 
     // ==================== STAGE 8: SAVE AND MARK FOR AUDIO PROCESSING ====================
@@ -436,6 +455,82 @@ export default class extends Each<Body, Env> {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`[IMAGE-GEN] Failed to generate image: ${errorMessage}`);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch og:image from a news article URL
+   * Extracts Open Graph image meta tag from HTML
+   * @param url - URL to fetch og:image from
+   * @returns Image URL or null if not found
+   */
+  private async fetchOgImage(url: string): Promise<string | null> {
+    try {
+      // Fetch the HTML with a short timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; HakivoBot/1.0; +https://hakivo.com)',
+          'Accept': 'text/html'
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return null;
+      }
+
+      // Get just the head section to avoid downloading full page
+      const html = await response.text();
+      const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+      const headContent: string = headMatch?.[1] ?? html.substring(0, 10000);
+
+      // Look for og:image meta tag
+      const ogImageMatch = headContent.match(
+        /<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i
+      ) ?? headContent.match(
+        /<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i
+      );
+
+      if (ogImageMatch && ogImageMatch[1]) {
+        const imageUrl = ogImageMatch[1];
+        // Validate it looks like a real image URL
+        if (imageUrl.startsWith('http') && (
+          imageUrl.includes('.jpg') ||
+          imageUrl.includes('.jpeg') ||
+          imageUrl.includes('.png') ||
+          imageUrl.includes('.webp') ||
+          imageUrl.includes('image') ||
+          imageUrl.includes('/img/')
+        )) {
+          console.log(`[OG-IMAGE] Found og:image: ${imageUrl.substring(0, 100)}...`);
+          return imageUrl;
+        }
+      }
+
+      // Fallback: try twitter:image
+      const twitterImageMatch = headContent.match(
+        /<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i
+      ) ?? headContent.match(
+        /<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i
+      );
+
+      if (twitterImageMatch && twitterImageMatch[1]) {
+        const imageUrl = twitterImageMatch[1];
+        if (imageUrl.startsWith('http')) {
+          console.log(`[OG-IMAGE] Found twitter:image: ${imageUrl.substring(0, 100)}...`);
+          return imageUrl;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      // Silently fail - this is a non-critical fallback
       return null;
     }
   }
@@ -871,30 +966,32 @@ export default class extends Each<Body, Env> {
 
   /**
    * Fetch news articles based on user's policy interests and optionally state
+   * Uses Perplexity API with structured JSON output for reliable results
    * Supports localized news when state is provided
    */
   private async fetchNewsByInterests(interests: string[], state: string | null): Promise<any[]> {
-    // Calculate date range (last 7 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
-
     try {
-      // If state is provided, add it to search terms for local news
-      const searchTerms = state
-        ? [...interests, state] // e.g., ["Economy & Finance", "WI"]
-        : interests;
-
-      const searchResults = await this.env.EXA_CLIENT.searchNews(
-        searchTerms,
-        startDate,
-        endDate,
+      // Perplexity handles date filtering internally (last 7 days)
+      // Pass interests and state for personalized news search
+      const searchResults = await this.env.PERPLEXITY_CLIENT.searchNews(
+        interests,
+        state,
         state ? 5 : 10 // Fewer results for state-specific searches
       );
 
-      return searchResults;
+      // Map Perplexity response to include imageUrl for backward compatibility
+      return searchResults.map(article => ({
+        title: article.title,
+        summary: article.summary,
+        url: article.url,
+        publishedAt: article.publishedAt,
+        source: article.source,
+        category: article.category,
+        imageUrl: article.image?.url || null, // Map image.url to imageUrl for fallback logic
+        imageAlt: article.image?.alt || null
+      }));
     } catch (error) {
-      console.error(`Failed to fetch news articles${state ? ` for ${state}` : ''}:`, error);
+      console.error(`[PERPLEXITY] Failed to fetch news articles${state ? ` for ${state}` : ''}:`, error);
       return [];
     }
   }

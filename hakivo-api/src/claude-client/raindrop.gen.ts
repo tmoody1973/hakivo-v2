@@ -46,6 +46,8 @@ export interface Env {
   NEWS_CACHE: KvCache;
   OPENSTATES_API_KEY: string;
   OPENSTATES_CLIENT: ServiceStub<import('../openstates-client/index.js').default>;
+  PERPLEXITY_API_KEY: string;
+  PERPLEXITY_CLIENT: ServiceStub<import('../perplexity-client/index.js').default>;
   SESSION_CACHE: KvCache;
   SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;
