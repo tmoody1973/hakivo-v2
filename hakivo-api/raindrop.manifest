@@ -49,6 +49,10 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "PERPLEXITY_API_KEY" {
+    secret = true
+  }
+
   env "VULTR_ENDPOINT" {
     secret = true
   }
@@ -146,6 +150,11 @@ application "hakivo-new" {
   }
 
   service "gemini-tts-client" {
+    visibility = "private"
+  }
+
+  // Perplexity API client for news search with structured JSON output
+  service "perplexity-client" {
     visibility = "private"
   }
 
