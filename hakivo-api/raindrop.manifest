@@ -200,6 +200,13 @@ application "hakivo-new" {
     cron = "0 6,18 * * *"
   }
 
+  // State legislation sync - runs daily for user states
+  // Fetches state bills from OpenStates API for active user states
+  task "state-sync-scheduler" {
+    type = "cron"
+    cron = "0 3 * * *"  // 3 AM daily (after congress sync at 2 AM)
+  }
+
   // Audio retry task - processes script_ready briefs
   // Uses 4-min fetch timeout, processes 1 brief per run
   task "audio-retry-scheduler" {

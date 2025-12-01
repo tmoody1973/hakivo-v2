@@ -33,6 +33,7 @@ export interface Env {
   ENRICHMENT_QUEUE: Queue<import('../enrichment-observer').Body>;
   EXA_API_KEY: string;
   GEMINI_API_KEY: string;
+  GEMINI_TTS_CLIENT: ServiceStub<import('../gemini-tts-client/index.js').default>;
   GEOCODIO_API_KEY: string;
   GEOCODIO_CLIENT: ServiceStub<import('../geocodio-client/index.js').default>;
   IMAGE_CACHE: KvCache;
@@ -43,6 +44,8 @@ export interface Env {
   logger: Logger;
   mem: KvCache;
   NEWS_CACHE: KvCache;
+  OPENSTATES_API_KEY: string;
+  OPENSTATES_CLIENT: ServiceStub<import('../openstates-client/index.js').default>;
   SESSION_CACHE: KvCache;
   SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;
