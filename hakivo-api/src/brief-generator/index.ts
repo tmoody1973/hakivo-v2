@@ -170,6 +170,19 @@ export default class extends Each<Body, Env> {
     // Track which are rep bills for script personalization
     const repBillIds = new Set(repBills.map(b => b.id));
 
+    // ==================== STAGE 2c: FETCH STATE LEGISLATURE BILLS ====================
+    let stateBills: any[] = [];
+    if (userState) {
+      console.log(`[STAGE-2c] Fetching state legislature bills for ${userState}...`);
+      try {
+        stateBills = await this.getStateBills(userState, policyInterests, recentlyFeaturedBillIds);
+        console.log(`[STAGE-2c] Got ${stateBills.length} state bills. Elapsed: ${Date.now() - startTime}ms`);
+      } catch (stateError) {
+        console.warn(`[STAGE-2c] State bills fetch failed (non-fatal):`, stateError);
+        // Continue without state bills - non-fatal
+      }
+    }
+
     // ==================== STAGE 3: FETCH BILL ACTIONS ====================
     console.log(`[STAGE-3] Fetching bill actions...`);
     let billsWithActions: any[];
@@ -233,7 +246,8 @@ export default class extends Each<Body, Env> {
       state: userState,
       district: userDistrict,
       repBillIds: Array.from(repBillIds),
-      policyInterests
+      policyInterests,
+      stateBills // Include state legislature bills
     };
 
     try {
@@ -726,6 +740,99 @@ export default class extends Each<Body, Env> {
   }
 
   /**
+   * Get state bills matching user's interests from state_bills table
+   * These bills are synced daily by state-sync-scheduler for active user states
+   */
+  private async getStateBills(
+    state: string,
+    interests: string[],
+    excludeBillIds: string[] = []
+  ): Promise<any[]> {
+    const db = this.env.APP_DB;
+
+    // Map user interests to state bill subjects (OpenStates uses different categories)
+    const subjectMap: Record<string, string[]> = {
+      'Commerce & Labor': ['Commerce', 'Labor', 'Business', 'Trade', 'Employment'],
+      'Education & Science': ['Education', 'Science', 'Technology', 'Schools', 'Universities'],
+      'Economy & Finance': ['Finance', 'Taxation', 'Budget', 'Banking', 'Economic Development'],
+      'Environment & Energy': ['Environment', 'Energy', 'Natural Resources', 'Climate', 'Conservation'],
+      'Health & Social Welfare': ['Health', 'Human Services', 'Public Health', 'Social Services', 'Welfare'],
+      'Defense & Security': ['Public Safety', 'Law Enforcement', 'Emergency Management', 'Crime'],
+      'Immigration': ['Immigration'],
+      'Foreign Affairs': ['International Relations'],
+      'Government': ['Government', 'State Agencies', 'Elections', 'Legislation'],
+      'Civil Rights': ['Civil Rights', 'Human Rights', 'Voting', 'Discrimination']
+    };
+
+    // Build subject keywords to match
+    const subjects: string[] = [];
+    for (const interest of interests) {
+      const mapped = subjectMap[interest];
+      if (mapped) {
+        subjects.push(...mapped);
+      }
+    }
+
+    try {
+      // Build exclusion clause
+      const excludeClause = excludeBillIds.length > 0
+        ? `AND id NOT IN (${excludeBillIds.map(() => '?').join(', ')})`
+        : '';
+
+      // Try to match by subjects (stored as JSON array in state_bills)
+      // Fall back to title keyword matching if needed
+      if (subjects.length > 0) {
+        const subjectConditions = subjects.map(() =>
+          `LOWER(subjects) LIKE ? OR LOWER(title) LIKE ?`
+        ).join(' OR ');
+        const subjectParams = subjects.flatMap(s => [`%${s.toLowerCase()}%`, `%${s.toLowerCase()}%`]);
+
+        const result = await db
+          .prepare(`
+            SELECT
+              id, state, session_identifier, identifier, title,
+              subjects, chamber, latest_action_date, latest_action_description
+            FROM state_bills
+            WHERE state = ?
+              AND (${subjectConditions})
+              ${excludeClause}
+            ORDER BY latest_action_date DESC
+            LIMIT 5
+          `)
+          .bind(state.toUpperCase(), ...subjectParams, ...excludeBillIds)
+          .all();
+
+        if (result.results && result.results.length > 0) {
+          console.log(`✓ Found ${result.results.length} state bills matching interests for ${state}`);
+          return result.results as any[];
+        }
+      }
+
+      // Fallback: Get recent state bills regardless of subject match
+      console.log(`[STATE-BILLS] No subject matches, getting recent bills for ${state}`);
+      const fallbackResult = await db
+        .prepare(`
+          SELECT
+            id, state, session_identifier, identifier, title,
+            subjects, chamber, latest_action_date, latest_action_description
+          FROM state_bills
+          WHERE state = ?
+            ${excludeClause}
+          ORDER BY latest_action_date DESC
+          LIMIT 3
+        `)
+        .bind(state.toUpperCase(), ...excludeBillIds)
+        .all();
+
+      return (fallbackResult.results || []) as any[];
+
+    } catch (error) {
+      console.error(`[STATE-BILLS] Failed to fetch state bills for ${state}:`, error);
+      return [];
+    }
+  }
+
+  /**
    * Get recent actions for bills
    */
   private async getBillActions(bills: any[]): Promise<any[]> {
@@ -807,6 +914,7 @@ export default class extends Each<Body, Env> {
       district: number | null;
       repBillIds: string[];
       policyInterests: string[];
+      stateBills: any[];
     }
   ): Promise<{
     script: string;
@@ -840,6 +948,20 @@ URL: https://www.congress.gov/bill/${topStoryBill.congress}th-congress/${topStor
 BILL: ${String(bill.bill_type).toUpperCase()} ${bill.bill_number} - ${bill.title}
 SPONSOR: ${bill.first_name || ''} ${bill.last_name || ''} (${bill.party || '?'}-${bill.state || '?'})
 LATEST: ${bill.latest_action_text}`).join('\n');
+
+    // Format state legislature bills (if any)
+    const stateBillsText = personalization.stateBills.length > 0
+      ? personalization.stateBills.map((bill: any) => {
+          const subjects = bill.subjects ? (typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects) : [];
+          const subjectStr = Array.isArray(subjects) && subjects.length > 0 ? subjects.slice(0, 3).join(', ') : 'General';
+          return `
+STATE BILL: ${bill.identifier} (${bill.state})
+TITLE: ${bill.title}
+CHAMBER: ${bill.chamber || 'Unknown'}
+SUBJECTS: ${subjectStr}
+LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}`;
+        }).join('\n')
+      : '';
 
     // Get today's date for context
     const today = new Date().toLocaleDateString('en-US', {
@@ -912,7 +1034,14 @@ Other Bills Worth Watching (1-2 minutes):
 - Transition naturally: "There's another bill moving through Congress that connects to this..."
 - Quick look at 1-2 other relevant bills
 
-Closing (30-45 seconds):
+${stateBillsText ? `State Legislature Update (1-2 minutes):
+- ${spokenState ? `Transition: "Now let's check in on what's happening in the ${spokenState} legislature..." or "Closer to home in ${spokenState}..."` : 'Transition naturally to state-level news'}
+- Cover 1-2 state bills that match the listener's interests
+- Mention the bill identifier and chamber (e.g., "House Bill 123" or "Senate Bill 456")
+- Explain why it matters locally and how it connects to their interests
+- Keep it personal: "This could affect how ${spokenState || 'your state'} handles..."
+
+` : ''}Closing (30-45 seconds):
 - "That's today's Hakivo Daily."
 - Personalized call to action: "Want to track these bills, ${personalization.userName}? Open Hakivo to follow them and get alerts when they move."
 - "You can read the full text, see how your representatives voted, and make your voice heard."
@@ -954,18 +1083,21 @@ ${topStoryText}
 === LEGISLATION SPOTLIGHT ===
 ${spotlightText || 'No additional bills for spotlight'}
 
-=== NEWS COVERAGE ===
+${stateBillsText ? `=== STATE LEGISLATURE (${spokenState || personalization.state}) ===
+${stateBillsText}
+` : ''}=== NEWS COVERAGE ===
 ${newsSection || 'No recent news headlines'}
 
 === PERSONALIZATION REQUIREMENTS ===
 1. START by greeting ${personalization.userName} by name warmly
 2. ${isTopStoryFromRep ? `The TOP STORY is from ${personalization.userName}'s OWN representative - emphasize this personal connection!` : 'Make the top story feel relevant to their interests'}
 3. ${localNews.length > 0 ? `Include the LOCAL news from ${spokenState} - make it feel personal` : 'Focus on national stories relevant to their interests'}
-4. Follow the show structure: Personalized Opening → Intro → Top Story → Headlines → Spotlight → Personalized Outro
-5. The HAKIVO OUTRO must include ${personalization.userName}'s name in the call to action
-6. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
-7. Include emotional cues in [brackets]
-8. Make it conversational and engaging - this brief was made JUST for ${personalization.userName}
+4. ${stateBillsText ? `Include the STATE LEGISLATURE section - transition with "Now let's check in on what's happening in the ${spokenState || 'state'} legislature..." and cover 1-2 state bills` : 'No state bills this time'}
+5. Follow the show structure: Personalized Opening → Intro → Top Story → Headlines → Spotlight${stateBillsText ? ' → State Legislature' : ''} → Personalized Outro
+6. The HAKIVO OUTRO must include ${personalization.userName}'s name in the call to action
+7. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
+8. Include emotional cues in [brackets]
+9. Make it conversational and engaging - this brief was made JUST for ${personalization.userName}
 
 Generate a HEADLINE first (catchy, max 10 words, reflects top story).
 
