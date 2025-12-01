@@ -47,6 +47,17 @@ const SearchMembersSchema = z.object({
   order: z.enum(['asc', 'desc']).default('asc')
 });
 
+const StateBillsSchema = z.object({
+  state: z.string().length(2).toUpperCase(),
+  subject: z.string().optional(),
+  query: z.string().optional(),
+  chamber: z.enum(['upper', 'lower']).optional(),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).default(0),
+  sort: z.enum(['latest_action_date', 'identifier']).default('latest_action_date'),
+  order: z.enum(['asc', 'desc']).default('desc')
+});
+
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
@@ -1841,6 +1852,265 @@ app.get('/members/:bioguide_id/cosponsored-legislation', async (c) => {
     console.error('[CosponsoredBills] Failed to get cosponsored bills:', error);
     return c.json({
       error: 'Failed to get cosponsored bills',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * STATE BILLS ENDPOINTS
+ */
+
+/**
+ * GET /state-bills
+ * Get state legislature bills filtered by state and optional criteria
+ *
+ * Query params:
+ *   state: string (required) - 2-letter state code (e.g., "WI", "CA")
+ *   subject: string (optional) - Filter by subject/policy area
+ *   query: string (optional) - Search in title
+ *   chamber: 'upper' | 'lower' (optional) - Filter by legislative chamber
+ *   limit: number (optional, default: 20, max: 100)
+ *   offset: number (optional, default: 0)
+ *   sort: 'latest_action_date' | 'identifier' (optional, default: 'latest_action_date')
+ *   order: 'asc' | 'desc' (optional, default: 'desc')
+ */
+app.get('/state-bills', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Parse query parameters
+    const rawParams = {
+      state: c.req.query('state')?.toUpperCase(),
+      subject: c.req.query('subject'),
+      query: c.req.query('query'),
+      chamber: c.req.query('chamber') as 'upper' | 'lower' | undefined,
+      limit: c.req.query('limit') ? parseInt(c.req.query('limit')!) : 20,
+      offset: c.req.query('offset') ? parseInt(c.req.query('offset')!) : 0,
+      sort: c.req.query('sort') || 'latest_action_date',
+      order: c.req.query('order') || 'desc'
+    };
+
+    // Validate parameters
+    const validation = StateBillsSchema.safeParse(rawParams);
+    if (!validation.success) {
+      return c.json({ error: 'Invalid parameters', details: validation.error.errors }, 400);
+    }
+
+    const { state, subject, query, chamber, limit, offset, sort, order } = validation.data;
+
+    console.log(`[StateBills] Fetching bills for state: ${state}, limit: ${limit}, offset: ${offset}`);
+
+    // Build WHERE clause
+    const conditions: string[] = ['state_abbr = ?'];
+    const bindings: any[] = [state];
+
+    if (subject) {
+      // Search in subjects array (stored as JSON)
+      conditions.push(`subjects LIKE ?`);
+      bindings.push(`%${subject}%`);
+    }
+
+    if (query) {
+      conditions.push(`(title LIKE ? OR identifier LIKE ?)`);
+      bindings.push(`%${query}%`, `%${query}%`);
+    }
+
+    if (chamber) {
+      conditions.push(`chamber = ?`);
+      bindings.push(chamber);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // Determine sort column
+    const sortColumn = sort === 'identifier' ? 'identifier' : 'latest_action_date';
+
+    // Get bills with primary sponsor info
+    const billsQuery = `
+      SELECT
+        sb.id,
+        sb.state_abbr,
+        sb.session,
+        sb.identifier,
+        sb.title,
+        sb.subjects,
+        sb.classification,
+        sb.abstract,
+        sb.chamber,
+        sb.latest_action_date,
+        sb.latest_action_description,
+        sb.openstates_url,
+        sb.first_action_date,
+        sb.primary_sponsor_name,
+        sb.primary_sponsor_party,
+        sb.primary_sponsor_district
+      FROM state_bills sb
+      WHERE ${whereClause}
+      ORDER BY ${sortColumn} ${order.toUpperCase()} NULLS LAST
+      LIMIT ? OFFSET ?
+    `;
+
+    const billsResult = await db
+      .prepare(billsQuery)
+      .bind(...bindings, limit, offset)
+      .all();
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM state_bills sb
+      WHERE ${whereClause}
+    `;
+
+    const countResult = await db
+      .prepare(countQuery)
+      .bind(...bindings)
+      .first() as any;
+
+    const total = countResult?.total || 0;
+
+    console.log(`[StateBills] Found ${total} total, returning ${billsResult.results?.length || 0} results`);
+
+    // Format response
+    const bills = (billsResult.results || []).map((bill: any) => {
+      // Parse JSON arrays safely
+      let subjects: string[] = [];
+      let classification: string[] = [];
+
+      try {
+        if (bill.subjects) {
+          subjects = typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects;
+        }
+      } catch { /* ignore parse errors */ }
+
+      try {
+        if (bill.classification) {
+          classification = typeof bill.classification === 'string' ? JSON.parse(bill.classification) : bill.classification;
+        }
+      } catch { /* ignore parse errors */ }
+
+      return {
+        id: bill.id,
+        state: bill.state_abbr,
+        session: bill.session,
+        identifier: bill.identifier,
+        title: bill.title,
+        subjects,
+        classification,
+        abstract: bill.abstract,
+        chamber: bill.chamber,
+        latestAction: {
+          date: bill.latest_action_date,
+          description: bill.latest_action_description
+        },
+        firstActionDate: bill.first_action_date,
+        openstatesUrl: bill.openstates_url,
+        sponsor: bill.primary_sponsor_name ? {
+          name: bill.primary_sponsor_name,
+          party: bill.primary_sponsor_party,
+          district: bill.primary_sponsor_district
+        } : null
+      };
+    });
+
+    return c.json({
+      success: true,
+      state,
+      bills,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[StateBills] Failed to get state bills:', error);
+    return c.json({
+      error: 'Failed to get state bills',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * GET /state-bills/:id
+ * Get a specific state bill by its OCD ID
+ */
+app.get('/state-bills/:id', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const billId = c.req.param('id');
+
+    // URL decode the bill ID (OCD IDs contain special chars)
+    const decodedId = decodeURIComponent(billId);
+
+    console.log(`[StateBills] Fetching bill: ${decodedId}`);
+
+    // Get bill details
+    const bill = await db
+      .prepare(`
+        SELECT *
+        FROM state_bills
+        WHERE id = ?
+      `)
+      .bind(decodedId)
+      .first() as any;
+
+    if (!bill) {
+      return c.json({ error: 'State bill not found' }, 404);
+    }
+
+    // Parse JSON arrays safely
+    let subjects: string[] = [];
+    let classification: string[] = [];
+
+    try {
+      if (bill.subjects) {
+        subjects = typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects;
+      }
+    } catch { /* ignore */ }
+
+    try {
+      if (bill.classification) {
+        classification = typeof bill.classification === 'string' ? JSON.parse(bill.classification) : bill.classification;
+      }
+    } catch { /* ignore */ }
+
+    return c.json({
+      success: true,
+      bill: {
+        id: bill.id,
+        state: bill.state_abbr,
+        session: bill.session,
+        identifier: bill.identifier,
+        title: bill.title,
+        subjects,
+        classification,
+        abstract: bill.abstract,
+        chamber: bill.chamber,
+        latestAction: {
+          date: bill.latest_action_date,
+          description: bill.latest_action_description
+        },
+        firstActionDate: bill.first_action_date,
+        openstatesUrl: bill.openstates_url,
+        sponsor: bill.primary_sponsor_name ? {
+          name: bill.primary_sponsor_name,
+          party: bill.primary_sponsor_party,
+          district: bill.primary_sponsor_district
+        } : null,
+        createdAt: bill.created_at,
+        updatedAt: bill.updated_at
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[StateBills] Failed to get state bill:', error);
+    return c.json({
+      error: 'Failed to get state bill',
       message: error.message
     }, 500);
   }
