@@ -19,6 +19,62 @@ const POLICY_INTERESTS = [
   { name: 'Immigration & Indigenous Issues', icon: '🗽' },
 ];
 
+const US_STATES = [
+  { abbr: '', name: 'Select your state' },
+  { abbr: 'AL', name: 'Alabama' },
+  { abbr: 'AK', name: 'Alaska' },
+  { abbr: 'AZ', name: 'Arizona' },
+  { abbr: 'AR', name: 'Arkansas' },
+  { abbr: 'CA', name: 'California' },
+  { abbr: 'CO', name: 'Colorado' },
+  { abbr: 'CT', name: 'Connecticut' },
+  { abbr: 'DE', name: 'Delaware' },
+  { abbr: 'DC', name: 'District of Columbia' },
+  { abbr: 'FL', name: 'Florida' },
+  { abbr: 'GA', name: 'Georgia' },
+  { abbr: 'HI', name: 'Hawaii' },
+  { abbr: 'ID', name: 'Idaho' },
+  { abbr: 'IL', name: 'Illinois' },
+  { abbr: 'IN', name: 'Indiana' },
+  { abbr: 'IA', name: 'Iowa' },
+  { abbr: 'KS', name: 'Kansas' },
+  { abbr: 'KY', name: 'Kentucky' },
+  { abbr: 'LA', name: 'Louisiana' },
+  { abbr: 'ME', name: 'Maine' },
+  { abbr: 'MD', name: 'Maryland' },
+  { abbr: 'MA', name: 'Massachusetts' },
+  { abbr: 'MI', name: 'Michigan' },
+  { abbr: 'MN', name: 'Minnesota' },
+  { abbr: 'MS', name: 'Mississippi' },
+  { abbr: 'MO', name: 'Missouri' },
+  { abbr: 'MT', name: 'Montana' },
+  { abbr: 'NE', name: 'Nebraska' },
+  { abbr: 'NV', name: 'Nevada' },
+  { abbr: 'NH', name: 'New Hampshire' },
+  { abbr: 'NJ', name: 'New Jersey' },
+  { abbr: 'NM', name: 'New Mexico' },
+  { abbr: 'NY', name: 'New York' },
+  { abbr: 'NC', name: 'North Carolina' },
+  { abbr: 'ND', name: 'North Dakota' },
+  { abbr: 'OH', name: 'Ohio' },
+  { abbr: 'OK', name: 'Oklahoma' },
+  { abbr: 'OR', name: 'Oregon' },
+  { abbr: 'PA', name: 'Pennsylvania' },
+  { abbr: 'PR', name: 'Puerto Rico' },
+  { abbr: 'RI', name: 'Rhode Island' },
+  { abbr: 'SC', name: 'South Carolina' },
+  { abbr: 'SD', name: 'South Dakota' },
+  { abbr: 'TN', name: 'Tennessee' },
+  { abbr: 'TX', name: 'Texas' },
+  { abbr: 'UT', name: 'Utah' },
+  { abbr: 'VT', name: 'Vermont' },
+  { abbr: 'VA', name: 'Virginia' },
+  { abbr: 'WA', name: 'Washington' },
+  { abbr: 'WV', name: 'West Virginia' },
+  { abbr: 'WI', name: 'Wisconsin' },
+  { abbr: 'WY', name: 'Wyoming' },
+];
+
 export default function SettingsPage() {
   const { accessToken, refreshToken, user, updateAccessToken } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
@@ -31,6 +87,7 @@ export default function SettingsPage() {
   const [email, setEmail] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [city, setCity] = useState('');
+  const [userState, setUserState] = useState('');
   const [congressionalDistrict, setCongressionalDistrict] = useState('');
 
   // Policy interests state
@@ -72,6 +129,7 @@ export default function SettingsPage() {
           setEmail(user?.email || '');
           setCity(response.data.city || '');
           setZipCode(response.data.zipCode || '');
+          setUserState(response.data.state || '');
           setCongressionalDistrict(
             response.data.congressionalDistrict ||
             (response.data.state && response.data.district
@@ -120,10 +178,11 @@ export default function SettingsPage() {
         lastName,
       });
 
-      // Update preferences (includes zipCode if changed)
+      // Update preferences (includes zipCode and state if changed)
       await updateUserPreferences(accessToken, {
         policyInterests: selectedInterests,
         zipCode,
+        state: userState,
         briefingTime,
         emailNotifications,
         playbackSpeed,
@@ -291,6 +350,24 @@ export default function SettingsPage() {
                       className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">State</label>
+                  <select
+                    value={userState}
+                    onChange={(e) => setUserState(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    {US_STATES.map((state) => (
+                      <option key={state.abbr} value={state.abbr}>
+                        {state.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Used to show state legislation relevant to you
+                  </p>
                 </div>
 
                 <div className="space-y-2">

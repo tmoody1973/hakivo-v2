@@ -21,6 +21,10 @@ interface UserPreferences {
   playbackSpeed: number;
   autoplay: boolean;
   emailNotifications: boolean;
+  state?: string;
+  district?: string;
+  zipCode?: string;
+  city?: string;
 }
 
 export default class extends Service<Env> {
@@ -168,7 +172,8 @@ export default class extends Service<Env> {
       briefingDays: preferences.briefingDays || (current?.briefing_days ? JSON.parse(current.briefing_days as string) : ['Monday', 'Wednesday', 'Friday']),
       playbackSpeed: preferences.playbackSpeed ?? (current?.playback_speed as number || 1.0),
       autoplay: preferences.autoplay ?? Boolean(current?.autoplay ?? true),
-      emailNotifications: preferences.emailNotifications ?? Boolean(current?.email_notifications ?? true)
+      emailNotifications: preferences.emailNotifications ?? Boolean(current?.email_notifications ?? true),
+      state: preferences.state ?? (current?.state as string || '')
     };
 
     if (current) {
@@ -181,7 +186,8 @@ export default class extends Service<Env> {
             briefing_days = ?,
             playback_speed = ?,
             autoplay = ?,
-            email_notifications = ?
+            email_notifications = ?,
+            state = ?
           WHERE user_id = ?`
         )
         .bind(
@@ -191,6 +197,7 @@ export default class extends Service<Env> {
           updated.playbackSpeed,
           updated.autoplay ? 1 : 0,
           updated.emailNotifications ? 1 : 0,
+          updated.state,
           userId
         )
         .run();
@@ -200,8 +207,8 @@ export default class extends Service<Env> {
         .prepare(
           `INSERT INTO user_preferences (
             user_id, policy_interests, briefing_time, briefing_days,
-            playback_speed, autoplay, email_notifications
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            playback_speed, autoplay, email_notifications, state
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           userId,
@@ -210,7 +217,8 @@ export default class extends Service<Env> {
           JSON.stringify(updated.briefingDays),
           updated.playbackSpeed,
           updated.autoplay ? 1 : 0,
-          updated.emailNotifications ? 1 : 0
+          updated.emailNotifications ? 1 : 0,
+          updated.state
         )
         .run();
     }
@@ -239,7 +247,11 @@ export default class extends Service<Env> {
         briefingDays: ['Monday', 'Wednesday', 'Friday'],
         playbackSpeed: 1.0,
         autoplay: true,
-        emailNotifications: true
+        emailNotifications: true,
+        state: undefined,
+        district: undefined,
+        zipCode: undefined,
+        city: undefined
       };
     }
 
@@ -270,7 +282,11 @@ export default class extends Service<Env> {
       briefingDays,
       playbackSpeed: result.playback_speed as number || 1.0,
       autoplay: Boolean(result.autoplay),
-      emailNotifications: Boolean(result.email_notifications)
+      emailNotifications: Boolean(result.email_notifications),
+      state: result.state as string | undefined,
+      district: result.district as string | undefined,
+      zipCode: result.zipcode as string | undefined,
+      city: result.city as string | undefined
     };
   }
 
