@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading, user, accessToken, refreshToken, updateAccessToken } = useAuth();
   const [userInterests, setUserInterests] = useState<string[]>([]);
+  const [userState, setUserState] = useState<string | null>(null);
 
   useEffect(() => {
     // Redirect to sign-in if not authenticated
@@ -32,10 +33,13 @@ export default function DashboardPage() {
             updateAccessToken
           );
           if (response.success && response.data) {
-            // Extract policy interests from preferences
+            // Extract policy interests and state from preferences
             const preferences = response.data as any;
             if (preferences.policyInterests) {
               setUserInterests(preferences.policyInterests);
+            }
+            if (preferences.state) {
+              setUserState(preferences.state);
             }
           }
         } catch (error) {
@@ -74,7 +78,7 @@ export default function DashboardPage() {
         <DailyBriefWidget />
 
         <div className="grid gap-6 md:grid-cols-2 items-start">
-          <LatestActionsWidget />
+          <LatestActionsWidget userState={userState} />
 
           <PersonalizedContentWidget userInterests={userInterests} />
         </div>
