@@ -63,10 +63,11 @@ export default class extends Each<Body, Env> {
       .run();
     console.log(`[STAGE-0] Status updated. Elapsed: ${Date.now() - startTime}ms`);
 
-    // ==================== STAGE 1: GET USER PREFERENCES ====================
-    console.log(`[STAGE-1] Getting user preferences for ${userId}...`);
+    // ==================== STAGE 1: GET USER PREFERENCES & PROFILE ====================
+    console.log(`[STAGE-1] Getting user preferences and profile for ${userId}...`);
     const userPrefs = await this.getUserPreferences(userId);
-    console.log(`[STAGE-1] Got prefs: ${userPrefs ? 'found' : 'not found'}. Elapsed: ${Date.now() - startTime}ms`);
+    const userProfile = await this.getUserProfile(userId);
+    console.log(`[STAGE-1] Got prefs: ${userPrefs ? 'found' : 'not found'}, profile: ${userProfile ? 'found' : 'not found'}. Elapsed: ${Date.now() - startTime}ms`);
 
     if (!userPrefs) {
       console.log(`⚠️ [STAGE-1] No user preferences found for ${userId}`);
@@ -74,6 +75,12 @@ export default class extends Each<Body, Env> {
         .bind('failed', Date.now(), briefId).run();
       return;
     }
+
+    // Extract personalization data
+    const userName = userProfile?.first_name || 'there';
+    const userState = userPrefs.state || null;
+    const userDistrict = userPrefs.district || null;
+    console.log(`📍 [STAGE-1] User: ${userName}, Location: ${userState ? `${userState}-${userDistrict}` : 'not set'}`);
 
     // Parse policy interests carefully
     console.log(`[STAGE-1] Raw policy_interests type: ${typeof userPrefs.policy_interests}`);
@@ -118,12 +125,34 @@ export default class extends Each<Body, Env> {
       console.warn(`[STAGE-2a] Failed to get recent bills (non-fatal):`, recentError);
     }
 
-    // ==================== STAGE 2b: FETCH BILLS ====================
-    console.log(`[STAGE-2b] Fetching bills for interests...`);
+    // ==================== STAGE 2b: FETCH PERSONALIZED BILLS ====================
+    console.log(`[STAGE-2b] Fetching personalized bills...`);
     let bills: any[];
+    let repBills: any[] = [];
+
     try {
-      bills = await this.getBillsByInterests(policyInterests, startDate, endDate, recentlyFeaturedBillIds);
-      console.log(`[STAGE-2b] Got ${bills.length} bills. Elapsed: ${Date.now() - startTime}ms`);
+      // First priority: Get bills from user's representatives
+      if (userState) {
+        repBills = await this.getRepresentativeBills(userState, userDistrict, recentlyFeaturedBillIds);
+        console.log(`[STAGE-2b] Got ${repBills.length} bills from user's representatives`);
+      }
+
+      // Second: Get interest-matched bills with variation
+      const interestBills = await this.getBillsByInterests(
+        policyInterests,
+        startDate,
+        endDate,
+        [...recentlyFeaturedBillIds, ...repBills.map(b => b.id)],
+        userId // Pass userId for seeded variation
+      );
+      console.log(`[STAGE-2b] Got ${interestBills.length} interest-matched bills`);
+
+      // Combine: Rep bills first (max 2), then interest bills
+      const repBillsToInclude = repBills.slice(0, 2);
+      const interestBillsToInclude = interestBills.slice(0, 5 - repBillsToInclude.length);
+      bills = [...repBillsToInclude, ...interestBillsToInclude];
+
+      console.log(`[STAGE-2b] Total ${bills.length} personalized bills. Elapsed: ${Date.now() - startTime}ms`);
     } catch (billError) {
       console.error(`[STAGE-2b] FAILED:`, billError);
       await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
@@ -138,6 +167,9 @@ export default class extends Each<Body, Env> {
       return;
     }
 
+    // Track which are rep bills for script personalization
+    const repBillIds = new Set(repBills.map(b => b.id));
+
     // ==================== STAGE 3: FETCH BILL ACTIONS ====================
     console.log(`[STAGE-3] Fetching bill actions...`);
     let billsWithActions: any[];
@@ -150,12 +182,36 @@ export default class extends Each<Body, Env> {
       billsWithActions = bills.map(b => ({ ...b, actions: [] }));
     }
 
-    // ==================== STAGE 4: FETCH NEWS ====================
-    console.log(`[STAGE-4] Fetching news from Exa...`);
+    // ==================== STAGE 4: FETCH PERSONALIZED NEWS ====================
+    console.log(`[STAGE-4] Fetching personalized news from Exa...`);
     let newsArticles: any[] = [];
     try {
-      newsArticles = await this.fetchNewsByInterests(policyInterests);
-      console.log(`[STAGE-4] Got ${newsArticles.length} news articles. Elapsed: ${Date.now() - startTime}ms`);
+      // Fetch both national and state-specific news
+      const nationalNews = await this.fetchNewsByInterests(policyInterests, null);
+      console.log(`[STAGE-4] Got ${nationalNews.length} national news articles`);
+
+      let stateNews: any[] = [];
+      if (userState) {
+        stateNews = await this.fetchNewsByInterests(policyInterests, userState);
+        console.log(`[STAGE-4] Got ${stateNews.length} ${userState} news articles`);
+      }
+
+      // Combine: state news first (more personal), then national
+      // Dedupe by URL
+      const seenUrls = new Set<string>();
+      for (const article of [...stateNews, ...nationalNews]) {
+        if (!seenUrls.has(article.url)) {
+          seenUrls.add(article.url);
+          newsArticles.push({
+            ...article,
+            isLocal: stateNews.includes(article)
+          });
+        }
+      }
+      // Limit to 10 total
+      newsArticles = newsArticles.slice(0, 10);
+
+      console.log(`[STAGE-4] Total ${newsArticles.length} personalized news articles. Elapsed: ${Date.now() - startTime}ms`);
     } catch (newsError) {
       console.error(`[STAGE-4] News fetch failed (non-fatal):`, newsError);
       // Continue without news - non-fatal
@@ -166,12 +222,22 @@ export default class extends Each<Body, Env> {
     await db.prepare('UPDATE briefs SET status = ? WHERE id = ?')
       .bind('content_gathered', briefId).run();
 
-    // ==================== STAGE 5: GENERATE SCRIPT ====================
-    console.log(`[STAGE-5] Generating script with Claude Sonnet 4.5 + Web Search...`);
+    // ==================== STAGE 5: GENERATE PERSONALIZED SCRIPT ====================
+    console.log(`[STAGE-5] Generating personalized script with Claude Sonnet 4.5 + Web Search...`);
     let script: string;
     let headline: string;
+
+    // Build personalization context
+    const personalization = {
+      userName,
+      state: userState,
+      district: userDistrict,
+      repBillIds: Array.from(repBillIds),
+      policyInterests
+    };
+
     try {
-      const scriptResult = await this.generateScript(type, billsWithActions, newsArticles);
+      const scriptResult = await this.generateScript(type, billsWithActions, newsArticles, personalization);
       script = scriptResult.script;
       headline = scriptResult.headline;
       console.log(`[STAGE-5] Generated script: ${script.length} chars, headline: "${headline}". Elapsed: ${Date.now() - startTime}ms`);
@@ -372,6 +438,89 @@ export default class extends Each<Body, Env> {
   }
 
   /**
+   * Get user profile (name, email, etc.)
+   */
+  private async getUserProfile(userId: string): Promise<any> {
+    const db = this.env.APP_DB;
+    return await db
+      .prepare('SELECT id, email, first_name, last_name FROM users WHERE id = ?')
+      .bind(userId)
+      .first();
+  }
+
+  /**
+   * Get bills sponsored by user's representatives (House rep + Senators)
+   * This provides the most personalized content - what YOUR reps are doing
+   */
+  private async getRepresentativeBills(
+    state: string,
+    district: number | null,
+    excludeBillIds: string[] = []
+  ): Promise<any[]> {
+    const db = this.env.APP_DB;
+
+    // Build exclusion clause
+    const excludeClause = excludeBillIds.length > 0
+      ? `AND b.id NOT IN (${excludeBillIds.map(() => '?').join(', ')})`
+      : '';
+
+    // Get bills from House rep (state + district match)
+    let houseBills: any[] = [];
+    if (district) {
+      const houseResult = await db
+        .prepare(`
+          SELECT
+            b.id, b.congress, b.bill_type, b.bill_number, b.title,
+            b.policy_area, b.latest_action_date, b.latest_action_text,
+            b.sponsor_bioguide_id,
+            m.first_name, m.last_name, m.party, m.state, m.district,
+            'house_rep' as relationship
+          FROM bills b
+          JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+          WHERE m.state = ? AND m.district = ?
+          ${excludeClause}
+          ORDER BY b.latest_action_date DESC
+          LIMIT 3
+        `)
+        .bind(state, district, ...excludeBillIds)
+        .all();
+      houseBills = houseResult.results || [];
+    }
+
+    // Get bills from Senators (state match, no district)
+    const senateResult = await db
+      .prepare(`
+        SELECT
+          b.id, b.congress, b.bill_type, b.bill_number, b.title,
+          b.policy_area, b.latest_action_date, b.latest_action_text,
+          b.sponsor_bioguide_id,
+          m.first_name, m.last_name, m.party, m.state, m.district,
+          'senator' as relationship
+        FROM bills b
+        JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE m.state = ? AND (m.district IS NULL OR m.district = 0)
+        ${excludeClause}
+        ORDER BY b.latest_action_date DESC
+        LIMIT 3
+      `)
+      .bind(state, ...excludeBillIds)
+      .all();
+    const senateBills = senateResult.results || [];
+
+    // Combine and dedupe
+    const allRepBills = [...houseBills, ...senateBills];
+    const seen = new Set<string>();
+    const uniqueRepBills = allRepBills.filter(b => {
+      if (seen.has(b.id)) return false;
+      seen.add(b.id);
+      return true;
+    });
+
+    console.log(`✓ Found ${uniqueRepBills.length} bills from user's representatives (${houseBills.length} House, ${senateBills.length} Senate)`);
+    return uniqueRepBills;
+  }
+
+  /**
    * Get bill IDs that were featured in user's recent briefs (for deduplication)
    * This ensures each day's brief has fresh content
    */
@@ -419,16 +568,18 @@ export default class extends Each<Body, Env> {
   }
 
   /**
-   * Get bills matching user's policy interests
+   * Get bills matching user's policy interests with user-specific variation
    * Prioritizes interest matching over date - finds most recent bills that match interests
    * Maps user-friendly interest names to Congress.gov policy_area values
    * Excludes bills that were recently featured to ensure fresh content daily
+   * Uses userId for seeded variation so different users see different bill mixes
    */
   private async getBillsByInterests(
     interests: string[],
     _startDate: string,
     _endDate: string,
-    excludeBillIds: string[] = []
+    excludeBillIds: string[] = [],
+    userId?: string
   ): Promise<any[]> {
     const db = this.env.APP_DB;
 
@@ -542,13 +693,33 @@ export default class extends Each<Body, Env> {
       console.log(`✓ Excluded ${allBills.length - freshBills.length} recently featured bills`);
     }
 
-    // Sort all found bills by latest_action_date and return top 5 for focused coverage
-    // (Changed from 15 to 5 for "The Daily" style - focused on 2-3 main stories)
+    // Sort all found bills by latest_action_date first
     freshBills.sort((a, b) => {
       const dateA = a.latest_action_date || '';
       const dateB = b.latest_action_date || '';
       return dateB.localeCompare(dateA);
     });
+
+    // Add user-specific variation: shuffle within date tiers
+    // This ensures different users with same interests see different bill mixes
+    if (userId && freshBills.length > 5) {
+      // Create a simple hash from userId + today's date for deterministic but varied results
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const seed = userId + today;
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) {
+        hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+
+      // Use hash to pick a starting offset (0-4) for variety
+      const offset = Math.abs(hash) % Math.min(5, freshBills.length);
+
+      // Rotate the array by offset for variety
+      const rotated = [...freshBills.slice(offset), ...freshBills.slice(0, offset)];
+      console.log(`✓ Applied user-specific variation (offset: ${offset}) for ${freshBills.length} bills`);
+      return rotated.slice(0, 5);
+    }
 
     console.log(`✓ Total ${freshBills.length} fresh bills matching user interests`);
     return freshBills.slice(0, 5);
@@ -592,25 +763,31 @@ export default class extends Each<Body, Env> {
   }
 
   /**
-   * Fetch news articles based on user's policy interests
+   * Fetch news articles based on user's policy interests and optionally state
+   * Supports localized news when state is provided
    */
-  private async fetchNewsByInterests(interests: string[]): Promise<any[]> {
+  private async fetchNewsByInterests(interests: string[], state: string | null): Promise<any[]> {
     // Calculate date range (last 7 days)
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 7);
 
     try {
+      // If state is provided, add it to search terms for local news
+      const searchTerms = state
+        ? [...interests, state] // e.g., ["Economy & Finance", "WI"]
+        : interests;
+
       const searchResults = await this.env.EXA_CLIENT.searchNews(
-        interests,
+        searchTerms,
         startDate,
         endDate,
-        10
+        state ? 5 : 10 // Fewer results for state-specific searches
       );
 
       return searchResults;
     } catch (error) {
-      console.error('Failed to fetch news articles:', error);
+      console.error(`Failed to fetch news articles${state ? ` for ${state}` : ''}:`, error);
       return [];
     }
   }
@@ -618,15 +795,32 @@ export default class extends Each<Body, Env> {
   /**
    * Generate brief script in "The Daily" style from New York Times
    * Structure: Cold Open → Top Story → Headlines → Spotlight → Hakivo Outro
-   * Focused on 2-3 key pieces of legislation with personalized news
+   * Fully personalized with user's name, location, and representative context
    */
-  private async generateScript(type: string, bills: any[], newsArticles: any[]): Promise<{
+  private async generateScript(
+    type: string,
+    bills: any[],
+    newsArticles: any[],
+    personalization: {
+      userName: string;
+      state: string | null;
+      district: number | null;
+      repBillIds: string[];
+      policyInterests: string[];
+    }
+  ): Promise<{
     script: string;
     headline: string;
   }> {
-    // Separate bills: first one is TOP STORY, rest are SPOTLIGHT
-    const topStoryBill = bills[0];
-    const spotlightBills = bills.slice(1, 3); // Max 2 more bills for spotlight
+    // Separate bills: prioritize rep bills as top story for maximum personalization
+    const repBillIdSet = new Set(personalization.repBillIds);
+    const repBills = bills.filter(b => repBillIdSet.has(b.id));
+    const otherBills = bills.filter(b => !repBillIdSet.has(b.id));
+
+    // Top story: prefer rep's bill if available (most personal)
+    const topStoryBill = repBills[0] || otherBills[0];
+    const isTopStoryFromRep = topStoryBill && repBillIdSet.has(topStoryBill.id);
+    const spotlightBills = [...(repBills[0] ? otherBills.slice(0, 2) : otherBills.slice(1, 3))];
 
     // Format top story bill with full context
     const topStoryText = topStoryBill ? `
@@ -634,6 +828,7 @@ BILL: ${String(topStoryBill.bill_type).toUpperCase()} ${topStoryBill.bill_number
 TITLE: ${topStoryBill.title}
 POLICY AREA: ${topStoryBill.policy_area || 'General'}
 SPONSOR: ${topStoryBill.first_name || 'Unknown'} ${topStoryBill.last_name || ''} (${topStoryBill.party || '?'}-${topStoryBill.state || '?'})
+IS USER'S REPRESENTATIVE: ${isTopStoryFromRep ? 'YES - This is from the listener\'s own representative!' : 'No'}
 RECENT ACTIONS:
 ${topStoryBill.actions && topStoryBill.actions.length > 0
   ? topStoryBill.actions.slice(0, 3).map((a: any) => `  • ${a.action_date}: ${a.action_text}`).join('\n')
@@ -645,11 +840,6 @@ URL: https://www.congress.gov/bill/${topStoryBill.congress}th-congress/${topStor
 BILL: ${String(bill.bill_type).toUpperCase()} ${bill.bill_number} - ${bill.title}
 SPONSOR: ${bill.first_name || ''} ${bill.last_name || ''} (${bill.party || '?'}-${bill.state || '?'})
 LATEST: ${bill.latest_action_text}`).join('\n');
-
-    // Format news headlines (quick hits, max 3)
-    const newsHeadlines = newsArticles.slice(0, 3).map((article: any) =>
-      `• ${article.title} (${article.publishedAt || 'Recent'})`
-    ).join('\n');
 
     // Get today's date for context
     const today = new Date().toLocaleDateString('en-US', {
@@ -663,10 +853,36 @@ LATEST: ${bill.latest_action_text}`).join('\n');
     const hostA = 'Arabella';
     const hostB = 'Mark';
 
-    // System prompt for the script generation
-    const systemPrompt = `You are a scriptwriter for "Hakivo Daily" - a civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
+    // Format state name for spoken form
+    const stateNames: Record<string, string> = {
+      'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+      'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+      'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+      'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+      'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+      'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+      'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+      'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+      'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+      'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+    };
+    const spokenState = personalization.state ? stateNames[personalization.state] || personalization.state : null;
+
+    // System prompt for the script generation with personalization
+    const systemPrompt = `You are a scriptwriter for "Hakivo Daily" - a PERSONALIZED civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
 
 Your hosts are ${hostA} (female) and ${hostB} (male). They have great chemistry and naturally use each other's names in conversation.
+
+=== LISTENER PROFILE (PERSONALIZE FOR THIS LISTENER) ===
+Name: ${personalization.userName}
+${spokenState ? `Location: ${spokenState}${personalization.district ? `, Congressional District ${personalization.district}` : ''}` : 'Location: Not specified'}
+Policy Interests: ${personalization.policyInterests.join(', ')}
+
+IMPORTANT PERSONALIZATION RULES:
+1. Address the listener by name in the opening: "Good morning, ${personalization.userName}..." or "Hey ${personalization.userName}, welcome back..."
+2. ${isTopStoryFromRep && topStoryBill ? `The TOP STORY is from this listener's OWN representative (${topStoryBill.first_name} ${topStoryBill.last_name}). Make it personal: "Your representative, ${topStoryBill.first_name} ${topStoryBill.last_name}, just introduced..."` : 'Connect stories to the listener\'s interests.'}
+3. ${spokenState ? `Reference their state when relevant: "Here in ${spokenState}..." or "For folks in ${spokenState}..."` : 'Keep location references general.'}
+4. This brief is UNIQUE to this listener - make them feel it was created just for them.
 
 IMPORTANT: Write ONLY natural spoken dialogue. NEVER include section labels, headers, or structural markers in the script. The hosts should NEVER say words like "cold open", "intro", "top story", "spotlight", "outro", or any section names. These are just internal guidance for you.
 
@@ -675,21 +891,22 @@ You have WEB SEARCH capability - use it to find the latest updates on these bill
 NATURAL FLOW (hosts never announce these sections - they just flow naturally):
 
 Opening (15-20 seconds):
-- Start with a compelling hook about today's top story
-- Example: ${hostA.toUpperCase()}: [intrigued] "A bill that could change how millions of Americans access healthcare just cleared a major hurdle yesterday..."
+- Start with a personalized greeting using the listener's name
+- Hook them with today's top story
+- Example: ${hostA.toUpperCase()}: [warmly] "Good morning, ${personalization.userName}. A bill that could change how millions of Americans access healthcare just cleared a major hurdle yesterday..."
 
 Show Introduction (20-30 seconds):
 - ${hostA.toUpperCase()}: "From Hakivo, I'm ${hostA}." ${hostB.toUpperCase()}: "And I'm ${hostB}." ${hostA.toUpperCase()}: "It's ${today}. Here's what you need to know today."
 
 Main Story (2-3 minutes):
 - Deep dive into the most significant legislative development
-- Why it matters to everyday people
+- ${isTopStoryFromRep ? 'IMPORTANT: This is from the listener\'s own representative - make it personal and relevant to them!' : 'Explain why it matters to everyday people'}
 - What happens next
 - Natural back-and-forth between hosts (use names: "That's right, ${hostB}..." or "Good point, ${hostA}...")
 
 Quick News Updates (45-60 seconds):
 - Transition naturally: "Before we move on, a few other stories caught our attention..."
-- Quick hits on 2-3 related news stories
+- Quick hits on 2-3 related news stories${spokenState ? `\n- If any news is from ${spokenState}, highlight it: "And closer to home in ${spokenState}..."` : ''}
 
 Other Bills Worth Watching (1-2 minutes):
 - Transition naturally: "There's another bill moving through Congress that connects to this..."
@@ -697,7 +914,7 @@ Other Bills Worth Watching (1-2 minutes):
 
 Closing (30-45 seconds):
 - "That's today's Hakivo Daily."
-- Encourage engagement: "Want to track these bills? Open Hakivo to follow them and get alerts when they move."
+- Personalized call to action: "Want to track these bills, ${personalization.userName}? Open Hakivo to follow them and get alerts when they move."
 - "You can read the full text, see how your representatives voted, and make your voice heard."
 - Sign off personally: "I'm ${hostA}." "And I'm ${hostB}." "We'll be back tomorrow. Until then, stay informed, stay engaged."
 
@@ -711,8 +928,23 @@ CRITICAL FORMATTING RULES:
 
 TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`;
 
-    // User prompt with the bill and news data
-    const userPrompt = `Generate today's Hakivo Daily script for ${today}.
+    // Separate local news for highlighting
+    const localNews = newsArticles.filter((a: any) => a.isLocal);
+    const nationalNews = newsArticles.filter((a: any) => !a.isLocal);
+
+    // Format news with local/national distinction
+    const newsSection = [
+      ...(localNews.length > 0 ? [`LOCAL NEWS (from ${spokenState || 'your area'}):\n${localNews.slice(0, 2).map((a: any) => `• ${a.title}`).join('\n')}`] : []),
+      ...(nationalNews.length > 0 ? [`NATIONAL NEWS:\n${nationalNews.slice(0, 3).map((a: any) => `• ${a.title}`).join('\n')}`] : [])
+    ].join('\n\n');
+
+    // User prompt with personalized content
+    const userPrompt = `Generate a PERSONALIZED Hakivo Daily script for ${personalization.userName} on ${today}.
+
+=== LISTENER PROFILE ===
+Name: ${personalization.userName}
+${spokenState ? `Location: ${spokenState}${personalization.district ? ` (District ${personalization.district})` : ''}` : ''}
+Interests: ${personalization.policyInterests.join(', ')}
 
 First, use web search to find the latest updates and context on the top story bill. This will help make the script more current and informative.
 
@@ -722,17 +954,18 @@ ${topStoryText}
 === LEGISLATION SPOTLIGHT ===
 ${spotlightText || 'No additional bills for spotlight'}
 
-=== NEWS HEADLINES ===
-${newsHeadlines || 'No recent news headlines'}
+=== NEWS COVERAGE ===
+${newsSection || 'No recent news headlines'}
 
-=== REQUIREMENTS ===
-1. Follow the exact show structure: Cold Open → Intro → Top Story → Headlines → Spotlight → Hakivo Outro
-2. Make the TOP STORY the heart of the episode - really explain why it matters
-3. The HAKIVO OUTRO is REQUIRED - promote Hakivo as the civic engagement hub
-4. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
-5. Include emotional cues in [brackets]
-6. Make it conversational and engaging, not a news read
-7. Hosts should occasionally use each other's names naturally
+=== PERSONALIZATION REQUIREMENTS ===
+1. START by greeting ${personalization.userName} by name warmly
+2. ${isTopStoryFromRep ? `The TOP STORY is from ${personalization.userName}'s OWN representative - emphasize this personal connection!` : 'Make the top story feel relevant to their interests'}
+3. ${localNews.length > 0 ? `Include the LOCAL news from ${spokenState} - make it feel personal` : 'Focus on national stories relevant to their interests'}
+4. Follow the show structure: Personalized Opening → Intro → Top Story → Headlines → Spotlight → Personalized Outro
+5. The HAKIVO OUTRO must include ${personalization.userName}'s name in the call to action
+6. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
+7. Include emotional cues in [brackets]
+8. Make it conversational and engaging - this brief was made JUST for ${personalization.userName}
 
 Generate a HEADLINE first (catchy, max 10 words, reflects top story).
 
