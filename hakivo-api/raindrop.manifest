@@ -45,6 +45,10 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "OPENSTATES_API_KEY" {
+    secret = true
+  }
+
   env "VULTR_ENDPOINT" {
     secret = true
   }
@@ -130,6 +134,10 @@ application "hakivo-new" {
   }
 
   service "exa-client" {
+    visibility = "private"
+  }
+
+  service "openstates-client" {
     visibility = "private"
   }
 
