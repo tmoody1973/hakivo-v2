@@ -72,6 +72,7 @@ export default class extends Each<SyncMessage, Env> {
 
   /**
    * Sync bills from Congress.gov for specified congresses
+   * Fetches bill details to get sponsor information
    */
   private async syncBills(congresses: number[], daysBack: number = 7): Promise<void> {
     console.log(`📄 Syncing bills for congresses: ${congresses.join(', ')}`);
@@ -90,26 +91,69 @@ export default class extends Each<SyncMessage, Env> {
 
         for (const bill of bills) {
           try {
-            // Insert or update bill in database
+            // Create proper bill ID: "119-hr-1234"
+            const billType = String(bill.type).toLowerCase();
+            const billNumber = bill.number;
+            const billId = `${congress}-${billType}-${billNumber}`;
+
+            // Fetch bill details to get sponsor information
+            let sponsorBioguideId: string | null = null;
+            let policyArea: string | null = null;
+            let introducedDate: string | null = bill.introducedDate || null;
+
+            try {
+              const detailsResponse = await congressApi.getBillDetails(congress, billType, billNumber);
+              const billDetails = detailsResponse.bill;
+
+              // Extract sponsor bioguide ID from the first sponsor
+              if (billDetails?.sponsors && billDetails.sponsors.length > 0) {
+                sponsorBioguideId = billDetails.sponsors[0].bioguideId || null;
+
+                // Also sync the sponsor to members table if not exists
+                const sponsor = billDetails.sponsors[0];
+                if (sponsorBioguideId && sponsor) {
+                  await this.upsertMember(db, {
+                    bioguideId: sponsorBioguideId,
+                    firstName: sponsor.firstName,
+                    lastName: sponsor.lastName,
+                    party: sponsor.party,
+                    state: sponsor.state,
+                    district: sponsor.district
+                  });
+                }
+              }
+
+              // Get policy area if available
+              policyArea = billDetails?.policyArea?.name || null;
+              introducedDate = billDetails?.introducedDate || introducedDate;
+
+            } catch (detailError) {
+              // Non-fatal - continue with basic info
+              console.warn(`    ⚠️  Could not fetch details for ${billType}${billNumber}: ${detailError}`);
+            }
+
+            // Insert or update bill in database with proper ID and sponsor
             await db
               .prepare(`
                 INSERT OR REPLACE INTO bills (
                   id, congress, bill_type, bill_number, title,
                   origin_chamber, update_date, introduced_date, latest_action_text,
-                  latest_action_date
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  latest_action_date, sponsor_bioguide_id, policy_area
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `)
               .bind(
-                bill.number || crypto.randomUUID(),
+                billId,
                 congress,
-                bill.type,
-                bill.number,
+                billType,
+                billNumber,
                 bill.title || 'Untitled',
                 bill.originChamber || null,
                 bill.updateDate || null,
-                bill.introducedDate || null,
+                introducedDate,
                 bill.latestAction?.text || null,
-                bill.latestAction?.actionDate || null
+                bill.latestAction?.actionDate || null,
+                sponsorBioguideId,
+                policyArea
               )
               .run();
 
@@ -127,30 +171,33 @@ export default class extends Each<SyncMessage, Env> {
                     // Strip HTML to get plain text
                     const plainText = stripHTML(billText);
 
-                    // Save plain text to database
+                    // Save plain text to database using proper bill ID
                     await db
                       .prepare(`UPDATE bills SET text = ? WHERE id = ?`)
-                      .bind(plainText, bill.number)
+                      .bind(plainText, billId)
                       .run();
 
                     // Upload plain text to SmartBucket
-                    const documentKey = `congress-${congress}/${bill.type}${bill.number}.txt`;
+                    const documentKey = `congress-${congress}/${billType}${billNumber}.txt`;
                     await billTexts.put(documentKey, plainText, {
                       customMetadata: {
                         congress: String(congress),
-                        type: bill.type,
-                        number: String(bill.number),
-                        title: bill.title
+                        type: billType,
+                        number: String(billNumber),
+                        title: bill.title,
+                        billId: billId
                       }
                     });
 
-                    console.log(`    ✓ Saved text and uploaded ${bill.type}${bill.number} (${plainText.length} chars)`);
+                    console.log(`    ✓ Saved text for ${billId} (${plainText.length} chars)`);
                   } catch (error) {
-                    console.warn(`    ⚠️  Failed to upload bill text for ${bill.type}${bill.number}`);
+                    console.warn(`    ⚠️  Failed to upload bill text for ${billId}`);
                   }
                 }
               }
             }
+
+            console.log(`    ✓ Synced ${billId}${sponsorBioguideId ? ` (sponsor: ${sponsorBioguideId})` : ''}`);
           } catch (error) {
             console.error(`  ✗ Failed to sync bill ${bill.type}${bill.number}:`, error);
           }
@@ -158,6 +205,47 @@ export default class extends Each<SyncMessage, Env> {
       } catch (error) {
         console.error(`  ✗ Failed to fetch bills for Congress ${congress}:`, error);
       }
+    }
+  }
+
+  /**
+   * Upsert a member record (insert or update)
+   */
+  private async upsertMember(
+    db: any,
+    member: {
+      bioguideId: string;
+      firstName?: string;
+      lastName?: string;
+      party?: string;
+      state?: string;
+      district?: number;
+    }
+  ): Promise<void> {
+    try {
+      await db
+        .prepare(`
+          INSERT INTO members (bioguide_id, first_name, last_name, party, state, district)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(bioguide_id) DO UPDATE SET
+            first_name = COALESCE(excluded.first_name, members.first_name),
+            last_name = COALESCE(excluded.last_name, members.last_name),
+            party = COALESCE(excluded.party, members.party),
+            state = COALESCE(excluded.state, members.state),
+            district = COALESCE(excluded.district, members.district)
+        `)
+        .bind(
+          member.bioguideId,
+          member.firstName || null,
+          member.lastName || null,
+          member.party || null,
+          member.state || null,
+          member.district || null
+        )
+        .run();
+    } catch (error) {
+      // Non-fatal - member might already exist
+      console.warn(`    ⚠️  Could not upsert member ${member.bioguideId}: ${error}`);
     }
   }
 
