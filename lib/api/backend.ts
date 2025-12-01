@@ -1659,6 +1659,294 @@ export async function getUserBillBookmarks(
 }
 
 // ============================================================================
+// State Bills APIs
+// ============================================================================
+
+/**
+ * State bill from OpenStates API
+ */
+export interface StateBill {
+  id: string;
+  state: string;
+  session: string;
+  identifier: string;
+  title: string;
+  subjects: string[];
+  classification: string[];
+  abstract: string | null;
+  chamber: 'upper' | 'lower' | null;
+  latestAction: {
+    date: string | null;
+    description: string | null;
+  };
+  firstActionDate: string | null;
+  openstatesUrl: string | null;
+  detailId: string; // URL-encoded ID for routing to detail page
+  sponsor: {
+    name: string;
+    party: string | null;
+    district: string | null;
+  } | null;
+}
+
+/**
+ * Get state legislature bills filtered by state
+ *
+ * API ENDPOINT: GET /state-bills
+ * QUERY PARAMETERS: {
+ *   state: string (required) - 2-letter state code
+ *   subject?: string
+ *   query?: string
+ *   chamber?: 'upper' | 'lower'
+ *   limit?: number (default: 20)
+ *   offset?: number (default: 0)
+ *   sort?: 'latest_action_date' | 'identifier'
+ *   order?: 'asc' | 'desc'
+ * }
+ */
+export async function getStateBills(params: {
+  state: string;
+  subject?: string;
+  query?: string;
+  chamber?: 'upper' | 'lower';
+  limit?: number;
+  offset?: number;
+  sort?: 'latest_action_date' | 'identifier';
+  order?: 'asc' | 'desc';
+}): Promise<APIResponse<{
+  success: boolean;
+  state: string;
+  bills: StateBill[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    queryParams.append('state', params.state);
+    if (params.subject) queryParams.append('subject', params.subject);
+    if (params.query) queryParams.append('query', params.query);
+    if (params.chamber) queryParams.append('chamber', params.chamber);
+    if (params.limit !== undefined) queryParams.append('limit', String(params.limit));
+    if (params.offset !== undefined) queryParams.append('offset', String(params.offset));
+    if (params.sort) queryParams.append('sort', params.sort);
+    if (params.order) queryParams.append('order', params.order);
+
+    const url = `${BILLS_API_URL}/state-bills?${queryParams.toString()}`;
+    console.log('[getStateBills] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getStateBills] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getStateBills] Error response:', errorText);
+      let errorMessage = 'Failed to fetch state bills';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch state bills';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getStateBills] Success, found:', result.bills?.length || 0, 'bills');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getStateBills] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch state bills',
+      },
+    };
+  }
+}
+
+/**
+ * State bill detail data returned from API
+ */
+export interface StateBillDetail {
+  id: string;
+  state: string;
+  session: string;
+  identifier: string;
+  title: string;
+  subjects: string[];
+  classification: string[];
+  abstract: string | null;
+  chamber: string;
+  latestAction: {
+    date: string | null;
+    description: string | null;
+  };
+  firstActionDate: string | null;
+  openstatesUrl: string | null;
+  sponsors: Array<{
+    name: string;
+    classification: string;
+  }>;
+  textVersions: Array<{
+    url: string;
+    date: string | null;
+    note: string | null;
+    mediaType: string | null;
+  }>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Get state bill by ID (OCD ID)
+ *
+ * API ENDPOINT: GET /state-bills/:id
+ * The ID should be URL-encoded since OCD IDs contain special characters
+ */
+export async function getStateBillById(billId: string): Promise<APIResponse<{
+  success: boolean;
+  bill: StateBillDetail;
+}>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    // billId should already be URL-encoded from the route param
+    const url = `${BILLS_API_URL}/state-bills/${billId}`;
+    console.log('[getStateBillById] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getStateBillById] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getStateBillById] Error response:', errorText);
+      let errorMessage = 'Failed to fetch state bill';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch state bill';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getStateBillById] Success, bill:', result.bill?.identifier);
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getStateBillById] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch state bill',
+      },
+    };
+  }
+}
+
+// ============================================================================
+// State Legislators APIs
+// ============================================================================
+
+/**
+ * State legislator from OpenStates API
+ */
+export interface StateLegislator {
+  id: string;
+  name: string;
+  party: string;
+  chamber: string;
+  district: string;
+  state: string;
+  imageUrl: string | null;
+}
+
+/**
+ * Get state legislators by geographic coordinates
+ *
+ * API ENDPOINT: GET /state-legislators
+ * QUERY PARAMETERS: {
+ *   lat: number (required) - Latitude
+ *   lng: number (required) - Longitude
+ * }
+ */
+export async function getStateLegislators(params: {
+  lat: number;
+  lng: number;
+}): Promise<APIResponse<{
+  success: boolean;
+  legislators: StateLegislator[];
+  count: number;
+}>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    const queryParams = new URLSearchParams();
+    queryParams.append('lat', String(params.lat));
+    queryParams.append('lng', String(params.lng));
+
+    const url = `${BILLS_API_URL}/state-legislators?${queryParams.toString()}`;
+    console.log('[getStateLegislators] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getStateLegislators] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getStateLegislators] Error response:', errorText);
+      let errorMessage = 'Failed to fetch state legislators';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to fetch state legislators';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getStateLegislators] Success, found:', result.legislators?.length || 0, 'legislators');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getStateLegislators] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to fetch state legislators',
+      },
+    };
+  }
+}
+
+// ============================================================================
 // Bills Semantic Search APIs
 // ============================================================================
 
