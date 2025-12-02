@@ -50,13 +50,41 @@ export default class extends Task<Env> {
           const startDate = new Date();
           startDate.setDate(startDate.getDate() - 1);
 
+          const briefId = crypto.randomUUID();
+          const now = Date.now();
+          const title = `Daily Brief - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+          // CRITICAL: Insert brief record BEFORE enqueueing
+          // The brief-generator observer expects the brief to exist in DB
+          await db
+            .prepare(`
+              INSERT INTO briefs (
+                id, user_id, type, title, start_date, end_date, status, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `)
+            .bind(
+              briefId,
+              user.id,
+              'daily',
+              title,
+              startDate.toISOString().split('T')[0],
+              endDate.toISOString().split('T')[0],
+              'pending',
+              now,
+              now
+            )
+            .run();
+
+          console.log(`  📝 Created brief record ${briefId} for ${user.email}`);
+
+          // Now enqueue for processing
           const briefRequest = {
-            briefId: crypto.randomUUID(),
+            briefId,
             userId: user.id,
             type: 'daily' as const,
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
-            requestedAt: Date.now()
+            requestedAt: now
           };
 
           await briefQueue.send(briefRequest);

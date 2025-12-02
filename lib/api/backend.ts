@@ -752,7 +752,7 @@ export async function getDashboardData(accessToken: string): Promise<DashboardRe
  * Get user's congressional representatives
  *
  * ACTUAL BACKEND: GET /dashboard/representatives
- * Returns: { success: true, representatives: [...], userLocation: { state, district } }
+ * Returns: { success: true, representatives: [...], stateLegislators: [...], userLocation: { state, district } }
  */
 export interface Representative {
   bioguideId: string;
@@ -769,6 +769,37 @@ export interface Representative {
   phoneNumber?: string;
   url?: string;
   initials: string;
+}
+
+/**
+ * State legislator (state senator or state representative)
+ */
+export interface StateLegislator {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  party: string;
+  state: string;
+  district?: string;
+  role: string;
+  chamber: 'upper' | 'lower';
+  imageUrl?: string;
+  email?: string;
+  initials: string;
+}
+
+/**
+ * Combined response for all representatives (federal + state)
+ */
+export interface RepresentativesResponse {
+  representatives: Representative[];
+  stateLegislators: StateLegislator[];
+  userLocation: {
+    state: string;
+    district?: number;
+  };
 }
 
 /**
@@ -871,7 +902,7 @@ export async function getRepresentatives(
   accessToken: string,
   refreshToken?: string,
   onTokenRefreshed?: (newAccessToken: string) => void
-): Promise<APIResponse<Representative[]>> {
+): Promise<APIResponse<RepresentativesResponse>> {
   try {
     // Pass token as query parameter to avoid CORS preflight
     let url = `${DASHBOARD_API_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`;
@@ -929,10 +960,14 @@ export async function getRepresentatives(
     }
 
     const result = await response.json();
-    console.log('[Representatives] Success, got', result.representatives?.length || 0, 'representatives');
+    console.log('[Representatives] Success, got', result.representatives?.length || 0, 'federal reps,', result.stateLegislators?.length || 0, 'state legislators');
     return {
       success: true,
-      data: result.representatives,
+      data: {
+        representatives: result.representatives || [],
+        stateLegislators: result.stateLegislators || [],
+        userLocation: result.userLocation || { state: '', district: undefined },
+      },
     };
   } catch (error) {
     console.error('[Representatives] Caught error:', error);
@@ -944,7 +979,11 @@ export async function getRepresentatives(
         code: 'FETCH_ERROR',
         message: error instanceof Error ? error.message : 'Failed to get representatives',
       },
-      data: [],
+      data: {
+        representatives: [],
+        stateLegislators: [],
+        userLocation: { state: '', district: undefined },
+      },
     };
   }
 }
@@ -1869,18 +1908,7 @@ export async function getStateBillById(billId: string): Promise<APIResponse<{
 // State Legislators APIs
 // ============================================================================
 
-/**
- * State legislator from OpenStates API
- */
-export interface StateLegislator {
-  id: string;
-  name: string;
-  party: string;
-  chamber: string;
-  district: string;
-  state: string;
-  imageUrl: string | null;
-}
+// StateLegislator interface is defined above with Representative types
 
 /**
  * Get state legislators by geographic coordinates

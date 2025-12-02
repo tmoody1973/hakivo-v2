@@ -314,6 +314,131 @@ export default class extends Service<Env> {
   }
 
   /**
+   * Get state legislators by state abbreviation
+   * Used to populate state legislators table for displaying on dashboard
+   *
+   * @param state - State abbreviation (e.g., 'CA', 'TX')
+   * @param perPage - Number of results per page (default: 100)
+   * @returns Array of state legislators
+   */
+  async getLegislatorsByState(state: string, _perPage: number = 100): Promise<Array<{
+    id: string;
+    name: string;
+    party: string;
+    state: string;
+    currentRoleTitle: string | null;
+    currentRoleDistrict: string | null;
+    currentRoleChamber: string | null;
+    jurisdictionId: string | null;
+    imageUrl: string | null;
+    email: string | null;
+  }>> {
+    console.log(`✓ OpenStates legislators by state: ${state}`);
+
+    const legislators: Array<{
+      id: string;
+      name: string;
+      party: string;
+      state: string;
+      currentRoleTitle: string | null;
+      currentRoleDistrict: string | null;
+      currentRoleChamber: string | null;
+      jurisdictionId: string | null;
+      imageUrl: string | null;
+      email: string | null;
+    }> = [];
+
+    try {
+      // Use bulk CSV data download instead of API (more reliable)
+      // CSV is available at: https://data.openstates.org/people/current/{state}.csv
+      const csvUrl = `https://data.openstates.org/people/current/${state.toLowerCase()}.csv`;
+      console.log(`  📥 Fetching CSV from: ${csvUrl}`);
+
+      const response = await fetch(csvUrl);
+      if (!response.ok) {
+        console.log(`  ⚠️ CSV fetch failed: ${response.status}`);
+        return legislators;
+      }
+
+      const csvText = await response.text();
+      const lines = csvText.split('\n');
+
+      if (lines.length < 2) {
+        console.log(`  ⚠️ CSV is empty or invalid`);
+        return legislators;
+      }
+
+      // Parse header to find column indices
+      const header = this.parseCSVLine(lines[0] as string);
+      const idIdx = header.indexOf('id');
+      const nameIdx = header.indexOf('name');
+      const partyIdx = header.indexOf('current_party');
+      const districtIdx = header.indexOf('current_district');
+      const chamberIdx = header.indexOf('current_chamber');
+      const emailIdx = header.indexOf('email');
+      const imageIdx = header.indexOf('image');
+
+      // Parse data rows
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line || !line.trim()) continue;
+
+        const cols = this.parseCSVLine(line);
+        const chamber = cols[chamberIdx] || '';
+
+        // Only include legislators (upper/lower chamber)
+        if (chamber === 'upper' || chamber === 'lower') {
+          legislators.push({
+            id: cols[idIdx] || '',
+            name: cols[nameIdx] || '',
+            party: cols[partyIdx] || '',
+            state: state.toUpperCase(),
+            currentRoleTitle: chamber === 'upper' ? 'State Senator' : 'State Representative',
+            currentRoleDistrict: cols[districtIdx] || null,
+            currentRoleChamber: chamber,
+            jurisdictionId: null,
+            imageUrl: cols[imageIdx] || null,
+            email: cols[emailIdx] || null
+          });
+        }
+      }
+
+      console.log(`  📋 CSV parsed ${legislators.length} legislators`);
+
+    } catch (e) {
+      console.log(`  ⚠️ Could not fetch legislators: ${e}`);
+    }
+
+    console.log(`  Found ${legislators.length} legislators for ${state}`);
+    return legislators;
+  }
+
+  /**
+   * Parse a CSV line handling quoted fields with commas
+   */
+  private parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+
+    return result;
+  }
+
+  /**
    * Get current legislative session for a state
    *
    * @param state - State abbreviation (e.g., 'CA', 'TX')

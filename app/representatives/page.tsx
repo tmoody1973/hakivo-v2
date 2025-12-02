@@ -182,7 +182,8 @@ export default function RepresentativesPage() {
         )
 
         if (response.success && response.data) {
-          setMyRepresentatives(response.data)
+          // Extract federal representatives from the response
+          setMyRepresentatives(response.data.representatives || [])
         } else {
           setError(response.error?.message || 'Failed to load representatives')
         }

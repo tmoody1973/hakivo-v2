@@ -716,6 +716,145 @@ app.post('/api/smartbucket/search', async (c) => {
 });
 
 /**
+ * POST /api/sync-all-legislators
+ * Bulk load legislators for ALL 50 states + DC
+ * Uses D1 batch operations for efficiency
+ * Body: { startFrom?: "GA" } to resume from a specific state
+ */
+app.post('/api/sync-all-legislators', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const openStatesClient = c.env.OPENSTATES_CLIENT;
+
+    const body = await c.req.json().catch(() => ({}));
+    const startFrom = body.startFrom?.toUpperCase();
+
+    // All 50 states + DC
+    let allStates = [
+      'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+      'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+      'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+      'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+      'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY',
+      'DC'
+    ];
+
+    // Allow resuming from a specific state
+    if (startFrom) {
+      const idx = allStates.indexOf(startFrom);
+      if (idx >= 0) {
+        allStates = allStates.slice(idx);
+        console.log(`🏛️  Resuming from ${startFrom}, ${allStates.length} states remaining...`);
+      }
+    } else {
+      console.log(`🏛️  Bulk loading legislators for all ${allStates.length} states...`);
+    }
+
+    let totalSynced = 0;
+    let totalErrors = 0;
+    const results: Array<{ state: string; synced: number; error?: string }> = [];
+
+    for (const state of allStates) {
+      try {
+        console.log(`  🔄 Syncing legislators for ${state}...`);
+
+        const legislators = await openStatesClient.getLegislatorsByState(state);
+
+        if (!legislators || legislators.length === 0) {
+          console.log(`    ⚠️  No legislators found for ${state}`);
+          results.push({ state, synced: 0, error: 'No legislators found' });
+          continue;
+        }
+
+        console.log(`    📋 Found ${legislators.length} legislators for ${state}`);
+
+        // Use D1 batch operations - batch in groups of 50
+        const batchSize = 50;
+        let stateSynced = 0;
+
+        for (let i = 0; i < legislators.length; i += batchSize) {
+          const batch = legislators.slice(i, i + batchSize);
+          const statements = batch.map(legislator =>
+            db.prepare(`
+              INSERT INTO state_legislators (
+                id, name, party, state, current_role_title, current_role_district,
+                current_role_chamber, jurisdiction_id, image_url, email, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                party = excluded.party,
+                current_role_title = excluded.current_role_title,
+                current_role_district = excluded.current_role_district,
+                current_role_chamber = excluded.current_role_chamber,
+                image_url = excluded.image_url,
+                email = excluded.email,
+                updated_at = excluded.updated_at
+            `).bind(
+              legislator.id,
+              legislator.name,
+              legislator.party,
+              legislator.state,
+              legislator.currentRoleTitle,
+              legislator.currentRoleDistrict,
+              legislator.currentRoleChamber,
+              legislator.jurisdictionId,
+              legislator.imageUrl,
+              legislator.email,
+              Date.now(),
+              Date.now()
+            )
+          );
+
+          try {
+            await db.batch(statements);
+            stateSynced += batch.length;
+            totalSynced += batch.length;
+          } catch (batchError) {
+            console.error(`    ❌ Batch insert failed for ${state}:`, batchError);
+            totalErrors += batch.length;
+          }
+        }
+
+        console.log(`    ✅ Synced ${stateSynced} legislators for ${state}`);
+        results.push({ state, synced: stateSynced });
+
+        // Brief pause between states
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+      } catch (stateError) {
+        const errorMessage = stateError instanceof Error ? stateError.message : 'Unknown error';
+        console.error(`  ❌ Failed to sync legislators for ${state}:`, stateError);
+        results.push({ state, synced: 0, error: errorMessage });
+        totalErrors++;
+      }
+    }
+
+    console.log(`\n✅ Bulk legislator sync complete!`);
+    console.log(`   Total legislators synced: ${totalSynced}`);
+    console.log(`   Total errors: ${totalErrors}`);
+
+    return c.json({
+      success: true,
+      message: `Synced ${totalSynced} legislators across ${allStates.length} states`,
+      stats: {
+        statesSynced: allStates.length,
+        legislatorsSynced: totalSynced,
+        errors: totalErrors
+      },
+      results
+    });
+
+  } catch (error) {
+    console.error('Bulk legislator sync failed:', error);
+    return c.json({
+      success: false,
+      error: 'Bulk legislator sync failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * POST /api/sync-state-bills
  * Manually sync state bills from OpenStates API
  * Body: { state: "AL" } or { states: ["AL", "WI"] } or { fetchText: true }

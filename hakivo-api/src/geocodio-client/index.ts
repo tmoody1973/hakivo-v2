@@ -18,11 +18,11 @@ export default class extends Service<Env> {
   }
 
   /**
-   * Lookup Congressional district from zip code
-   * Used by user-service for profile setup
+   * Lookup Congressional and State Legislative districts from zip code
+   * Used by user-service for profile setup and dashboard for representatives
    *
    * @param zipCode - 5-digit US zip code
-   * @returns Congressional district information with coordinates
+   * @returns Congressional + state legislative district information with coordinates
    */
   async lookupDistrict(zipCode: string): Promise<{
     state: string;
@@ -32,6 +32,8 @@ export default class extends Service<Env> {
     county: string;
     lat: number;
     lng: number;
+    stateLegislativeHouse?: string; // State house district number
+    stateLegislativeSenate?: string; // State senate district number
   }> {
     const apiKey = this.getApiKey();
 
@@ -40,7 +42,8 @@ export default class extends Service<Env> {
       throw new Error('Invalid zip code format. Must be 5 digits.');
     }
 
-    const url = `${this.BASE_URL}/geocode?q=${zipCode}&fields=cd&api_key=${apiKey}`;
+    // Request both congressional (cd) and state legislative (stateleg) districts
+    const url = `${this.BASE_URL}/geocode?q=${zipCode}&fields=cd,stateleg&api_key=${apiKey}`;
 
     try {
       const response = await fetch(url);
@@ -76,7 +79,12 @@ export default class extends Service<Env> {
       const lat = location?.lat || 0;
       const lng = location?.lng || 0;
 
-      console.log(`✓ Geocodio lookup: ${zipCode} → ${congressionalDistrict} (${lat}, ${lng})`);
+      // Extract state legislative districts (if available)
+      const stateleg = fields?.state_legislative_districts;
+      const stateLegislativeHouse = stateleg?.house?.[0]?.district_number?.toString();
+      const stateLegislativeSenate = stateleg?.senate?.[0]?.district_number?.toString();
+
+      console.log(`✓ Geocodio lookup: ${zipCode} → ${congressionalDistrict}, State House: ${stateLegislativeHouse || 'N/A'}, State Senate: ${stateLegislativeSenate || 'N/A'} (${lat}, ${lng})`);
 
       return {
         state,
@@ -85,7 +93,9 @@ export default class extends Service<Env> {
         city: addressComponents.city || '',
         county: addressComponents.county || '',
         lat,
-        lng
+        lng,
+        stateLegislativeHouse,
+        stateLegislativeSenate
       };
     } catch (error) {
       console.error('Geocodio lookup error:', error);

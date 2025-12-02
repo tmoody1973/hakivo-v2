@@ -819,9 +819,9 @@ app.get('/dashboard/representatives', async (c) => {
 
     const db = c.env.APP_DB;
 
-    // Get user's state and district from user_preferences
+    // Get user's state, district, and zipcode from user_preferences
     const userPrefs = await db
-      .prepare('SELECT state, district FROM user_preferences WHERE user_id = ?')
+      .prepare('SELECT state, district, zipcode FROM user_preferences WHERE user_id = ?')
       .bind(userId)
       .first();
 
@@ -836,10 +836,13 @@ app.get('/dashboard/representatives', async (c) => {
     const district = userPrefs.district as number | null;
 
     // Convert state abbreviation to full name for database query
+    // Note: Database has inconsistent state values (some "VA", some "Virginia")
+    // So we need to query for BOTH the abbreviation and full name
     const stateFullName = STATE_ABBREVIATIONS[state] || state;
-    console.log(`[Representatives] Converting state: ${state} → ${stateFullName}`);
+    const stateAbbrev = state; // Keep the original abbreviation
+    console.log(`[Representatives] State values: abbrev=${stateAbbrev}, full=${stateFullName}`);
 
-    // Get senators (2 per state)
+    // Get senators (2 per state) - check both state formats
     const senators = await db
       .prepare(`
         SELECT
@@ -854,14 +857,14 @@ app.get('/dashboard/representatives', async (c) => {
           phone_number,
           url
         FROM members
-        WHERE state = ? AND district IS NULL AND current_member = 1
+        WHERE (state = ? OR state = ?) AND district IS NULL AND current_member = 1
         ORDER BY last_name
         LIMIT 2
       `)
-      .bind(stateFullName)
+      .bind(stateFullName, stateAbbrev)
       .all();
 
-    // Get representative (1 per district)
+    // Get representative (1 per district) - check both state formats
     let representative = null;
     if (district !== null && district !== undefined) {
       const rep = await db
@@ -879,16 +882,16 @@ app.get('/dashboard/representatives', async (c) => {
             phone_number,
             url
           FROM members
-          WHERE state = ? AND district = ? AND current_member = 1
+          WHERE (state = ? OR state = ?) AND district = ? AND current_member = 1
           LIMIT 1
         `)
-        .bind(stateFullName, district)
+        .bind(stateFullName, stateAbbrev, district)
         .first();
 
       representative = rep;
     }
 
-    const representatives = [
+    const federalRepresentatives = [
       ...(senators.results || []),
       ...(representative ? [representative] : [])
     ].map((member: any) => ({
@@ -908,9 +911,139 @@ app.get('/dashboard/representatives', async (c) => {
       initials: `${member.first_name?.charAt(0) || ''}${member.last_name?.charAt(0) || ''}`
     }));
 
+    // Get user's state legislators using Geocodio's state legislative district lookup
+    // This is more efficient than OpenStates geo API - we get districts from Geocodio and query local DB
+    let stateLegislators: { results: any[] } = { results: [] };
+    const zipcode = userPrefs.zipcode as string | null;
+
+    if (zipcode) {
+      try {
+        console.log(`[Representatives] Looking up state legislative districts for zipcode: ${zipcode}`);
+        const geocodio = c.env.GEOCODIO_CLIENT;
+        const geoResult = await geocodio.lookupDistrict(zipcode);
+
+        console.log(`[Representatives] Geocodio result:`, {
+          state: geoResult.state,
+          stateLegislativeHouse: geoResult.stateLegislativeHouse,
+          stateLegislativeSenate: geoResult.stateLegislativeSenate
+        });
+
+        const legislators: any[] = [];
+
+        // Query state senator by district if we have the senate district
+        if (geoResult.stateLegislativeSenate) {
+          const stateSenator = await db
+            .prepare(`
+              SELECT
+                id, name, party, state, current_role_title, current_role_district,
+                current_role_chamber, image_url, email
+              FROM state_legislators
+              WHERE state = ? AND current_role_chamber = 'upper' AND current_role_district = ?
+              LIMIT 1
+            `)
+            .bind(stateAbbrev, geoResult.stateLegislativeSenate)
+            .first();
+
+          if (stateSenator) {
+            legislators.push(stateSenator);
+            console.log(`[Representatives] Found state senator: ${stateSenator.name} (District ${geoResult.stateLegislativeSenate})`);
+          } else {
+            console.log(`[Representatives] No state senator found for ${stateAbbrev} district ${geoResult.stateLegislativeSenate}`);
+          }
+        }
+
+        // Query state representative by district if we have the house district
+        if (geoResult.stateLegislativeHouse) {
+          const stateRep = await db
+            .prepare(`
+              SELECT
+                id, name, party, state, current_role_title, current_role_district,
+                current_role_chamber, image_url, email
+              FROM state_legislators
+              WHERE state = ? AND current_role_chamber = 'lower' AND current_role_district = ?
+              LIMIT 1
+            `)
+            .bind(stateAbbrev, geoResult.stateLegislativeHouse)
+            .first();
+
+          if (stateRep) {
+            legislators.push(stateRep);
+            console.log(`[Representatives] Found state rep: ${stateRep.name} (District ${geoResult.stateLegislativeHouse})`);
+          } else {
+            console.log(`[Representatives] No state rep found for ${stateAbbrev} district ${geoResult.stateLegislativeHouse}`);
+          }
+        }
+
+        if (legislators.length > 0) {
+          stateLegislators = { results: legislators };
+          console.log(`[Representatives] Found ${legislators.length} state legislators via district lookup`);
+        }
+      } catch (geoError) {
+        console.warn(`[Representatives] Geocodio lookup failed:`, geoError);
+      }
+    }
+
+    // Fallback: If district lookup failed or found no results, get sample legislators for the state
+    if (stateLegislators.results.length === 0) {
+      console.log(`[Representatives] Using fallback state-based query for ${stateAbbrev}`);
+      const stateSenator = await db
+        .prepare(`
+          SELECT
+            id, name, party, state, current_role_title, current_role_district,
+            current_role_chamber, image_url, email
+          FROM state_legislators
+          WHERE state = ? AND current_role_chamber = 'upper'
+          ORDER BY name
+          LIMIT 1
+        `)
+        .bind(stateAbbrev)
+        .first();
+
+      const stateRep = await db
+        .prepare(`
+          SELECT
+            id, name, party, state, current_role_title, current_role_district,
+            current_role_chamber, image_url, email
+          FROM state_legislators
+          WHERE state = ? AND current_role_chamber = 'lower'
+          ORDER BY name
+          LIMIT 1
+        `)
+        .bind(stateAbbrev)
+        .first();
+
+      stateLegislators = {
+        results: [stateSenator, stateRep].filter(Boolean)
+      };
+    }
+
+    const formattedStateLegislators = (stateLegislators.results || []).map((legislator: any) => {
+      // Parse name into first and last
+      const nameParts = legislator.name?.split(' ') || ['', ''];
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      return {
+        id: legislator.id,
+        name: legislator.name,
+        firstName,
+        lastName,
+        fullName: legislator.name,
+        party: legislator.party,
+        state: legislator.state,
+        district: legislator.current_role_district,
+        role: legislator.current_role_title || (legislator.current_role_chamber === 'upper' ? 'State Senator' : 'State Representative'),
+        chamber: legislator.current_role_chamber,
+        imageUrl: legislator.image_url,
+        email: legislator.email,
+        initials: `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`
+      };
+    });
+
     return c.json({
       success: true,
-      representatives,
+      representatives: federalRepresentatives,
+      stateLegislators: formattedStateLegislators,
       userLocation: {
         state,
         district
@@ -2042,6 +2175,126 @@ app.post('/admin/cleanup-landing-pages', async (c) => {
     console.error('Admin cleanup landing pages error:', error);
     return c.json({
       error: 'Failed to cleanup landing pages',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /admin/trigger-state-sync
+ * Manually trigger state legislation and legislator sync
+ * (Admin endpoint for populating state data)
+ */
+app.post('/admin/trigger-state-sync', async (c) => {
+  try {
+    console.log('🔧 [ADMIN] Manually triggering state sync...');
+
+    const db = c.env.APP_DB;
+    const openStatesClient = c.env.OPENSTATES_CLIENT;
+
+    // Get unique states from users with state preferences
+    const statesResult = await db
+      .prepare(`
+        SELECT DISTINCT state
+        FROM user_preferences
+        WHERE state IS NOT NULL AND state != ''
+        LIMIT 10
+      `)
+      .all();
+
+    const states = statesResult.results as { state: string }[];
+
+    if (states.length === 0) {
+      return c.json({
+        success: false,
+        message: 'No user states found'
+      });
+    }
+
+    console.log(`📍 Found ${states.length} unique states to sync: ${states.map(s => s.state).join(', ')}`);
+
+    let totalLegislatorsSynced = 0;
+    const errors: string[] = [];
+
+    // Sync legislators for each state
+    for (const { state } of states) {
+      try {
+        console.log(`🔄 Syncing legislators for ${state}...`);
+
+        const legislators = await openStatesClient.getLegislatorsByState(state);
+
+        if (!legislators || legislators.length === 0) {
+          console.log(`⚠️ No legislators found for ${state}`);
+          continue;
+        }
+
+        console.log(`📋 Found ${legislators.length} legislators for ${state}`);
+
+        for (const legislator of legislators) {
+          try {
+            await db
+              .prepare(`
+                INSERT INTO state_legislators (
+                  id, name, party, state, current_role_title, current_role_district,
+                  current_role_chamber, jurisdiction_id, image_url, email, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name,
+                  party = excluded.party,
+                  current_role_title = excluded.current_role_title,
+                  current_role_district = excluded.current_role_district,
+                  current_role_chamber = excluded.current_role_chamber,
+                  image_url = excluded.image_url,
+                  email = excluded.email,
+                  updated_at = excluded.updated_at
+              `)
+              .bind(
+                legislator.id,
+                legislator.name,
+                legislator.party,
+                legislator.state,
+                legislator.currentRoleTitle,
+                legislator.currentRoleDistrict,
+                legislator.currentRoleChamber,
+                legislator.jurisdictionId,
+                legislator.imageUrl,
+                legislator.email,
+                Date.now(),
+                Date.now()
+              )
+              .run();
+
+            totalLegislatorsSynced++;
+          } catch (legError) {
+            errors.push(`Legislator ${legislator.name}: ${legError}`);
+          }
+        }
+
+        console.log(`✅ Synced ${legislators.length} legislators for ${state}`);
+
+        // Brief pause between states
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (stateError) {
+        errors.push(`State ${state}: ${stateError}`);
+      }
+    }
+
+    return c.json({
+      success: true,
+      stats: {
+        statesSynced: states.length,
+        legislatorsSynced: totalLegislatorsSynced,
+        errors: errors.length
+      },
+      errors: errors.length > 0 ? errors : undefined,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Admin trigger state sync error:', error);
+    return c.json({
+      error: 'Failed to trigger state sync',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

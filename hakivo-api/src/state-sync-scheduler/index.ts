@@ -48,7 +48,81 @@ export default class extends Task<Env> {
 
       let totalSynced = 0;
       let totalTextFetched = 0;
+      let totalLegislatorsSynced = 0;
       let totalErrors = 0;
+
+      // ==================== SYNC STATE LEGISLATORS ====================
+      console.log('\n📋 Syncing state legislators...');
+
+      for (const { state } of states) {
+        try {
+          console.log(`  🔄 Syncing legislators for ${state}...`);
+
+          const legislators = await openStatesClient.getLegislatorsByState(state);
+
+          if (!legislators || legislators.length === 0) {
+            console.log(`    ⚠️  No legislators found for ${state}`);
+            continue;
+          }
+
+          console.log(`    📋 Found ${legislators.length} legislators for ${state}`);
+
+          for (const legislator of legislators) {
+            try {
+              await db
+                .prepare(`
+                  INSERT INTO state_legislators (
+                    id, name, party, state, current_role_title, current_role_district,
+                    current_role_chamber, jurisdiction_id, image_url, email, created_at, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    party = excluded.party,
+                    current_role_title = excluded.current_role_title,
+                    current_role_district = excluded.current_role_district,
+                    current_role_chamber = excluded.current_role_chamber,
+                    image_url = excluded.image_url,
+                    email = excluded.email,
+                    updated_at = excluded.updated_at
+                `)
+                .bind(
+                  legislator.id,
+                  legislator.name,
+                  legislator.party,
+                  legislator.state,
+                  legislator.currentRoleTitle,
+                  legislator.currentRoleDistrict,
+                  legislator.currentRoleChamber,
+                  legislator.jurisdictionId,
+                  legislator.imageUrl,
+                  legislator.email,
+                  Date.now(),
+                  Date.now()
+                )
+                .run();
+
+              totalLegislatorsSynced++;
+            } catch (legError) {
+              console.error(`    ❌ Failed to insert legislator ${legislator.name}:`, legError);
+              totalErrors++;
+            }
+          }
+
+          console.log(`    ✅ Synced ${legislators.length} legislators for ${state}`);
+
+          // Brief pause between states for rate limiting
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+        } catch (legStateError) {
+          console.error(`  ❌ Failed to sync legislators for ${state}:`, legStateError);
+          totalErrors++;
+        }
+      }
+
+      console.log(`\n📊 Legislators sync: ${totalLegislatorsSynced} synced`);
+
+      // ==================== SYNC STATE BILLS ====================
+      console.log('\n📜 Syncing state bills...');
 
       // Process each state
       for (const { state } of states) {
