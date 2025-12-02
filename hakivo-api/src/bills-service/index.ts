@@ -19,8 +19,7 @@ const SearchBillsSchema = z.object({
 });
 
 const TrackBillSchema = z.object({
-  billId: z.number().int(),
-  title: z.string(),
+  billId: z.string(), // bill_id is TEXT (e.g., "119-hr-1234")
   congress: z.number().int(),
   billType: z.string(),
   billNumber: z.number().int()
@@ -1051,11 +1050,11 @@ app.post('/bills/:congress/:type/:number/analyze', async (c) => {
     const congressApiClient = c.env.CONGRESS_API_CLIENT;
 
     const congress = parseInt(c.req.param('congress'));
-    const billType = c.req.param('type');
+    const billType = c.req.param('type').toLowerCase(); // Normalize to lowercase
     const billNumber = parseInt(c.req.param('number'));
 
     // Construct bill_id (lowercase for consistency)
-    const billId = `${congress}-${billType.toLowerCase()}-${billNumber}`;
+    const billId = `${congress}-${billType}-${billNumber}`;
 
     // Check if bill exists
     const bill = await db
@@ -1179,11 +1178,11 @@ app.post('/bills/track', async (c) => {
       return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
     }
 
-    const { billId, title, congress, billType, billNumber } = validation.data;
+    const { billId, congress, billType, billNumber } = validation.data;
 
     // Check if already tracking
     const existing = await db
-      .prepare('SELECT id FROM tracked_bills WHERE user_id = ? AND bill_id = ?')
+      .prepare('SELECT id FROM bill_tracking WHERE user_id = ? AND bill_id = ?')
       .bind(auth.userId, billId)
       .first();
 
@@ -1195,12 +1194,12 @@ app.post('/bills/track', async (c) => {
     const id = crypto.randomUUID();
     await db
       .prepare(`
-        INSERT INTO tracked_bills (
-          id, user_id, bill_id, title, congress, bill_type, bill_number,
-          added_at, views, shares, bookmarks
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bill_tracking (
+          id, user_id, bill_id, bill_congress, bill_type, bill_number,
+          tracked_at, notifications_enabled
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
-      .bind(id, auth.userId, billId, title, congress, billType, billNumber, Date.now(), 0, 0, 0)
+      .bind(id, auth.userId, billId, congress, billType, billNumber, Date.now(), 1)
       .run();
 
     console.log(`✓ Bill tracked: ${billType}${billNumber} by user ${auth.userId}`);
@@ -1233,7 +1232,7 @@ app.delete('/bills/track/:trackingId', async (c) => {
 
     // Verify ownership
     const tracked = await db
-      .prepare('SELECT user_id FROM tracked_bills WHERE id = ?')
+      .prepare('SELECT user_id FROM bill_tracking WHERE id = ?')
       .bind(trackingId)
       .first();
 
@@ -1247,7 +1246,7 @@ app.delete('/bills/track/:trackingId', async (c) => {
 
     // Delete
     await db
-      .prepare('DELETE FROM tracked_bills WHERE id = ?')
+      .prepare('DELETE FROM bill_tracking WHERE id = ?')
       .bind(trackingId)
       .run();
 
@@ -1283,10 +1282,8 @@ app.get('/bills/tracked', async (c) => {
         SELECT
           t.id as tracking_id,
           t.bill_id,
-          t.added_at,
-          t.views,
-          t.shares,
-          t.bookmarks,
+          t.tracked_at,
+          t.notifications_enabled,
           b.congress,
           b.bill_type,
           b.bill_number,
@@ -1298,11 +1295,11 @@ app.get('/bills/tracked', async (c) => {
           m.last_name,
           m.party,
           m.state
-        FROM tracked_bills t
+        FROM bill_tracking t
         INNER JOIN bills b ON t.bill_id = b.id
         LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
         WHERE t.user_id = ?
-        ORDER BY t.added_at DESC
+        ORDER BY t.tracked_at DESC
       `)
       .bind(auth.userId)
       .all();
@@ -1310,10 +1307,8 @@ app.get('/bills/tracked', async (c) => {
     const trackedBills = result.results?.map((row: any) => ({
       trackingId: row.tracking_id,
       billId: row.bill_id,
-      addedAt: row.added_at,
-      views: row.views,
-      shares: row.shares,
-      bookmarks: row.bookmarks,
+      trackedAt: row.tracked_at,
+      notificationsEnabled: row.notifications_enabled === 1,
       bill: {
         congress: row.congress,
         type: row.bill_type,
@@ -1348,20 +1343,22 @@ app.get('/bills/tracked', async (c) => {
 });
 
 /**
- * POST /bills/track/:trackingId/view
- * Increment view count (requires auth)
+ * PUT /bills/track/:trackingId/notifications
+ * Toggle notifications for a tracked bill (requires auth)
  */
-app.post('/bills/track/:trackingId/view', async (c) => {
+app.put('/bills/track/:trackingId/notifications', async (c) => {
   try {
     const auth = await requireAuth(c);
     if (auth instanceof Response) return auth;
 
     const db = c.env.APP_DB;
     const trackingId = c.req.param('trackingId');
+    const body = await c.req.json();
+    const enabled = body.enabled === true ? 1 : 0;
 
     // Verify ownership
     const tracked = await db
-      .prepare('SELECT user_id, views FROM tracked_bills WHERE id = ?')
+      .prepare('SELECT user_id FROM bill_tracking WHERE id = ?')
       .bind(trackingId)
       .first();
 
@@ -1373,21 +1370,52 @@ app.post('/bills/track/:trackingId/view', async (c) => {
       return c.json({ error: 'Unauthorized' }, 403);
     }
 
-    // Increment views
-    const newViews = (tracked.views as number) + 1;
+    // Update notifications setting
     await db
-      .prepare('UPDATE tracked_bills SET views = ? WHERE id = ?')
-      .bind(newViews, trackingId)
+      .prepare('UPDATE bill_tracking SET notifications_enabled = ? WHERE id = ?')
+      .bind(enabled, trackingId)
       .run();
 
     return c.json({
       success: true,
-      views: newViews
+      notificationsEnabled: enabled === 1
     });
   } catch (error) {
-    console.error('Increment view error:', error);
+    console.error('Toggle notifications error:', error);
     return c.json({
-      error: 'Failed to increment view',
+      error: 'Failed to toggle notifications',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /bills/:id/tracking-status
+ * Check if a bill is tracked by the authenticated user
+ */
+app.get('/bills/:id/tracking-status', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const billId = c.req.param('id');
+
+    const tracked = await db
+      .prepare('SELECT id, notifications_enabled FROM bill_tracking WHERE user_id = ? AND bill_id = ?')
+      .bind(auth.userId, billId)
+      .first();
+
+    return c.json({
+      success: true,
+      isTracked: !!tracked,
+      trackingId: tracked?.id || null,
+      notificationsEnabled: tracked ? tracked.notifications_enabled === 1 : false
+    });
+  } catch (error) {
+    console.error('Check tracking status error:', error);
+    return c.json({
+      error: 'Failed to check tracking status',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
@@ -2360,6 +2388,265 @@ app.get('/state-bills/:id/analysis', async (c) => {
     return c.json({
       error: 'Failed to get analysis',
       message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * STATE BILL TRACKING ENDPOINTS
+ */
+
+// Schema for tracking state bills
+const TrackStateBillSchema = z.object({
+  billId: z.string(), // OCD ID (e.g., "ocd-bill/...")
+  state: z.string().length(2), // 2-letter state code
+  identifier: z.string() // Bill identifier (e.g., "SB 123")
+});
+
+/**
+ * POST /state-bills/track
+ * Track a state bill (requires auth)
+ */
+app.post('/state-bills/track', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = TrackStateBillSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { billId, state, identifier } = validation.data;
+
+    // Check if already tracking
+    const existing = await db
+      .prepare('SELECT id FROM state_bill_tracking WHERE user_id = ? AND bill_id = ?')
+      .bind(auth.userId, billId)
+      .first();
+
+    if (existing) {
+      return c.json({ error: 'State bill already tracked' }, 409);
+    }
+
+    // Add to tracked state bills
+    const id = crypto.randomUUID();
+    await db
+      .prepare(`
+        INSERT INTO state_bill_tracking (
+          id, user_id, bill_id, state, identifier, tracked_at, notifications_enabled
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(id, auth.userId, billId, state.toUpperCase(), identifier, Date.now(), 1)
+      .run();
+
+    console.log(`✓ State bill tracked: ${identifier} (${state}) by user ${auth.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'State bill tracked successfully',
+      trackingId: id
+    }, 201);
+  } catch (error) {
+    console.error('Track state bill error:', error);
+    return c.json({
+      error: 'Failed to track state bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /state-bills/track/:trackingId
+ * Untrack a state bill (requires auth)
+ */
+app.delete('/state-bills/track/:trackingId', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const trackingId = c.req.param('trackingId');
+
+    // Verify ownership
+    const tracked = await db
+      .prepare('SELECT user_id FROM state_bill_tracking WHERE id = ?')
+      .bind(trackingId)
+      .first();
+
+    if (!tracked) {
+      return c.json({ error: 'Tracked state bill not found' }, 404);
+    }
+
+    if (tracked.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Delete
+    await db
+      .prepare('DELETE FROM state_bill_tracking WHERE id = ?')
+      .bind(trackingId)
+      .run();
+
+    console.log(`✓ State bill untracked: ${trackingId} by user ${auth.userId}`);
+
+    return c.json({
+      success: true,
+      message: 'State bill untracked successfully'
+    });
+  } catch (error) {
+    console.error('Untrack state bill error:', error);
+    return c.json({
+      error: 'Failed to untrack state bill',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /state-bills/tracked
+ * Get user's tracked state bills (requires auth)
+ */
+app.get('/state-bills/tracked', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Get tracked state bills with latest bill data
+    const result = await db
+      .prepare(`
+        SELECT
+          t.id as tracking_id,
+          t.bill_id,
+          t.state,
+          t.identifier,
+          t.tracked_at,
+          t.notifications_enabled,
+          sb.title,
+          sb.latest_action_date,
+          sb.latest_action_description,
+          sb.session_identifier
+        FROM state_bill_tracking t
+        LEFT JOIN state_bills sb ON t.bill_id = sb.id
+        WHERE t.user_id = ?
+        ORDER BY t.tracked_at DESC
+      `)
+      .bind(auth.userId)
+      .all();
+
+    const trackedBills = result.results?.map((row: any) => ({
+      trackingId: row.tracking_id,
+      billId: row.bill_id,
+      state: row.state,
+      identifier: row.identifier,
+      trackedAt: row.tracked_at,
+      notificationsEnabled: row.notifications_enabled === 1,
+      bill: {
+        title: row.title,
+        session: row.session_identifier,
+        latestAction: {
+          date: row.latest_action_date,
+          description: row.latest_action_description
+        }
+      }
+    })) || [];
+
+    return c.json({
+      success: true,
+      trackedBills,
+      count: trackedBills.length
+    });
+  } catch (error) {
+    console.error('Get tracked state bills error:', error);
+    return c.json({
+      error: 'Failed to get tracked state bills',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /state-bills/:id/tracking-status
+ * Check if a state bill is tracked by the authenticated user
+ */
+app.get('/state-bills/:id/tracking-status', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const billId = decodeURIComponent(c.req.param('id'));
+
+    const tracked = await db
+      .prepare('SELECT id, notifications_enabled FROM state_bill_tracking WHERE user_id = ? AND bill_id = ?')
+      .bind(auth.userId, billId)
+      .first();
+
+    return c.json({
+      success: true,
+      isTracked: !!tracked,
+      trackingId: tracked?.id || null,
+      notificationsEnabled: tracked ? tracked.notifications_enabled === 1 : false
+    });
+  } catch (error) {
+    console.error('Check state bill tracking status error:', error);
+    return c.json({
+      error: 'Failed to check tracking status',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * PUT /state-bills/track/:trackingId/notifications
+ * Toggle notifications for a tracked state bill (requires auth)
+ */
+app.put('/state-bills/track/:trackingId/notifications', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const trackingId = c.req.param('trackingId');
+    const body = await c.req.json();
+    const enabled = body.enabled === true ? 1 : 0;
+
+    // Verify ownership
+    const tracked = await db
+      .prepare('SELECT user_id FROM state_bill_tracking WHERE id = ?')
+      .bind(trackingId)
+      .first();
+
+    if (!tracked) {
+      return c.json({ error: 'Tracked state bill not found' }, 404);
+    }
+
+    if (tracked.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Update notifications setting
+    await db
+      .prepare('UPDATE state_bill_tracking SET notifications_enabled = ? WHERE id = ?')
+      .bind(enabled, trackingId)
+      .run();
+
+    return c.json({
+      success: true,
+      notificationsEnabled: enabled === 1
+    });
+  } catch (error) {
+    console.error('Toggle state bill notifications error:', error);
+    return c.json({
+      error: 'Failed to toggle notifications',
+      message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
 });

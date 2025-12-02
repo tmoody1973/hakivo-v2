@@ -284,8 +284,10 @@ export default class extends Each<Body, Env> {
 
     // Step 1: Try to get image from Perplexity news response
     for (const article of newsArticles) {
-      if (article.imageUrl) {
-        featuredImage = article.imageUrl;
+      // Check both article.image?.url (NewsArticle interface) and article.imageUrl (legacy)
+      const imageUrl = article.image?.url || article.imageUrl;
+      if (imageUrl) {
+        featuredImage = imageUrl;
         console.log(`[STAGE-7] Using image from Perplexity: ${featuredImage}`);
         break;
       }
@@ -320,6 +322,19 @@ export default class extends Each<Body, Env> {
         }
       } catch (imageError) {
         console.error(`[STAGE-7] Gemini image generation failed (non-fatal):`, imageError);
+      }
+    }
+
+    // Step 4: Fall back to Pexels stock photo search
+    if (!featuredImage) {
+      console.log(`[STAGE-7] Gemini failed, trying Pexels...`);
+      try {
+        featuredImage = await this.searchPexelsImage(policyInterests);
+        if (featuredImage) {
+          console.log(`[STAGE-7] Found Pexels image: ${featuredImage}`);
+        }
+      } catch (pexelsError) {
+        console.error(`[STAGE-7] Pexels search failed (non-fatal):`, pexelsError);
       }
     }
 
@@ -378,15 +393,16 @@ export default class extends Each<Body, Env> {
 
       console.log(`[IMAGE-GEN] Prompt: ${imagePrompt.substring(0, 100)}...`);
 
-      // Call Gemini 2.5 Flash Image API
+      // Call Gemini 2.0 Flash (experimental) for image generation
       const geminiApiKey = this.env.GEMINI_API_KEY;
       if (!geminiApiKey) {
         console.warn('[IMAGE-GEN] GEMINI_API_KEY not set, skipping image generation');
         return null;
       }
 
+      // Use gemini-2.0-flash-exp which supports image output with responseModalities
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
         {
           method: 'POST',
           headers: {
@@ -531,6 +547,81 @@ export default class extends Each<Body, Env> {
       return null;
     } catch (error) {
       // Silently fail - this is a non-critical fallback
+      return null;
+    }
+  }
+
+  /**
+   * Search Pexels for a stock photo matching policy interests
+   * Uses civic/political search terms based on policy areas
+   * @param policyInterests - Array of policy interest categories
+   * @returns Image URL or null if not found
+   */
+  private async searchPexelsImage(policyInterests: string[]): Promise<string | null> {
+    try {
+      // Access PEXELS_API_KEY from env - will be added after raindrop build validate
+      const pexelsApiKey = (this.env as any).PEXELS_API_KEY as string | undefined;
+      if (!pexelsApiKey) {
+        console.warn('[PEXELS] PEXELS_API_KEY not set, skipping Pexels search');
+        return null;
+      }
+
+      // Map policy interests to Pexels-friendly search terms
+      const searchTermMap: Record<string, string[]> = {
+        'Commerce & Labor': ['business meeting', 'office', 'workers'],
+        'Education & Science': ['classroom', 'university', 'science lab'],
+        'Economy & Finance': ['finance', 'stock market', 'money'],
+        'Environment & Energy': ['nature', 'solar panels', 'wind turbines'],
+        'Health & Social Welfare': ['healthcare', 'hospital', 'medical'],
+        'Defense & Security': ['military', 'security', 'american flag'],
+        'Immigration': ['immigration', 'border', 'diversity'],
+        'Foreign Affairs': ['diplomacy', 'world map', 'international'],
+        'Government': ['capitol building', 'congress', 'government'],
+        'Civil Rights': ['protest', 'voting', 'civil rights']
+      };
+
+      // Get search terms from first interest, with fallback to civic imagery
+      const interest = policyInterests[0] || 'Government';
+      const terms = searchTermMap[interest] || ['capitol building', 'congress'];
+      const searchQuery = terms[Math.floor(Math.random() * terms.length)] || 'capitol building';
+
+      console.log(`[PEXELS] Searching for: "${searchQuery}"`);
+
+      const response = await fetch(
+        `https://api.pexels.com/v1/search?query=${encodeURIComponent(searchQuery)}&per_page=5&orientation=landscape`,
+        {
+          headers: {
+            'Authorization': pexelsApiKey
+          }
+        }
+      );
+
+      if (!response.ok) {
+        console.error(`[PEXELS] API error: ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json() as { photos?: Array<{ src: { large: string } }> };
+
+      if (!data.photos || data.photos.length === 0) {
+        console.warn('[PEXELS] No photos found');
+        return null;
+      }
+
+      // Pick a random photo from results for variety
+      const randomIndex = Math.floor(Math.random() * data.photos.length);
+      const photo = data.photos[randomIndex];
+      if (!photo) {
+        console.warn('[PEXELS] No photo at selected index');
+        return null;
+      }
+      const imageUrl = photo.src.large;
+
+      console.log(`[PEXELS] Found image: ${imageUrl.substring(0, 80)}...`);
+      return imageUrl;
+
+    } catch (error) {
+      console.error('[PEXELS] Search failed:', error);
       return null;
     }
   }

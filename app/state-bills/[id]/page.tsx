@@ -9,6 +9,9 @@ import { Separator } from "@/components/ui/separator"
 import {
   AlertCircle,
   ArrowLeft,
+  Bookmark,
+  BookmarkCheck,
+  BookmarkPlus,
   Building2,
   Check,
   Clock,
@@ -25,6 +28,7 @@ import {
 import Link from "next/link"
 import { getStateBillById, StateBillDetail } from "@/lib/api/backend"
 import { useAuth } from "@/lib/auth/auth-context"
+import { useTracking } from "@/lib/hooks/use-tracking"
 
 // US State names mapping
 const STATE_NAMES: Record<string, string> = {
@@ -74,7 +78,37 @@ export default function StateBillDetailPage() {
   const [analysis, setAnalysis] = useState<StateBillAnalysis | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const [trackingAction, setTrackingAction] = useState(false)
   const { accessToken, isLoading: authLoading } = useAuth()
+
+  // Tracking hook
+  const {
+    isStateBillTracked,
+    getTrackingId,
+    trackStateBill,
+    untrackStateBill,
+  } = useTracking({ token: accessToken })
+
+  const isTracked = billId ? isStateBillTracked(billId) : false
+  const trackingId = billId ? getTrackingId(billId) : null
+
+  // Handle track/untrack
+  const handleTrackToggle = async () => {
+    if (!bill || !accessToken) return
+
+    setTrackingAction(true)
+    try {
+      if (isTracked && trackingId) {
+        await untrackStateBill(billId, trackingId)
+      } else {
+        await trackStateBill(billId, bill.state || '', bill.identifier)
+      }
+    } catch (err) {
+      console.error('Error toggling track status:', err)
+    } finally {
+      setTrackingAction(false)
+    }
+  }
 
   // Fetch bill on load
   useEffect(() => {
@@ -309,6 +343,28 @@ export default function StateBillDetailPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-2 pt-2 flex-wrap">
+                <Button
+                  variant={isTracked ? "secondary" : "default"}
+                  onClick={handleTrackToggle}
+                  disabled={trackingAction || !accessToken}
+                >
+                  {trackingAction ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {isTracked ? 'Untracking...' : 'Tracking...'}
+                    </>
+                  ) : isTracked ? (
+                    <>
+                      <BookmarkCheck className="h-4 w-4 mr-2" />
+                      Tracking
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus className="h-4 w-4 mr-2" />
+                      Track This Bill
+                    </>
+                  )}
+                </Button>
                 {bill.openstatesUrl && (
                   <Button variant="outline" asChild>
                     <a href={bill.openstatesUrl} target="_blank" rel="noopener noreferrer">

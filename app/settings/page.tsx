@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getUserPreferences, updateUserProfile, updateUserPreferences } from '@/lib/api/backend';
+import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
 
 const POLICY_INTERESTS = [
   { name: 'Environment & Energy', icon: '🌱' },
@@ -75,11 +78,23 @@ const US_STATES = [
   { abbr: 'WY', name: 'Wyoming' },
 ];
 
-export default function SettingsPage() {
+function SettingsPageContent() {
+  const searchParams = useSearchParams();
   const { accessToken, refreshToken, user, updateAccessToken } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  const initialTab = searchParams.get('tab') || 'profile';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [untrackingId, setUntrackingId] = useState<string | null>(null);
+
+  // Tracking hook
+  const {
+    trackedItems,
+    counts,
+    loading: trackingLoading,
+    untrackFederalBill,
+    untrackStateBill,
+  } = useTracking({ token: accessToken });
 
   // Profile state
   const [firstName, setFirstName] = useState('');
@@ -222,6 +237,38 @@ export default function SettingsPage() {
     }
   };
 
+  const handleUntrackFederal = async (bill: TrackedFederalBill) => {
+    setUntrackingId(bill.trackingId);
+    await untrackFederalBill(bill.billId, bill.trackingId);
+    setUntrackingId(null);
+  };
+
+  const handleUntrackState = async (bill: TrackedStateBill) => {
+    setUntrackingId(bill.trackingId);
+    await untrackStateBill(bill.billId, bill.trackingId);
+    setUntrackingId(null);
+  };
+
+  const formatDate = (dateStr?: string | null) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const getPartyColor = (party?: string) => {
+    switch (party?.toUpperCase()) {
+      case 'D':
+      case 'DEMOCRAT':
+      case 'DEMOCRATIC':
+        return 'text-blue-600';
+      case 'R':
+      case 'REPUBLICAN':
+        return 'text-red-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
   return (
     <div className="w-full px-6 md:px-8 py-8 space-y-8">
       <div>
@@ -272,6 +319,21 @@ export default function SettingsPage() {
             }`}
           >
             Audio
+          </button>
+          <button
+            onClick={() => setActiveTab('tracked')}
+            className={`px-3 py-2 text-sm font-medium rounded-md text-left ${
+              activeTab === 'tracked'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            Tracked Items
+            {counts && counts.total > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded">
+                {counts.total}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('account')}
@@ -616,6 +678,174 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* Tracked Items Tab */}
+          {activeTab === 'tracked' && (
+            <div className="rounded-lg border bg-card p-6 space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-1">Tracked Items</h2>
+                <p className="text-sm text-muted-foreground">
+                  Manage your tracked legislation and bookmarked articles
+                </p>
+              </div>
+
+              {trackingLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Federal Bills Section */}
+                  <div className="space-y-3">
+                    <h3 className="font-medium flex items-center gap-2">
+                      Federal Bills
+                      <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                        {trackedItems?.federalBills.length || 0}
+                      </span>
+                    </h3>
+                    {(!trackedItems?.federalBills || trackedItems.federalBills.length === 0) ? (
+                      <div className="text-sm text-muted-foreground p-4 border border-dashed rounded-lg text-center">
+                        No federal bills tracked.{' '}
+                        <Link href="/legislation" className="text-primary hover:underline">
+                          Browse legislation
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {trackedItems.federalBills.map((bill) => (
+                          <div
+                            key={bill.trackingId}
+                            className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <Link
+                                  href={`/bills/${bill.billId}`}
+                                  className="font-medium hover:underline block"
+                                >
+                                  {bill.billType.toUpperCase()} {bill.billNumber}: {bill.title}
+                                </Link>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+                                  <span>Congress {bill.congress}</span>
+                                  {bill.sponsor && (
+                                    <span className={getPartyColor(bill.sponsor.party)}>
+                                      {bill.sponsor.firstName} {bill.sponsor.lastName} ({bill.sponsor.party}-{bill.sponsor.state})
+                                    </span>
+                                  )}
+                                  {bill.policyArea && <span>{bill.policyArea}</span>}
+                                  {bill.latestActionDate && (
+                                    <span>Last action: {formatDate(bill.latestActionDate)}</span>
+                                  )}
+                                </div>
+                                {bill.latestActionText && (
+                                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                                    {bill.latestActionText}
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleUntrackFederal(bill)}
+                                disabled={untrackingId === bill.trackingId}
+                                className="px-3 py-1.5 text-sm text-destructive border border-destructive/30 rounded hover:bg-destructive/10 disabled:opacity-50"
+                              >
+                                {untrackingId === bill.trackingId ? 'Removing...' : 'Remove'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* State Bills Section */}
+                  <div className="space-y-3">
+                    <h3 className="font-medium flex items-center gap-2">
+                      State Bills
+                      <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                        {trackedItems?.stateBills.length || 0}
+                      </span>
+                    </h3>
+                    {(!trackedItems?.stateBills || trackedItems.stateBills.length === 0) ? (
+                      <div className="text-sm text-muted-foreground p-4 border border-dashed rounded-lg text-center">
+                        No state bills tracked.{' '}
+                        <Link href="/legislation?tab=state" className="text-primary hover:underline">
+                          Browse state legislation
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {trackedItems.stateBills.map((bill) => (
+                          <div
+                            key={bill.trackingId}
+                            className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <Link
+                                  href={`/state-bills/${encodeURIComponent(bill.billId)}`}
+                                  className="font-medium hover:underline block"
+                                >
+                                  {bill.identifier}: {bill.title || 'Untitled'}
+                                </Link>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+                                  <span className="font-medium">{bill.stateName}</span>
+                                  {bill.session && <span>{bill.session}</span>}
+                                  {bill.chamber && <span className="capitalize">{bill.chamber}</span>}
+                                  {bill.latestActionDate && (
+                                    <span>Last action: {formatDate(bill.latestActionDate)}</span>
+                                  )}
+                                </div>
+                                {bill.latestActionDescription && (
+                                  <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                                    {bill.latestActionDescription}
+                                  </p>
+                                )}
+                                {bill.subjects && bill.subjects.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                    {bill.subjects.slice(0, 3).map((subject) => (
+                                      <span
+                                        key={subject}
+                                        className="text-xs px-2 py-0.5 bg-muted rounded"
+                                      >
+                                        {subject}
+                                      </span>
+                                    ))}
+                                    {bill.subjects.length > 3 && (
+                                      <span className="text-xs text-muted-foreground">
+                                        +{bill.subjects.length - 3} more
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleUntrackState(bill)}
+                                disabled={untrackingId === bill.trackingId}
+                                className="px-3 py-1.5 text-sm text-destructive border border-destructive/30 rounded hover:bg-destructive/10 disabled:opacity-50"
+                              >
+                                {untrackingId === bill.trackingId ? 'Removing...' : 'Remove'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Summary */}
+                  {counts && counts.total > 0 && (
+                    <div className="bg-muted p-4 rounded-lg">
+                      <p className="text-sm">
+                        <strong>Total tracked:</strong> {counts.total} item{counts.total !== 1 ? 's' : ''}
+                        {counts.federalBills > 0 && ` (${counts.federalBills} federal)`}
+                        {counts.stateBills > 0 && ` (${counts.stateBills} state)`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Account Tab */}
           {activeTab === 'account' && (
             <div className="rounded-lg border bg-card p-6 space-y-6">
@@ -667,5 +897,17 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    }>
+      <SettingsPageContent />
+    </Suspense>
   );
 }

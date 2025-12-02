@@ -24,7 +24,9 @@ import {
   Gavel,
   MapPin,
   Clock,
+  Bookmark,
   BookmarkPlus,
+  BookmarkCheck,
   Share2,
   Loader2,
   Zap,
@@ -37,6 +39,7 @@ import {
 import Link from "next/link"
 import { useAuth } from "@/lib/auth/auth-context"
 import { getBillById } from "@/lib/api/backend"
+import { useTracking } from "@/lib/hooks/use-tracking"
 
 interface BillData {
   id: string
@@ -142,7 +145,37 @@ export default function BillDetailPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [showFullText, setShowFullText] = useState(false)
+  const [trackingAction, setTrackingAction] = useState(false)
   const { accessToken, isLoading: authLoading } = useAuth()
+
+  // Tracking hook
+  const {
+    isFederalBillTracked,
+    getTrackingId,
+    trackFederalBill,
+    untrackFederalBill,
+  } = useTracking({ token: accessToken })
+
+  const isTracked = billId ? isFederalBillTracked(billId) : false
+  const trackingId = billId ? getTrackingId(billId) : null
+
+  // Handle track/untrack
+  const handleTrackToggle = async () => {
+    if (!bill || !accessToken) return
+
+    setTrackingAction(true)
+    try {
+      if (isTracked && trackingId) {
+        await untrackFederalBill(billId, trackingId)
+      } else {
+        await trackFederalBill(billId, bill.congress, bill.type, bill.number)
+      }
+    } catch (err) {
+      console.error('Error toggling track status:', err)
+    } finally {
+      setTrackingAction(false)
+    }
+  }
 
   // Fetch bill data
   useEffect(() => {
@@ -405,9 +438,27 @@ export default function BillDetailPage() {
 
               {/* Actions */}
               <div className="flex items-center gap-2">
-                <Button>
-                  <BookmarkPlus className="h-4 w-4 mr-2" />
-                  Track This Bill
+                <Button
+                  variant={isTracked ? "secondary" : "default"}
+                  onClick={handleTrackToggle}
+                  disabled={trackingAction || !accessToken}
+                >
+                  {trackingAction ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      {isTracked ? 'Untracking...' : 'Tracking...'}
+                    </>
+                  ) : isTracked ? (
+                    <>
+                      <BookmarkCheck className="h-4 w-4 mr-2" />
+                      Tracking
+                    </>
+                  ) : (
+                    <>
+                      <BookmarkPlus className="h-4 w-4 mr-2" />
+                      Track This Bill
+                    </>
+                  )}
                 </Button>
                 <Button variant="outline">
                   <Share2 className="h-4 w-4 mr-2" />

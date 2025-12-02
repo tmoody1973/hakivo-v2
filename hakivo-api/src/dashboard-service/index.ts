@@ -761,6 +761,172 @@ app.get('/dashboard/news/bookmarks', async (c) => {
 });
 
 /**
+ * GET /dashboard/tracked
+ * Get all tracked items (federal bills, state bills, bookmarked articles) for the authenticated user
+ * Unified endpoint for dashboard "Tracked Items" widget and settings page
+ * Accepts token from query parameter to avoid CORS preflight
+ */
+app.get('/dashboard/tracked', async (c) => {
+  try {
+    console.log('[/dashboard/tracked] Request received');
+
+    // Check for token in query parameter first (to avoid CORS preflight)
+    const tokenParam = c.req.query('token');
+    let auth;
+
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('[/dashboard/tracked] JWT_SECRET not available in environment');
+      return c.json({ error: 'Server configuration error' }, 500);
+    }
+
+    if (tokenParam) {
+      console.log('[/dashboard/tracked] Using token from query parameter');
+      auth = await verifyAuth(`Bearer ${tokenParam}`, jwtSecret);
+      if (!auth) {
+        console.log('[/dashboard/tracked] Token verification failed');
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+    } else {
+      console.log('[/dashboard/tracked] Using token from Authorization header');
+      auth = await requireAuth(c);
+      if (auth instanceof Response) return auth;
+    }
+
+    const db = c.env.APP_DB;
+
+    // Get federal tracked bills with bill details
+    const federalBills = await db
+      .prepare(`
+        SELECT
+          t.id as tracking_id, t.bill_id, t.tracked_at, t.notifications_enabled,
+          b.congress, b.bill_type, b.bill_number, b.title, b.policy_area,
+          b.latest_action_date, b.latest_action_text,
+          m.first_name as sponsor_first_name, m.last_name as sponsor_last_name,
+          m.party as sponsor_party, m.state as sponsor_state
+        FROM bill_tracking t
+        INNER JOIN bills b ON t.bill_id = b.id
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE t.user_id = ?
+        ORDER BY t.tracked_at DESC
+      `)
+      .bind(auth.userId)
+      .all();
+
+    // Get state tracked bills with bill details
+    const stateBills = await db
+      .prepare(`
+        SELECT
+          t.id as tracking_id, t.bill_id, t.state, t.identifier, t.tracked_at, t.notifications_enabled,
+          sb.title, sb.session_identifier, sb.subjects, sb.chamber,
+          sb.latest_action_date, sb.latest_action_description
+        FROM state_bill_tracking t
+        LEFT JOIN state_bills sb ON t.bill_id = sb.id
+        WHERE t.user_id = ?
+        ORDER BY t.tracked_at DESC
+      `)
+      .bind(auth.userId)
+      .all();
+
+    // Get bookmarked articles
+    const bookmarks = await db
+      .prepare(`
+        SELECT
+          id, article_url, title, summary, image_url, interest, created_at
+        FROM user_bookmarks
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+      `)
+      .bind(auth.userId)
+      .all();
+
+    // Format federal bills
+    const formattedFederalBills = (federalBills.results || []).map((bill: any) => ({
+      type: 'federal_bill' as const,
+      trackingId: bill.tracking_id,
+      billId: bill.bill_id,
+      trackedAt: bill.tracked_at,
+      notificationsEnabled: bill.notifications_enabled === 1,
+      congress: bill.congress,
+      billType: bill.bill_type,
+      billNumber: bill.bill_number,
+      title: bill.title,
+      policyArea: bill.policy_area,
+      latestActionDate: bill.latest_action_date,
+      latestActionText: bill.latest_action_text,
+      sponsor: bill.sponsor_first_name && bill.sponsor_last_name ? {
+        firstName: bill.sponsor_first_name,
+        lastName: bill.sponsor_last_name,
+        party: bill.sponsor_party,
+        state: bill.sponsor_state
+      } : null
+    }));
+
+    // Format state bills
+    const formattedStateBills = (stateBills.results || []).map((bill: any) => {
+      let subjects: string[] = [];
+      try {
+        if (bill.subjects) {
+          subjects = typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects;
+        }
+      } catch { /* ignore */ }
+
+      return {
+        type: 'state_bill' as const,
+        trackingId: bill.tracking_id,
+        billId: bill.bill_id,
+        state: bill.state,
+        stateName: STATE_ABBREVIATIONS[bill.state] || bill.state,
+        identifier: bill.identifier,
+        trackedAt: bill.tracked_at,
+        notificationsEnabled: bill.notifications_enabled === 1,
+        title: bill.title,
+        session: bill.session_identifier,
+        subjects,
+        chamber: bill.chamber,
+        latestActionDate: bill.latest_action_date,
+        latestActionDescription: bill.latest_action_description
+      };
+    });
+
+    // Format bookmarks
+    const formattedBookmarks = (bookmarks.results || []).map((bookmark: any) => ({
+      type: 'article' as const,
+      bookmarkId: bookmark.id,
+      articleUrl: bookmark.article_url,
+      title: bookmark.title,
+      summary: bookmark.summary,
+      imageUrl: bookmark.image_url,
+      interest: bookmark.interest,
+      savedAt: bookmark.created_at
+    }));
+
+    console.log(`[/dashboard/tracked] Found ${formattedFederalBills.length} federal bills, ${formattedStateBills.length} state bills, ${formattedBookmarks.length} bookmarks`);
+
+    return c.json({
+      success: true,
+      tracked: {
+        federalBills: formattedFederalBills,
+        stateBills: formattedStateBills,
+        bookmarkedArticles: formattedBookmarks
+      },
+      counts: {
+        federalBills: formattedFederalBills.length,
+        stateBills: formattedStateBills.length,
+        bookmarkedArticles: formattedBookmarks.length,
+        total: formattedFederalBills.length + formattedStateBills.length + formattedBookmarks.length
+      }
+    });
+  } catch (error) {
+    console.error('Get tracked items error:', error);
+    return c.json({
+      error: 'Failed to get tracked items',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * GET /dashboard/representatives
  * Get user's congressional representatives based on their state and district (requires auth)
  * Accepts token from query parameter to avoid CORS preflight
@@ -2490,15 +2656,25 @@ app.post('/briefs/generate', async (c) => {
       .first();
 
     if (existingBrief) {
-      console.log(`[/briefs/generate] User ${auth.userId} already has today's brief: ${existingBrief.id}`);
+      // If the existing brief failed, delete it and allow regeneration
+      if (existingBrief.status === 'failed') {
+        console.log(`[/briefs/generate] User ${auth.userId} has a failed brief for today: ${existingBrief.id} - deleting to allow regeneration`);
+        await db
+          .prepare('DELETE FROM briefs WHERE id = ?')
+          .bind(existingBrief.id)
+          .run();
+        // Continue to create a new brief below
+      } else {
+        console.log(`[/briefs/generate] User ${auth.userId} already has today's brief: ${existingBrief.id} (status: ${existingBrief.status})`);
 
-      return c.json({
-        success: true,
-        status: existingBrief.status,
-        briefId: existingBrief.id,
-        audioUrl: existingBrief.audio_url,
-        message: 'Brief already exists for today'
-      });
+        return c.json({
+          success: true,
+          status: existingBrief.status,
+          briefId: existingBrief.id,
+          audioUrl: existingBrief.audio_url,
+          message: 'Brief already exists for today'
+        });
+      }
     }
 
     // Generate new brief ID

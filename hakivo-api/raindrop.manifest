@@ -77,6 +77,10 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "PEXELS_API_KEY" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"

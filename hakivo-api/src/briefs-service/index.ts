@@ -174,15 +174,25 @@ app.post('/briefs/generate-daily', async (c) => {
       .first();
 
     if (existingBrief) {
-      console.log(`ℹ️ User ${auth.userId} already has daily brief for ${today}: ${existingBrief.id}`);
-      return c.json({
-        success: true,
-        message: 'Daily brief already exists for today',
-        briefId: existingBrief.id,
-        status: existingBrief.status,
-        audioUrl: existingBrief.audio_url,
-        isExisting: true
-      });
+      // If the existing brief failed, allow regeneration by deleting it first
+      if (existingBrief.status === 'failed') {
+        console.log(`⚠️ User ${auth.userId} has a failed brief for ${today}: ${existingBrief.id} - deleting to allow regeneration`);
+        await db
+          .prepare('DELETE FROM briefs WHERE id = ?')
+          .bind(existingBrief.id)
+          .run();
+        // Continue to create a new brief below
+      } else {
+        console.log(`ℹ️ User ${auth.userId} already has daily brief for ${today}: ${existingBrief.id} (status: ${existingBrief.status})`);
+        return c.json({
+          success: true,
+          message: 'Daily brief already exists for today',
+          briefId: existingBrief.id,
+          status: existingBrief.status,
+          audioUrl: existingBrief.audio_url,
+          isExisting: true
+        });
+      }
     }
 
     // Create new daily brief
