@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const DASHBOARD_API_URL = (process.env.NEXT_PUBLIC_DASHBOARD_API_URL && process.env.NEXT_PUBLIC_DASHBOARD_API_URL.startsWith('http'))
-  ? process.env.NEXT_PUBLIC_DASHBOARD_API_URL
-  : 'https://svc-01ka8k5e6tr0kgy0jkzj9m4qx.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 /**
  * GET /api/tracked
