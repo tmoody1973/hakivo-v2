@@ -7,7 +7,6 @@ import { DailyBriefWidget } from "@/components/widgets/daily-brief-widget"
 import { RepresentativesHorizontalWidget } from "@/components/widgets/representatives-horizontal-widget"
 import { LatestActionsWidget } from "@/components/widgets/latest-actions-widget"
 import { PersonalizedContentWidget } from "@/components/widgets/personalized-content-widget"
-import { TrackedBillsWidget } from "@/components/widgets/tracked-bills-widget"
 import { getUserPreferences } from '@/lib/api/backend';
 
 export default function DashboardPage() {
@@ -78,10 +77,8 @@ export default function DashboardPage() {
 
         <DailyBriefWidget />
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 items-start">
-          <LatestActionsWidget userState={userState} />
-
-          <TrackedBillsWidget token={accessToken} />
+        <div className="grid gap-6 md:grid-cols-2 items-start">
+          <LatestActionsWidget userState={userState} token={accessToken} />
 
           <PersonalizedContentWidget userInterests={userInterests} />
         </div>

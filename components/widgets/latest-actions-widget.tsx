@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, TrendingUp, List, Bookmark, Sparkles, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2, Landmark } from 'lucide-react';
+import { AlertCircle, TrendingUp, List, Bookmark, BookmarkX, Sparkles, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2, Landmark, FileText } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { getStateBills, StateBill } from '@/lib/api/backend';
+import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
 
 interface BillAction {
   id: string;
@@ -59,9 +61,10 @@ const STATE_NAMES: Record<string, string> = {
 
 interface LatestActionsWidgetProps {
   userState?: string | null;
+  token?: string | null;
 }
 
-export function LatestActionsWidget({ userState }: LatestActionsWidgetProps) {
+export function LatestActionsWidget({ userState, token }: LatestActionsWidgetProps) {
   const router = useRouter();
   const [actions, setActions] = useState<BillAction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,17 @@ export function LatestActionsWidget({ userState }: LatestActionsWidgetProps) {
   const [stateBillsError, setStateBillsError] = useState<string | null>(null);
   const [stateBillsPage, setStateBillsPage] = useState(1);
   const [stateBillsFetched, setStateBillsFetched] = useState(false);
+
+  // Tracked bills state (using the useTracking hook)
+  const {
+    trackedItems,
+    counts: trackedCounts,
+    loading: trackedLoading,
+    untrackFederalBill,
+    untrackStateBill,
+  } = useTracking({ token });
+  const [untrackingId, setUntrackingId] = useState<string | null>(null);
+  const [trackedBillsPage, setTrackedBillsPage] = useState(1);
 
   useEffect(() => {
     async function fetchLatestActions() {
@@ -138,6 +152,36 @@ export function LatestActionsWidget({ userState }: LatestActionsWidgetProps) {
       fetchStateBills();
     }
   };
+
+  // Tracked bills handlers
+  const handleUntrackFederal = async (bill: TrackedFederalBill) => {
+    setUntrackingId(bill.trackingId);
+    await untrackFederalBill(bill.billId, bill.trackingId);
+    setUntrackingId(null);
+  };
+
+  const handleUntrackState = async (bill: TrackedStateBill) => {
+    setUntrackingId(bill.trackingId);
+    await untrackStateBill(bill.billId, bill.trackingId);
+    setUntrackingId(null);
+  };
+
+  const formatTrackedDate = (dateStr?: string | null) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Combined tracked bills for pagination
+  const allTrackedBills = [
+    ...(trackedItems?.federalBills || []).map(b => ({ ...b, billType: 'federal' as const })),
+    ...(trackedItems?.stateBills || []).map(b => ({ ...b, billType: 'state' as const })),
+  ].sort((a, b) => b.trackedAt - a.trackedAt);
+
+  const trackedBillsTotalPages = Math.ceil(allTrackedBills.length / ITEMS_PER_PAGE);
+  const trackedBillsStartIndex = (trackedBillsPage - 1) * ITEMS_PER_PAGE;
+  const trackedBillsEndIndex = trackedBillsStartIndex + ITEMS_PER_PAGE;
+  const currentTrackedBills = allTrackedBills.slice(trackedBillsStartIndex, trackedBillsEndIndex);
 
   // Calculate pagination for federal actions
   const totalPages = Math.ceil(actions.length / ITEMS_PER_PAGE);
@@ -571,11 +615,202 @@ export function LatestActionsWidget({ userState }: LatestActionsWidgetProps) {
           </TabsContent>
 
           <TabsContent value="tracked" className="mt-0">
-            <div className="text-center py-8 text-muted-foreground">
-              <Bookmark className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No tracked bills yet.</p>
-              <p className="text-xs mt-1">Start tracking bills to see updates here.</p>
-            </div>
+            {trackedLoading ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : allTrackedBills.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No tracked bills yet.</p>
+                <p className="text-xs mt-1 mb-4">Start tracking bills to see updates here.</p>
+                <Link href="/legislation">
+                  <Button variant="outline" size="sm">
+                    Browse Legislation
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {currentTrackedBills.map((bill) => {
+                    if (bill.billType === 'federal') {
+                      const federalBill = bill as TrackedFederalBill & { billType: 'federal' };
+                      return (
+                        <div
+                          key={federalBill.trackingId}
+                          className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <Link
+                                href={`/bills/${federalBill.billId}`}
+                                className="hover:underline"
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-mono text-primary">
+                                    {federalBill.billType.toUpperCase()} {federalBill.billNumber}
+                                  </span>
+                                  <Badge variant="outline" className="text-xs">
+                                    Federal
+                                  </Badge>
+                                </div>
+                                <h4 className="font-medium text-sm line-clamp-2">
+                                  {federalBill.title}
+                                </h4>
+                              </Link>
+                              <div className="flex items-center gap-2 mt-1">
+                                {federalBill.sponsor && (
+                                  <Badge
+                                    variant="secondary"
+                                    className={`text-xs ${getPartyColor(federalBill.sponsor.party)}`}
+                                  >
+                                    {federalBill.sponsor.lastName} ({federalBill.sponsor.party})
+                                  </Badge>
+                                )}
+                                {federalBill.latestActionDate && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatTrackedDate(federalBill.latestActionDate)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 shrink-0"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleUntrackFederal(federalBill);
+                              }}
+                              disabled={untrackingId === federalBill.trackingId}
+                            >
+                              {untrackingId === federalBill.trackingId ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <BookmarkX className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      const stateBill = bill as TrackedStateBill & { billType: 'state' };
+                      return (
+                        <div
+                          key={stateBill.trackingId}
+                          className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <Link
+                                href={`/state-bills/${encodeURIComponent(stateBill.billId)}`}
+                                className="hover:underline"
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-mono text-primary">
+                                    {stateBill.identifier}
+                                  </span>
+                                  <Badge variant="outline" className="text-xs">
+                                    {stateBill.stateName}
+                                  </Badge>
+                                </div>
+                                <h4 className="font-medium text-sm line-clamp-2">
+                                  {stateBill.title || 'Untitled'}
+                                </h4>
+                              </Link>
+                              <div className="flex items-center gap-2 mt-1">
+                                {stateBill.latestActionDate && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatTrackedDate(stateBill.latestActionDate)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 shrink-0"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleUntrackState(stateBill);
+                              }}
+                              disabled={untrackingId === stateBill.trackingId}
+                            >
+                              {untrackingId === stateBill.trackingId ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <BookmarkX className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })}
+                </div>
+
+                {/* Tracked Bills Pagination Controls */}
+                {trackedBillsTotalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTrackedBillsPage(p => Math.max(1, p - 1))}
+                      disabled={trackedBillsPage === 1}
+                      className="h-8"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+
+                    {getPageNumbers(trackedBillsTotalPages, trackedBillsPage).map((page, index) => (
+                      page === '...' ? (
+                        <span key={`tracked-ellipsis-${index}`} className="px-2 text-muted-foreground">...</span>
+                      ) : (
+                        <Button
+                          key={`tracked-${page}`}
+                          variant={trackedBillsPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setTrackedBillsPage(page as number)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {page}
+                        </Button>
+                      )
+                    ))}
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTrackedBillsPage(p => Math.min(trackedBillsTotalPages, p + 1))}
+                      disabled={trackedBillsPage === trackedBillsTotalPages}
+                      className="h-8"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+
+                {/* View all link */}
+                {allTrackedBills.length > 5 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <Link href="/settings?tab=tracked" className="block">
+                      <Button variant="ghost" className="w-full text-xs" size="sm">
+                        Manage all {allTrackedBills.length} tracked bills
+                        <ExternalLink className="ml-1 h-3 w-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="recent" className="mt-0">
