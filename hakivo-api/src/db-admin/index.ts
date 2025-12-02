@@ -393,6 +393,139 @@ app.post('/db-admin/cleanup-malformed-bills', async (c) => {
   }
 });
 
+/**
+ * POST /db-admin/sync-state-bills
+ * Manually sync state bills from OpenStates API
+ * Body: { state: "AL" } or { states: ["AL", "WI"] }
+ */
+app.post('/db-admin/sync-state-bills', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const openStatesClient = c.env.OPENSTATES_CLIENT;
+
+    const body = await c.req.json().catch(() => ({}));
+    let states: string[] = [];
+
+    if (body.state) {
+      states = [body.state.toUpperCase()];
+    } else if (body.states && Array.isArray(body.states)) {
+      states = body.states.map((s: string) => s.toUpperCase());
+    } else {
+      // Default: sync for all users with state preferences
+      const statesResult = await db
+        .prepare(`
+          SELECT DISTINCT state
+          FROM user_preferences
+          WHERE state IS NOT NULL AND state != ''
+          LIMIT 10
+        `)
+        .all();
+      states = (statesResult.results as { state: string }[]).map(s => s.state);
+    }
+
+    if (states.length === 0) {
+      return c.json({
+        success: false,
+        error: 'No states to sync. Provide state or states in request body.'
+      }, 400);
+    }
+
+    console.log(`🏛️  Manual State Sync: Syncing ${states.length} states: ${states.join(', ')}`);
+
+    let totalSynced = 0;
+    let totalErrors = 0;
+    const results: Array<{ state: string; synced: number; error?: string }> = [];
+
+    for (const state of states) {
+      try {
+        console.log(`\n🔄 Syncing state: ${state}`);
+
+        // Call OpenStates client to search bills by state
+        const bills = await openStatesClient.searchBillsByState(state, undefined, 20);
+
+        if (!bills || bills.length === 0) {
+          console.log(`  ⚠️  No bills found for ${state}`);
+          results.push({ state, synced: 0 });
+          continue;
+        }
+
+        console.log(`  📋 Retrieved ${bills.length} bills for ${state}`);
+        let stateSynced = 0;
+
+        // Insert or update bills in database
+        for (const bill of bills) {
+          try {
+            await db
+              .prepare(`
+                INSERT INTO state_bills (
+                  id, state, session_identifier, identifier, title,
+                  subjects, chamber, latest_action_date, latest_action_description,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  title = excluded.title,
+                  subjects = excluded.subjects,
+                  latest_action_date = excluded.latest_action_date,
+                  latest_action_description = excluded.latest_action_description,
+                  updated_at = excluded.updated_at
+              `)
+              .bind(
+                bill.id,
+                state.toUpperCase(),
+                bill.session,
+                bill.identifier,
+                bill.title,
+                JSON.stringify(bill.subjects || []),
+                bill.chamber || '',
+                bill.latestActionDate,
+                bill.latestActionDescription,
+                Date.now(),
+                Date.now()
+              )
+              .run();
+
+            stateSynced++;
+            totalSynced++;
+          } catch (insertError) {
+            console.error(`  ❌ Failed to insert bill ${bill.id}:`, insertError);
+            totalErrors++;
+          }
+        }
+
+        console.log(`  ✅ Synced ${stateSynced} bills for ${state}`);
+        results.push({ state, synced: stateSynced });
+
+        // Brief pause between states
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (stateError) {
+        const errorMessage = stateError instanceof Error ? stateError.message : 'Unknown error';
+        console.error(`❌ Failed to sync state ${state}:`, stateError);
+        results.push({ state, synced: 0, error: errorMessage });
+        totalErrors++;
+      }
+    }
+
+    console.log(`\n✅ State sync complete: ${totalSynced} bills synced, ${totalErrors} errors`);
+
+    return c.json({
+      success: true,
+      message: `Synced ${totalSynced} state bills`,
+      totalSynced,
+      totalErrors,
+      results
+    });
+
+  } catch (error) {
+    console.error('State sync failed:', error);
+    return c.json({
+      success: false,
+      error: 'State sync failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

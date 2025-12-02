@@ -7,17 +7,24 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
+  AlertCircle,
   ArrowLeft,
   Building2,
+  Check,
   Clock,
   ExternalLink,
   FileText,
   Loader2,
   MapPin,
+  Sparkles,
+  Target,
+  ThumbsUp,
   Users,
+  Zap,
 } from "lucide-react"
 import Link from "next/link"
 import { getStateBillById, StateBillDetail } from "@/lib/api/backend"
+import { useAuth } from "@/lib/auth/auth-context"
 
 // US State names mapping
 const STATE_NAMES: Record<string, string> = {
@@ -34,13 +41,42 @@ const STATE_NAMES: Record<string, string> = {
   DC: "District of Columbia", PR: "Puerto Rico"
 }
 
+// Analysis type
+interface StateBillAnalysis {
+  billId: string
+  status: 'pending' | 'processing' | 'complete' | 'failed'
+  executiveSummary?: string
+  statusQuoVsChange?: string
+  sectionBreakdown?: string[]
+  mechanismOfAction?: string
+  agencyPowers?: string[]
+  fiscalImpact?: {
+    estimatedCost?: string
+    fundingSource?: string
+    timeframe?: string
+  }
+  stakeholderImpact?: Record<string, string>
+  unintendedConsequences?: string[]
+  argumentsFor?: string[]
+  argumentsAgainst?: string[]
+  implementationChallenges?: string[]
+  passageLikelihood?: number
+  passageReasoning?: string
+  analyzedAt?: number
+}
+
 export default function StateBillDetailPage() {
   const params = useParams()
   const billId = params?.id as string
   const [bill, setBill] = useState<StateBillDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<StateBillAnalysis | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const { accessToken, isLoading: authLoading } = useAuth()
 
+  // Fetch bill on load
   useEffect(() => {
     async function fetchBill() {
       if (!billId) return
@@ -67,6 +103,116 @@ export default function StateBillDetailPage() {
 
     fetchBill()
   }, [billId])
+
+  // Fetch existing analysis on load
+  useEffect(() => {
+    async function fetchAnalysis() {
+      if (!billId || authLoading) return
+
+      try {
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        }
+        if (accessToken) {
+          headers['Authorization'] = `Bearer ${accessToken}`
+        }
+
+        const response = await fetch(`/api/state-bills/${encodeURIComponent(billId)}/analysis`, {
+          headers,
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.analysis) {
+            setAnalysis(data.analysis)
+          }
+        }
+      } catch (err) {
+        console.log('[StateBillDetailPage] No existing analysis:', err)
+      }
+    }
+
+    fetchAnalysis()
+  }, [billId, authLoading, accessToken])
+
+  // Function to trigger bill analysis
+  const handleAnalyzeBill = async () => {
+    if (!billId) return
+
+    setAnalyzing(true)
+    setAnalyzeError(null)
+
+    try {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`
+      }
+
+      console.log('[StateBillDetailPage] Triggering analysis for state bill:', billId)
+
+      const response = await fetch(`/api/state-bills/${encodeURIComponent(billId)}/analyze`, {
+        method: 'POST',
+        headers,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to trigger analysis')
+      }
+
+      const data = await response.json()
+      console.log('[StateBillDetailPage] Analysis triggered successfully:', data)
+
+      // Poll for analysis completion
+      let attempts = 0
+      const maxAttempts = 24 // Poll for up to 2 minutes (24 * 5 seconds)
+
+      const pollInterval = setInterval(async () => {
+        attempts++
+        console.log(`[StateBillDetailPage] Polling for analysis completion (attempt ${attempts}/${maxAttempts})`)
+
+        try {
+          const analysisResponse = await fetch(`/api/state-bills/${encodeURIComponent(billId)}/analysis`, {
+            headers,
+          })
+
+          if (analysisResponse.ok) {
+            const analysisData = await analysisResponse.json()
+            if (analysisData.success && analysisData.analysis) {
+              setAnalysis(analysisData.analysis)
+
+              if (analysisData.analysis.status === 'complete') {
+                console.log('[StateBillDetailPage] Analysis complete!')
+                clearInterval(pollInterval)
+                setAnalyzing(false)
+              } else if (analysisData.analysis.status === 'failed') {
+                console.error('[StateBillDetailPage] Analysis failed')
+                clearInterval(pollInterval)
+                setAnalyzeError('Analysis failed. Please try again.')
+                setAnalyzing(false)
+              }
+            }
+          }
+
+          // Stop polling after max attempts
+          if (attempts >= maxAttempts) {
+            console.log('[StateBillDetailPage] Max polling attempts reached')
+            clearInterval(pollInterval)
+            setAnalyzing(false)
+          }
+        } catch (pollError) {
+          console.error('[StateBillDetailPage] Error polling for analysis:', pollError)
+        }
+      }, 5000) // Poll every 5 seconds
+
+    } catch (err) {
+      console.error('[StateBillDetailPage] Error triggering analysis:', err)
+      setAnalyzeError(err instanceof Error ? err.message : 'Failed to trigger analysis')
+      setAnalyzing(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -162,7 +308,7 @@ export default function StateBillDetailPage() {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-center gap-2 pt-2 flex-wrap">
                 {bill.openstatesUrl && (
                   <Button variant="outline" asChild>
                     <a href={bill.openstatesUrl} target="_blank" rel="noopener noreferrer">
@@ -171,10 +317,188 @@ export default function StateBillDetailPage() {
                     </a>
                   </Button>
                 )}
+                <Button
+                  variant="default"
+                  onClick={handleAnalyzeBill}
+                  disabled={analyzing || analysis?.status === 'complete'}
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Analyzing...
+                    </>
+                  ) : analysis?.status === 'complete' ? (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Analysis Complete
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-4 w-4 mr-2" />
+                      Analyze This Bill
+                    </>
+                  )}
+                </Button>
               </div>
+
+              {/* Analysis Error Message */}
+              {analyzeError && (
+                <div className="mt-2 text-sm text-red-600 dark:text-red-400">
+                  {analyzeError}
+                </div>
+              )}
             </div>
           </CardHeader>
         </Card>
+
+        {/* Deep Forensic Analysis */}
+        {analysis && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Target className="h-5 w-5 text-primary" />
+                Deep Forensic Analysis
+              </CardTitle>
+              {analysis.analyzedAt && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Comprehensive analysis powered by AI • Last updated {new Date(analysis.analyzedAt).toLocaleDateString()}
+                </p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Processing Status */}
+              {(analysis.status === 'processing' || analysis.status === 'pending') && !analysis.executiveSummary && (
+                <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                  <div>
+                    <p className="font-medium text-purple-900 dark:text-purple-100">
+                      Deep forensic analysis in progress...
+                    </p>
+                    <p className="text-sm text-purple-700 dark:text-purple-300">
+                      Our AI is performing a comprehensive analysis of this state legislation. This may take 30-60 seconds.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Executive Summary */}
+              {analysis.executiveSummary && analysis.executiveSummary !== 'Analysis in progress...' && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-lg">Executive Summary</h3>
+                  <p className="text-muted-foreground leading-relaxed">
+                    {analysis.executiveSummary}
+                  </p>
+                </div>
+              )}
+
+              {analysis.status === 'complete' && (
+                <>
+                  <Separator />
+
+                  {/* Simplified Analysis Layout */}
+                  <div className="space-y-6">
+                    {/* Who It Affects */}
+                    {analysis.stakeholderImpact && Object.keys(analysis.stakeholderImpact).length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-base mb-3">Who It Affects</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {Object.keys(analysis.stakeholderImpact).map((stakeholder) => (
+                            <Badge key={stakeholder} variant="secondary" className="capitalize">
+                              {stakeholder.replace(/_/g, ' ')}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Key Provisions */}
+                    {analysis.sectionBreakdown && analysis.sectionBreakdown.length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-base mb-3">Key Provisions</h3>
+                        <ul className="space-y-2">
+                          {analysis.sectionBreakdown.map((provision, index) => (
+                            <li key={index} className="flex gap-2">
+                              <span className="text-muted-foreground">•</span>
+                              <span className="text-muted-foreground">{String(provision)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Potential Impact - Two Column Grid */}
+                    <div>
+                      <h3 className="font-semibold text-base mb-3">Potential Impact</h3>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {/* Potential Benefits */}
+                        <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
+                              <ThumbsUp className="h-4 w-4" />
+                              Potential Benefits
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <ul className="space-y-3">
+                              {analysis.argumentsFor && analysis.argumentsFor.length > 0 ? (
+                                analysis.argumentsFor.map((benefit, index) => (
+                                  <li key={index} className="flex gap-2 text-sm">
+                                    <Check className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                                    <span className="text-green-900 dark:text-green-100">{String(benefit)}</span>
+                                  </li>
+                                ))
+                              ) : (
+                                <p className="text-sm text-green-700 dark:text-green-300">No benefits listed</p>
+                              )}
+                            </ul>
+                          </CardContent>
+                        </Card>
+
+                        {/* Potential Concerns */}
+                        <Card className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900">
+                          <CardHeader className="pb-3">
+                            <CardTitle className="text-sm flex items-center gap-2 text-red-700 dark:text-red-400">
+                              <AlertCircle className="h-4 w-4" />
+                              Potential Concerns
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <ul className="space-y-3">
+                              {analysis.argumentsAgainst && analysis.argumentsAgainst.length > 0 ? (
+                                analysis.argumentsAgainst.map((concern, index) => (
+                                  <li key={index} className="flex gap-2 text-sm">
+                                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                                    <span className="text-red-900 dark:text-red-100">{String(concern)}</span>
+                                  </li>
+                                ))
+                              ) : (
+                                <p className="text-sm text-red-700 dark:text-red-300">No concerns listed</p>
+                              )}
+                            </ul>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+
+                    {/* Passage Likelihood */}
+                    {analysis.passageLikelihood !== undefined && (
+                      <div>
+                        <h3 className="font-semibold text-base mb-3">Passage Likelihood</h3>
+                        <div className="flex items-center gap-4">
+                          <div className="text-2xl font-bold text-primary">{analysis.passageLikelihood}%</div>
+                          {analysis.passageReasoning && (
+                            <p className="text-sm text-muted-foreground">{analysis.passageReasoning}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Abstract / Summary */}
         {bill.abstract && (

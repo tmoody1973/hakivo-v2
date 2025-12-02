@@ -886,7 +886,8 @@ export default class extends Each<Body, Env> {
           .prepare(`
             SELECT
               id, state, session_identifier, identifier, title,
-              subjects, chamber, latest_action_date, latest_action_description
+              subjects, chamber, latest_action_date, latest_action_description,
+              full_text, full_text_url, full_text_format, abstract
             FROM state_bills
             WHERE state = ?
               AND (${subjectConditions})
@@ -909,7 +910,8 @@ export default class extends Each<Body, Env> {
         .prepare(`
           SELECT
             id, state, session_identifier, identifier, title,
-            subjects, chamber, latest_action_date, latest_action_description
+            subjects, chamber, latest_action_date, latest_action_description,
+            full_text, full_text_url, full_text_format, abstract
           FROM state_bills
           WHERE state = ?
             ${excludeClause}
@@ -988,7 +990,7 @@ export default class extends Each<Body, Env> {
         source: article.source,
         category: article.category,
         imageUrl: article.image?.url || null, // Map image.url to imageUrl for fallback logic
-        imageAlt: article.image?.alt || null
+        imageAlt: article.title || null // Use title as alt text since Perplexity doesn't provide alt
       }));
     } catch (error) {
       console.error(`[PERPLEXITY] Failed to fetch news articles${state ? ` for ${state}` : ''}:`, error);
@@ -1047,16 +1049,41 @@ SPONSOR: ${bill.first_name || ''} ${bill.last_name || ''} (${bill.party || '?'}-
 LATEST: ${bill.latest_action_text}`).join('\n');
 
     // Format state legislature bills (if any)
+    // Include full text or PDF URL for AI analysis
     const stateBillsText = personalization.stateBills.length > 0
       ? personalization.stateBills.map((bill: any) => {
           const subjects = bill.subjects ? (typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects) : [];
           const subjectStr = Array.isArray(subjects) && subjects.length > 0 ? subjects.slice(0, 3).join(', ') : 'General';
+
+          // Determine what text content is available
+          let textContent = '';
+          if (bill.full_text) {
+            // Truncate very long text to first 2000 chars for the prompt
+            const truncatedText = bill.full_text.length > 2000
+              ? bill.full_text.substring(0, 2000) + '... [truncated]'
+              : bill.full_text;
+            textContent = `\nFULL TEXT EXCERPT:\n${truncatedText}`;
+          } else if (bill.abstract) {
+            textContent = `\nABSTRACT: ${bill.abstract}`;
+          }
+
+          // If only PDF URL is available, note it for AI to potentially fetch
+          let pdfNote = '';
+          if (!bill.full_text && bill.full_text_url) {
+            const isPdf = bill.full_text_format?.includes('pdf') || bill.full_text_url?.includes('.pdf');
+            if (isPdf) {
+              pdfNote = `\nPDF AVAILABLE: ${bill.full_text_url} (Use web search or fetch this URL to get bill details)`;
+            } else {
+              pdfNote = `\nTEXT URL: ${bill.full_text_url}`;
+            }
+          }
+
           return `
 STATE BILL: ${bill.identifier} (${bill.state})
 TITLE: ${bill.title}
 CHAMBER: ${bill.chamber || 'Unknown'}
 SUBJECTS: ${subjectStr}
-LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}`;
+LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}${textContent}${pdfNote}`;
         }).join('\n')
       : '';
 

@@ -4,15 +4,17 @@ import { Env } from './raindrop.gen';
 /**
  * OpenStates API Client
  *
- * Fetches state legislation data from OpenStates (Plural Policy) API.
+ * Fetches state legislation data from OpenStates (Plural Policy) API v3.
  * Rate limits: 500 requests/day, 1 request/sec
+ *
+ * Note: GraphQL API (v2) was sunset in December 2023.
+ * This client uses the v3 REST API exclusively.
  *
  * Key difference from federal bills:
  * - State bills are fetched ON-DEMAND per user's state
  * - AI maps bills to user's personalized interests
  */
 export default class extends Service<Env> {
-  private readonly GRAPHQL_URL = 'https://v3.openstates.org/graphql';
   private readonly REST_URL = 'https://v3.openstates.org';
   private readonly RATE_LIMIT_MS = 1000; // 1 request per second
   private lastRequestTime = 0;
@@ -46,58 +48,27 @@ export default class extends Service<Env> {
   }
 
   /**
-   * Make GraphQL request to OpenStates
-   */
-  private async graphqlRequest(query: string, variables: Record<string, any> = {}): Promise<any> {
-    await this.enforceRateLimit();
-
-    const apiKey = this.getApiKey();
-
-    try {
-      const response = await fetch(this.GRAPHQL_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey
-        },
-        body: JSON.stringify({ query, variables })
-      });
-
-      if (response.status === 429) {
-        throw new Error('OpenStates rate limit exceeded (500 requests/day)');
-      }
-
-      if (!response.ok) {
-        throw new Error(`OpenStates API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.errors) {
-        throw new Error(`OpenStates GraphQL error: ${JSON.stringify(data.errors)}`);
-      }
-
-      return data.data;
-    } catch (error) {
-      console.error('OpenStates API request error:', error);
-      throw new Error(`OpenStates request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
    * Make REST API request to OpenStates
+   * Supports array values for repeated query params (e.g., include=a&include=b)
    */
-  private async restRequest(endpoint: string, params: Record<string, string | number> = {}): Promise<any> {
+  private async restRequest(endpoint: string, params: Record<string, string | number | string[]> = {}): Promise<any> {
     await this.enforceRateLimit();
 
     const apiKey = this.getApiKey();
 
-    const queryParams = new URLSearchParams({
-      apikey: apiKey,
-      ...Object.fromEntries(
-        Object.entries(params).map(([k, v]) => [k, String(v)])
-      )
-    });
+    const queryParams = new URLSearchParams();
+    queryParams.set('apikey', apiKey);
+
+    // Handle array values as repeated query params
+    for (const [key, value] of Object.entries(params)) {
+      if (Array.isArray(value)) {
+        for (const v of value) {
+          queryParams.append(key, v);
+        }
+      } else {
+        queryParams.set(key, String(value));
+      }
+    }
 
     const url = `${this.REST_URL}${endpoint}?${queryParams}`;
 
@@ -144,64 +115,42 @@ export default class extends Service<Env> {
   }>> {
     console.log(`✓ OpenStates search: ${limit} bills from ${state}${query ? ` (query: ${query})` : ''}`);
 
-    // Use GraphQL for efficient single request
-    const graphqlQuery = `
-      query SearchBills($jurisdiction: String!, $first: Int!, $searchQuery: String) {
-        bills(
-          jurisdiction: $jurisdiction
-          first: $first
-          searchQuery: $searchQuery
-          sort: "updated_desc"
-        ) {
-          edges {
-            node {
-              id
-              identifier
-              title
-              session {
-                identifier
-              }
-              fromOrganization {
-                classification
-              }
-              latestAction {
-                date
-                description
-              }
-              subject
-            }
-          }
-        }
-      }
-    `;
-
-    const variables: Record<string, any> = {
+    // Build REST API parameters
+    const params: Record<string, string | number> = {
       jurisdiction: state.toLowerCase(),
-      first: limit
+      per_page: limit,
+      sort: 'updated_desc',
+      include: 'actions'
     };
 
     if (query) {
-      variables.searchQuery = query;
+      params.q = query;
     }
 
-    const data = await this.graphqlRequest(graphqlQuery, variables);
+    const data = await this.restRequest('/bills', params);
 
-    return data.bills.edges.map((edge: any) => ({
-      id: edge.node.id,
-      identifier: edge.node.identifier,
-      title: edge.node.title,
-      session: edge.node.session?.identifier || '',
-      chamber: edge.node.fromOrganization?.classification || '',
-      latestActionDate: edge.node.latestAction?.date || null,
-      latestActionDescription: edge.node.latestAction?.description || null,
-      subjects: edge.node.subject || []
-    }));
+    return (data.results || []).map((bill: any) => {
+      // Get the latest action from the actions array
+      const actions = bill.actions || [];
+      const latestAction = actions.length > 0 ? actions[actions.length - 1] : null;
+
+      return {
+        id: bill.id,
+        identifier: bill.identifier,
+        title: bill.title,
+        session: bill.session || '',
+        chamber: bill.from_organization?.classification || '',
+        latestActionDate: latestAction?.date || null,
+        latestActionDescription: latestAction?.description || null,
+        subjects: bill.subject || []
+      };
+    });
   }
 
   /**
    * Get detailed bill information including text versions
    *
-   * @param billId - OpenStates bill ID (openstates format)
+   * @param billId - OpenStates bill ID (ocd-bill/uuid format)
    * @returns Bill details with text URLs
    */
   async getBillDetails(billId: string): Promise<{
@@ -227,44 +176,11 @@ export default class extends Service<Env> {
   }> {
     console.log(`✓ OpenStates details: ${billId}`);
 
-    const graphqlQuery = `
-      query GetBillDetails($id: ID!) {
-        bill(id: $id) {
-          id
-          identifier
-          title
-          session {
-            identifier
-          }
-          fromOrganization {
-            classification
-          }
-          abstracts {
-            abstract
-          }
-          latestAction {
-            date
-            description
-          }
-          subject
-          sponsorships {
-            name
-            classification
-          }
-          versions {
-            links {
-              url
-              mediaType
-            }
-            date
-            note
-          }
-        }
-      }
-    `;
-
-    const data = await this.graphqlRequest(graphqlQuery, { id: billId });
-    const bill = data.bill;
+    // Use REST API with includes for full details
+    // OpenStates v3 API requires separate include params for each value
+    const bill = await this.restRequest(`/bills/${billId}`, {
+      include: ['sponsorships', 'abstracts', 'versions', 'actions']
+    });
 
     // Extract text version URLs (prefer HTML/text over PDF)
     const textVersions: Array<{
@@ -282,22 +198,26 @@ export default class extends Service<Env> {
               url: link.url,
               date: version.date,
               note: version.note,
-              mediaType: link.mediaType
+              mediaType: link.media_type || null
             });
           }
         }
       }
     }
 
+    // Get the latest action from the actions array
+    const actions = bill.actions || [];
+    const latestAction = actions.length > 0 ? actions[actions.length - 1] : null;
+
     return {
       id: bill.id,
       identifier: bill.identifier,
       title: bill.title,
-      session: bill.session?.identifier || '',
-      chamber: bill.fromOrganization?.classification || '',
+      session: bill.session || '',
+      chamber: bill.from_organization?.classification || '',
       abstract: bill.abstracts?.[0]?.abstract || null,
-      latestActionDate: bill.latestAction?.date || null,
-      latestActionDescription: bill.latestAction?.description || null,
+      latestActionDate: latestAction?.date || null,
+      latestActionDescription: latestAction?.description || null,
       subjects: bill.subject || [],
       sponsors: bill.sponsorships?.map((s: any) => ({
         name: s.name,
@@ -402,31 +322,17 @@ export default class extends Service<Env> {
   async getCurrentSession(state: string): Promise<string | null> {
     console.log(`✓ OpenStates session: ${state}`);
 
-    const graphqlQuery = `
-      query GetJurisdiction($jurisdiction: String!) {
-        jurisdiction(name: $jurisdiction) {
-          legislativeSessions {
-            identifier
-            startDate
-            endDate
-            classification
-          }
-        }
-      }
-    `;
-
-    const data = await this.graphqlRequest(graphqlQuery, {
-      jurisdiction: state.toLowerCase()
-    });
+    // Use REST API to get jurisdiction details
+    const data = await this.restRequest(`/jurisdictions/${state.toLowerCase()}`);
 
     // Find the current or most recent session
-    const sessions = data.jurisdiction?.legislativeSessions || [];
+    const sessions = data.legislative_sessions || [];
     const today = new Date().toISOString().split('T')[0] as string;
 
     // Look for current session (has started, hasn't ended)
     for (const session of sessions) {
-      if (session.startDate && session.startDate <= today) {
-        if (!session.endDate || session.endDate >= today) {
+      if (session.start_date && session.start_date <= today) {
+        if (!session.end_date || session.end_date >= today) {
           return session.identifier;
         }
       }

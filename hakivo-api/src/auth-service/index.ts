@@ -1231,6 +1231,9 @@ app.post('/auth/onboarding', async (c) => {
     let stateCode: string | null = null;
     let districtNumber: number | null = null;
     let representatives: any[] = [];
+    let stateLegislators: any[] = [];
+    let lat: number | null = null;
+    let lng: number | null = null;
 
     // Update user personal info if provided
     const db = c.env.APP_DB;
@@ -1244,8 +1247,10 @@ app.post('/auth/onboarding', async (c) => {
             // Store state and district for representatives lookup
             stateCode = districtInfo.state;
             districtNumber = parseInt(districtInfo.district, 10);
+            lat = districtInfo.lat;
+            lng = districtInfo.lng;
 
-            console.log(`✓ Geocodio lookup: ${zipCode} → ${districtInfo.state}-${districtInfo.district}`);
+            console.log(`✓ Geocodio lookup: ${zipCode} → ${districtInfo.state}-${districtInfo.district} (${lat}, ${lng})`);
 
             // Convert state abbreviation to full name for database query
             const stateFullName = STATE_ABBREVIATIONS[stateCode] || stateCode;
@@ -1300,6 +1305,26 @@ app.post('/auth/onboarding', async (c) => {
             }
 
             console.log(`✓ Found ${representatives.length} representatives for ${stateCode}-${districtNumber}`);
+
+            // Fetch state legislators from OpenStates using coordinates
+            if (lat && lng) {
+              try {
+                const stateReps = await c.env.OPENSTATES_CLIENT.getLegislatorsByLocation(lat, lng);
+                stateLegislators = stateReps.map((rep: any) => ({
+                  id: rep.id,
+                  name: rep.name,
+                  party: rep.party,
+                  chamber: rep.chamber, // 'upper' = State Senate, 'lower' = State House
+                  district: rep.district,
+                  state: rep.state,
+                  imageUrl: rep.imageUrl
+                }));
+                console.log(`✓ Found ${stateLegislators.length} state legislators for ${stateCode} at (${lat}, ${lng})`);
+              } catch (stateRepError) {
+                console.warn('Failed to fetch state legislators from OpenStates:', stateRepError);
+                // Continue without state legislators
+              }
+            }
         }
       } catch (error) {
         console.warn('Failed to lookup district:', error);
@@ -1451,6 +1476,7 @@ app.post('/auth/onboarding', async (c) => {
       message: 'Onboarding completed successfully',
       interests,
       representatives: representatives.length > 0 ? representatives : undefined,
+      stateLegislators: stateLegislators.length > 0 ? stateLegislators : undefined,
       district: stateCode && districtNumber !== null ? {
         state: stateCode,
         district: districtNumber,

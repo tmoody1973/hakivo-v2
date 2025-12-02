@@ -3,6 +3,7 @@ import { Env } from './raindrop.gen';
 
 /**
  * News article response from Perplexity search
+ * Images come from Perplexity's search_results and images arrays (return_images: true)
  */
 export interface NewsArticle {
   title: string;
@@ -11,9 +12,10 @@ export interface NewsArticle {
   publishedAt: string;
   source: string;
   category: string;
-  image: {
-    url: string | null;
-    alt: string | null;
+  image?: {
+    url: string;
+    width?: number;
+    height?: number;
   };
 }
 
@@ -176,12 +178,10 @@ For each article, provide:
 - publishedAt: Publication date (ISO format YYYY-MM-DD)
 - source: Publisher name
 - category: Most relevant category from: Congress, Healthcare, Education, Economy, Environment, Immigration, Defense, Civil Rights, Labor, Other
-- image.url: The article's featured image URL if available (null otherwise)
-- image.alt: Image description (null if no image)
 
 Prioritize articles with clear policy implications and citizen impact.`;
 
-    // JSON schema for structured output
+    // JSON schema for structured output (no images - Perplexity hallucinates image URLs)
     const jsonSchema = {
       type: 'object',
       properties: {
@@ -195,17 +195,9 @@ Prioritize articles with clear policy implications and citizen impact.`;
               url: { type: 'string' },
               publishedAt: { type: 'string' },
               source: { type: 'string' },
-              category: { type: 'string' },
-              image: {
-                type: 'object',
-                properties: {
-                  url: { type: ['string', 'null'] },
-                  alt: { type: ['string', 'null'] }
-                },
-                required: ['url', 'alt']
-              }
+              category: { type: 'string' }
             },
-            required: ['title', 'summary', 'url', 'publishedAt', 'source', 'category', 'image']
+            required: ['title', 'summary', 'url', 'publishedAt', 'source', 'category']
           }
         }
       },
@@ -236,6 +228,7 @@ Prioritize articles with clear policy implications and citizen impact.`;
           ],
           max_tokens: 4096,
           temperature: 0.1, // Low temperature for factual accuracy
+          return_images: true, // Get real images from search results
           response_format: {
             type: 'json_schema',
             json_schema: {
@@ -260,6 +253,19 @@ Prioritize articles with clear policy implications and citizen impact.`;
           };
         }>;
         citations?: string[];
+        search_results?: Array<{
+          title: string;
+          url: string;
+          date?: string;
+          snippet?: string;
+        }>;
+        images?: Array<{
+          image_url: string;
+          origin_url: string;
+          height?: number;
+          width?: number;
+          title?: string;
+        }>;
       };
 
       // Parse the JSON response
@@ -272,20 +278,60 @@ Prioritize articles with clear policy implications and citizen impact.`;
       const parsed = JSON.parse(content) as PerplexityNewsResponse;
 
       console.log(`[PERPLEXITY] Found ${parsed.articles?.length || 0} articles`);
+      console.log(`[PERPLEXITY] Search results: ${result.search_results?.length || 0}, Images: ${result.images?.length || 0}`);
 
-      // Validate and return articles
-      const articles = (parsed.articles || []).slice(0, limit).map(article => ({
-        title: article.title || 'Untitled',
-        summary: article.summary || 'No summary available',
-        url: article.url || '',
-        publishedAt: article.publishedAt || new Date().toISOString(),
-        source: article.source || 'Unknown',
-        category: article.category || 'Other',
-        image: {
-          url: article.image?.url || null,
-          alt: article.image?.alt || null
+      // Build a map of origin URLs to images for matching
+      const imagesByOrigin = new Map<string, { url: string; width?: number; height?: number }>();
+      if (result.images) {
+        for (const img of result.images) {
+          if (img.origin_url && img.image_url) {
+            // Normalize URL for matching (remove trailing slashes, protocol)
+            const normalizedOrigin = img.origin_url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+            imagesByOrigin.set(normalizedOrigin, {
+              url: img.image_url,
+              width: img.width,
+              height: img.height
+            });
+          }
         }
-      }));
+      }
+
+      // Helper to find image for an article URL
+      const findImageForUrl = (articleUrl: string) => {
+        if (!articleUrl) return undefined;
+        const normalizedUrl = articleUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+        // Exact match
+        if (imagesByOrigin.has(normalizedUrl)) {
+          return imagesByOrigin.get(normalizedUrl);
+        }
+
+        // Try domain match (for cases where URL paths differ slightly)
+        const articleDomain = normalizedUrl.split('/')[0];
+        if (articleDomain) {
+          for (const [originUrl, imgData] of imagesByOrigin) {
+            if (originUrl.startsWith(articleDomain)) {
+              return imgData;
+            }
+          }
+        }
+
+        return undefined;
+      };
+
+      // Validate and return articles with images
+      const articles = (parsed.articles || []).slice(0, limit).map(article => {
+        const image = findImageForUrl(article.url);
+        return {
+          title: article.title || 'Untitled',
+          summary: article.summary || 'No summary available',
+          url: article.url || '',
+          publishedAt: article.publishedAt || new Date().toISOString(),
+          source: article.source || 'Unknown',
+          category: article.category || 'Other',
+          ...(image && { image })
+        };
+      });
 
       return articles;
 

@@ -17,6 +17,7 @@ import { Env } from './raindrop.gen';
  * - Only sync states where we have active users
  * - Fetch 20 most recent bills per state
  * - Limit to 10 states per run to stay well under rate limits
+ * - Fetch bill details and full text (HTML only, PDFs skipped)
  */
 export default class extends Task<Env> {
   async handle(event: Event): Promise<void> {
@@ -46,6 +47,7 @@ export default class extends Task<Env> {
       console.log(`📍 Found ${states.length} unique states to sync: ${states.map(s => s.state).join(', ')}`);
 
       let totalSynced = 0;
+      let totalTextFetched = 0;
       let totalErrors = 0;
 
       // Process each state
@@ -64,9 +66,10 @@ export default class extends Task<Env> {
 
           console.log(`  📋 Retrieved ${bills.length} bills for ${state}`);
 
-          // Insert or update bills in database
+          // Insert or update bills in database, then fetch full text
           for (const bill of bills) {
             try {
+              // First, insert/update basic bill info
               await db
                 .prepare(`
                   INSERT INTO state_bills (
@@ -97,6 +100,107 @@ export default class extends Task<Env> {
                 .run();
 
               totalSynced++;
+
+              // Check if we already have full text for this bill
+              const existingText = await db
+                .prepare('SELECT full_text FROM state_bills WHERE id = ?')
+                .bind(bill.id)
+                .first();
+
+              if (existingText?.full_text) {
+                console.log(`  📄 Bill ${bill.identifier} already has text, skipping`);
+                continue;
+              }
+
+              // Fetch bill details to get text version URLs
+              try {
+                const details = await openStatesClient.getBillDetails(bill.id);
+
+                if (details.textVersions && details.textVersions.length > 0) {
+                  // Prefer HTML/text versions over PDFs
+                  const htmlVersion = details.textVersions.find(v =>
+                    v.mediaType?.includes('html') ||
+                    v.mediaType?.includes('text') ||
+                    v.url?.includes('.html') ||
+                    v.url?.includes('.htm')
+                  );
+
+                  const textVersion = htmlVersion || details.textVersions[0];
+
+                  if (textVersion) {
+                    // Store the text URL
+                    await db
+                      .prepare(`
+                        UPDATE state_bills
+                        SET full_text_url = ?, full_text_format = ?, abstract = ?, updated_at = ?
+                        WHERE id = ?
+                      `)
+                      .bind(
+                        textVersion.url,
+                        textVersion.mediaType || 'unknown',
+                        details.abstract,
+                        Date.now(),
+                        bill.id
+                      )
+                      .run();
+
+                    // Try to fetch the actual text (only for HTML/text, not PDFs)
+                    if (htmlVersion || !textVersion.mediaType?.includes('pdf')) {
+                      const fullText = await openStatesClient.getBillText(textVersion.url);
+
+                      if (fullText && fullText.length > 100) {
+                        // Store the full text
+                        await db
+                          .prepare(`
+                            UPDATE state_bills
+                            SET full_text = ?, text_extracted_at = ?, updated_at = ?
+                            WHERE id = ?
+                          `)
+                          .bind(
+                            fullText,
+                            Date.now(),
+                            Date.now(),
+                            bill.id
+                          )
+                          .run();
+
+                        console.log(`  📄 Fetched text for ${bill.identifier} (${fullText.length} chars)`);
+                        totalTextFetched++;
+                      }
+                    } else {
+                      console.log(`  📄 ${bill.identifier}: PDF only, skipping text extraction`);
+                    }
+                  }
+                }
+
+                // Also store sponsors if available
+                if (details.sponsors && details.sponsors.length > 0) {
+                  for (const sponsor of details.sponsors) {
+                    try {
+                      await db
+                        .prepare(`
+                          INSERT INTO state_bill_sponsorships (bill_id, name, classification, created_at)
+                          VALUES (?, ?, ?, ?)
+                          ON CONFLICT(bill_id, person_id, classification) DO NOTHING
+                        `)
+                        .bind(
+                          bill.id,
+                          sponsor.name,
+                          sponsor.classification,
+                          Date.now()
+                        )
+                        .run();
+                    } catch (sponsorError) {
+                      // Ignore duplicate sponsor errors
+                    }
+                  }
+                }
+
+              } catch (detailsError) {
+                console.log(`  ⚠️  Could not fetch details for ${bill.identifier}:`, detailsError);
+                // Continue with next bill - don't fail the whole sync
+              }
+
             } catch (insertError) {
               console.error(`  ❌ Failed to insert bill ${bill.id}:`, insertError);
               totalErrors++;
@@ -116,6 +220,7 @@ export default class extends Task<Env> {
 
       console.log(`\n✅ State sync complete!`);
       console.log(`   Total bills synced: ${totalSynced}`);
+      console.log(`   Total texts fetched: ${totalTextFetched}`);
       console.log(`   Errors: ${totalErrors}`);
 
       // Store sync log
@@ -134,6 +239,7 @@ export default class extends Task<Env> {
             JSON.stringify({
               states: states.map(s => s.state),
               totalSynced,
+              totalTextFetched,
               totalErrors
             })
           )

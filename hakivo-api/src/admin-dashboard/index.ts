@@ -715,6 +715,247 @@ app.post('/api/smartbucket/search', async (c) => {
   }
 });
 
+/**
+ * POST /api/sync-state-bills
+ * Manually sync state bills from OpenStates API
+ * Body: { state: "AL" } or { states: ["AL", "WI"] } or { fetchText: true }
+ */
+app.post('/api/sync-state-bills', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const openStatesClient = c.env.OPENSTATES_CLIENT;
+
+    const body = await c.req.json().catch(() => ({}));
+    let states: string[] = [];
+    const fetchText = body.fetchText !== false; // Default to true
+
+    if (body.state) {
+      states = [body.state.toUpperCase()];
+    } else if (body.states && Array.isArray(body.states)) {
+      states = body.states.map((s: string) => s.toUpperCase());
+    } else {
+      // Default: sync for all users with state preferences
+      const statesResult = await db
+        .prepare(`
+          SELECT DISTINCT state
+          FROM user_preferences
+          WHERE state IS NOT NULL AND state != ''
+          LIMIT 10
+        `)
+        .all();
+      states = (statesResult.results as { state: string }[]).map(s => s.state);
+    }
+
+    if (states.length === 0) {
+      return c.json({
+        success: false,
+        error: 'No states to sync. Provide state or states in request body.'
+      }, 400);
+    }
+
+    console.log(`🏛️  Manual State Sync: Syncing ${states.length} states: ${states.join(', ')} (fetchText: ${fetchText})`);
+
+    let totalSynced = 0;
+    let totalTextFetched = 0;
+    let totalErrors = 0;
+    const results: Array<{ state: string; synced: number; textFetched: number; error?: string }> = [];
+
+    for (const state of states) {
+      try {
+        console.log(`\n🔄 Syncing state: ${state}`);
+
+        // Call OpenStates client to search bills by state
+        const bills = await openStatesClient.searchBillsByState(state, undefined, 20);
+
+        if (!bills || bills.length === 0) {
+          console.log(`  ⚠️  No bills found for ${state}`);
+          results.push({ state, synced: 0, textFetched: 0 });
+          continue;
+        }
+
+        console.log(`  📋 Retrieved ${bills.length} bills for ${state}`);
+        let stateSynced = 0;
+        let stateTextFetched = 0;
+
+        // Insert or update bills in database
+        for (const bill of bills) {
+          try {
+            await db
+              .prepare(`
+                INSERT INTO state_bills (
+                  id, state, session_identifier, identifier, title,
+                  subjects, chamber, latest_action_date, latest_action_description,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  title = excluded.title,
+                  subjects = excluded.subjects,
+                  latest_action_date = excluded.latest_action_date,
+                  latest_action_description = excluded.latest_action_description,
+                  updated_at = excluded.updated_at
+              `)
+              .bind(
+                bill.id,
+                state.toUpperCase(),
+                bill.session,
+                bill.identifier,
+                bill.title,
+                JSON.stringify(bill.subjects || []),
+                bill.chamber || '',
+                bill.latestActionDate,
+                bill.latestActionDescription,
+                Date.now(),
+                Date.now()
+              )
+              .run();
+
+            stateSynced++;
+            totalSynced++;
+
+            // Fetch full text if enabled
+            if (fetchText) {
+              // Check if we already have full text for this bill
+              const existingText = await db
+                .prepare('SELECT full_text FROM state_bills WHERE id = ?')
+                .bind(bill.id)
+                .first();
+
+              if (existingText?.full_text) {
+                console.log(`  📄 Bill ${bill.identifier} already has text, skipping`);
+                continue;
+              }
+
+              // Fetch bill details to get text version URLs
+              try {
+                const details = await openStatesClient.getBillDetails(bill.id);
+
+                if (details.textVersions && details.textVersions.length > 0) {
+                  // Prefer HTML/text versions over PDFs
+                  const htmlVersion = details.textVersions.find((v: any) =>
+                    v.mediaType?.includes('html') ||
+                    v.mediaType?.includes('text') ||
+                    v.url?.includes('.html') ||
+                    v.url?.includes('.htm')
+                  );
+
+                  const textVersion = htmlVersion || details.textVersions[0];
+
+                  if (textVersion) {
+                    // Store the text URL
+                    await db
+                      .prepare(`
+                        UPDATE state_bills
+                        SET full_text_url = ?, full_text_format = ?, abstract = ?, updated_at = ?
+                        WHERE id = ?
+                      `)
+                      .bind(
+                        textVersion.url,
+                        textVersion.mediaType || 'unknown',
+                        details.abstract,
+                        Date.now(),
+                        bill.id
+                      )
+                      .run();
+
+                    // Try to fetch the actual text (only for HTML/text, not PDFs)
+                    if (htmlVersion || !textVersion.mediaType?.includes('pdf')) {
+                      const fullText = await openStatesClient.getBillText(textVersion.url);
+
+                      if (fullText && fullText.length > 100) {
+                        // Store the full text
+                        await db
+                          .prepare(`
+                            UPDATE state_bills
+                            SET full_text = ?, text_extracted_at = ?, updated_at = ?
+                            WHERE id = ?
+                          `)
+                          .bind(
+                            fullText,
+                            Date.now(),
+                            Date.now(),
+                            bill.id
+                          )
+                          .run();
+
+                        console.log(`  📄 Fetched text for ${bill.identifier} (${fullText.length} chars)`);
+                        stateTextFetched++;
+                        totalTextFetched++;
+                      }
+                    } else {
+                      console.log(`  📄 ${bill.identifier}: PDF only, skipping text extraction`);
+                    }
+                  }
+                }
+
+                // Also store sponsors if available
+                if (details.sponsors && details.sponsors.length > 0) {
+                  for (const sponsor of details.sponsors) {
+                    try {
+                      await db
+                        .prepare(`
+                          INSERT INTO state_bill_sponsorships (bill_id, name, classification, created_at)
+                          VALUES (?, ?, ?, ?)
+                          ON CONFLICT(bill_id, person_id, classification) DO NOTHING
+                        `)
+                        .bind(
+                          bill.id,
+                          sponsor.name,
+                          sponsor.classification,
+                          Date.now()
+                        )
+                        .run();
+                    } catch (sponsorError) {
+                      // Ignore duplicate sponsor errors
+                    }
+                  }
+                }
+
+              } catch (detailsError) {
+                console.log(`  ⚠️  Could not fetch details for ${bill.identifier}:`, detailsError);
+              }
+            }
+
+          } catch (insertError) {
+            console.error(`  ❌ Failed to insert bill ${bill.id}:`, insertError);
+            totalErrors++;
+          }
+        }
+
+        console.log(`  ✅ Synced ${stateSynced} bills, ${stateTextFetched} texts for ${state}`);
+        results.push({ state, synced: stateSynced, textFetched: stateTextFetched });
+
+        // Brief pause between states
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (stateError) {
+        const errorMessage = stateError instanceof Error ? stateError.message : 'Unknown error';
+        console.error(`❌ Failed to sync state ${state}:`, stateError);
+        results.push({ state, synced: 0, textFetched: 0, error: errorMessage });
+        totalErrors++;
+      }
+    }
+
+    console.log(`\n✅ State sync complete: ${totalSynced} bills, ${totalTextFetched} texts, ${totalErrors} errors`);
+
+    return c.json({
+      success: true,
+      message: `Synced ${totalSynced} state bills, fetched ${totalTextFetched} texts`,
+      totalSynced,
+      totalTextFetched,
+      totalErrors,
+      results
+    });
+
+  } catch (error) {
+    console.error('State sync failed:', error);
+    return c.json({
+      success: false,
+      error: 'State sync failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

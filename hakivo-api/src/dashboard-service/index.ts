@@ -2090,6 +2090,124 @@ app.get('/trivia', async (c) => {
 });
 
 /**
+ * GET /dashboard/state-bills
+ * Get personalized state bills based on user's state from preferences (requires auth)
+ * Accepts token from query parameter to avoid CORS preflight
+ */
+app.get('/dashboard/state-bills', async (c) => {
+  try {
+    console.log('[/dashboard/state-bills] Request received');
+
+    // Check for token in query parameter first (to avoid CORS preflight)
+    const tokenParam = c.req.query('token');
+    let auth;
+
+    const jwtSecret = c.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('[/dashboard/state-bills] JWT_SECRET not available in environment');
+      return c.json({ error: 'Server configuration error' }, 500);
+    }
+
+    if (tokenParam) {
+      console.log('[/dashboard/state-bills] Using token from query parameter');
+      auth = await verifyAuth(`Bearer ${tokenParam}`, jwtSecret);
+      if (!auth) {
+        console.log('[/dashboard/state-bills] Token verification failed');
+        return c.json({ error: 'Unauthorized' }, 401);
+      }
+    } else {
+      console.log('[/dashboard/state-bills] Using token from Authorization header');
+      auth = await requireAuth(c);
+      if (auth instanceof Response) return auth;
+    }
+
+    const db = c.env.APP_DB;
+    const limit = Number(c.req.query('limit')) || 20;
+
+    // Get user's state from user_preferences
+    const userPrefs = await db
+      .prepare('SELECT state FROM user_preferences WHERE user_id = ?')
+      .bind(auth.userId)
+      .first();
+
+    if (!userPrefs?.state) {
+      return c.json({
+        success: true,
+        bills: [],
+        message: 'No state set in preferences. Please update your location settings.'
+      });
+    }
+
+    const userState = userPrefs.state as string;
+    console.log(`[/dashboard/state-bills] User ${auth.userId} state: ${userState}`);
+
+    // Query state bills for user's state
+    const bills = await db
+      .prepare(`
+        SELECT
+          id, state, session_identifier, identifier, title,
+          subjects, chamber, latest_action_date, latest_action_description
+        FROM state_bills
+        WHERE state = ?
+        ORDER BY latest_action_date DESC NULLS LAST
+        LIMIT ?
+      `)
+      .bind(userState, limit)
+      .all();
+
+    const formattedBills = (bills.results || []).map((bill: any) => {
+      // Parse subjects safely
+      let subjects: string[] = [];
+      try {
+        if (bill.subjects) {
+          subjects = typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects;
+        }
+      } catch { /* ignore */ }
+
+      // Build OpenStates URL
+      const stateCode = bill.state?.toLowerCase();
+      const session = bill.session_identifier;
+      const identifierClean = bill.identifier?.replace(/\s+/g, '');
+      const openstatesUrl = stateCode && session && identifierClean
+        ? `https://openstates.org/${stateCode}/bills/${session}/${identifierClean}/`
+        : null;
+
+      return {
+        id: bill.id,
+        state: bill.state,
+        stateName: STATE_ABBREVIATIONS[bill.state] || bill.state,
+        session: bill.session_identifier,
+        identifier: bill.identifier,
+        title: bill.title,
+        subjects,
+        chamber: bill.chamber,
+        latestAction: {
+          date: bill.latest_action_date,
+          description: bill.latest_action_description
+        },
+        // URL-safe ID for detail page links
+        detailId: encodeURIComponent(bill.id),
+        openstatesUrl
+      };
+    });
+
+    return c.json({
+      success: true,
+      state: userState,
+      stateName: STATE_ABBREVIATIONS[userState] || userState,
+      bills: formattedBills,
+      count: formattedBills.length
+    });
+  } catch (error) {
+    console.error('Get state bills error:', error);
+    return c.json({
+      error: 'Failed to get state bills',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * POST /briefs/generate
  * Trigger on-demand brief generation if user doesn't have today's brief
  * Returns the brief status (generating, ready, etc.)

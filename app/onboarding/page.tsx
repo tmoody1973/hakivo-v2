@@ -31,6 +31,7 @@ export default function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [representatives, setRepresentatives] = useState<any[] | null>(null);
+  const [stateLegislators, setStateLegislators] = useState<any[] | null>(null);
   const [district, setDistrict] = useState<any | null>(null);
 
   // Redirect if not authenticated
@@ -120,12 +121,16 @@ export default function OnboardingPage() {
 
       console.log('[OnboardingPage] Response successful, data:', response.data);
 
-      // Store representatives and district info from response
+      // Store representatives, state legislators, and district info from response
       // The backend returns representatives and district at the root level of response.data
       const responseData = response.data as any;
       if (responseData?.representatives) {
         console.log('[OnboardingPage] Found representatives:', responseData.representatives);
         setRepresentatives(responseData.representatives);
+      }
+      if (responseData?.stateLegislators) {
+        console.log('[OnboardingPage] Found state legislators:', responseData.stateLegislators);
+        setStateLegislators(responseData.stateLegislators);
       }
       if (responseData?.district) {
         console.log('[OnboardingPage] Found district:', responseData.district);
@@ -143,7 +148,9 @@ export default function OnboardingPage() {
       } as any);
 
       // Move to step 3 to show representatives, or redirect if none found
-      if (responseData?.representatives && responseData.representatives.length > 0) {
+      const hasReps = responseData?.representatives && responseData.representatives.length > 0;
+      const hasStateLegislators = responseData?.stateLegislators && responseData.stateLegislators.length > 0;
+      if (hasReps || hasStateLegislators) {
         setStep(3);
       } else {
         router.push('/dashboard');
@@ -323,7 +330,7 @@ export default function OnboardingPage() {
               <div>
                 <h3 className="text-xl font-semibold mb-2">Meet Your Representatives</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-6">
-                  Based on your ZIP code {zipCode}, we found your Congressional representatives. We'll keep you informed about their voting activity and legislation they sponsor.
+                  Based on your ZIP code {zipCode}, we found your federal and state representatives. We'll keep you informed about their voting activity and legislation they sponsor.
                 </p>
                 {district && (
                   <p className="text-sm font-medium text-blue-600 dark:text-blue-400 mb-4">
@@ -332,34 +339,87 @@ export default function OnboardingPage() {
                 )}
               </div>
 
-              <div className="grid gap-4">
-                {representatives && representatives.map((rep) => (
-                  <div key={rep.bioguideId} className="border rounded-lg p-4 flex items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h4 className="font-semibold text-lg">{rep.name}</h4>
-                        <span className="text-sm px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
-                          {rep.party}
-                        </span>
+              {/* Federal Representatives Section */}
+              {representatives && representatives.length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <span>🏛️</span> Federal Representatives
+                  </h4>
+                  <div className="grid gap-4">
+                    {representatives.map((rep) => (
+                      <div key={rep.bioguideId} className="border rounded-lg p-4 flex items-start gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-lg">{rep.name}</h4>
+                            <span className={`text-sm px-2 py-1 rounded-full ${
+                              rep.party === 'Democratic' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' :
+                              rep.party === 'Republican' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' :
+                              'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            }`}>
+                              {rep.party}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                            {rep.chamber === 'Senate' ? 'U.S. Senator' : 'U.S. Representative'} from {rep.state}
+                            {rep.district !== null && ` - District ${rep.district}`}
+                          </p>
+                          {rep.officeAddress && (
+                            <p className="text-sm text-gray-500 dark:text-gray-500">
+                              📍 {rep.officeAddress}
+                            </p>
+                          )}
+                          {rep.phoneNumber && (
+                            <p className="text-sm text-gray-500 dark:text-gray-500">
+                              📞 {rep.phoneNumber}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                        {rep.chamber === 'Senate' ? 'U.S. Senator' : 'U.S. Representative'} from {rep.state}
-                        {rep.district !== null && ` - District ${rep.district}`}
-                      </p>
-                      {rep.officeAddress && (
-                        <p className="text-sm text-gray-500 dark:text-gray-500">
-                          📍 {rep.officeAddress}
-                        </p>
-                      )}
-                      {rep.phoneNumber && (
-                        <p className="text-sm text-gray-500 dark:text-gray-500">
-                          📞 {rep.phoneNumber}
-                        </p>
-                      )}
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
+
+              {/* State Legislators Section */}
+              {stateLegislators && stateLegislators.length > 0 && (
+                <div>
+                  <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <span>🏢</span> State Legislators
+                  </h4>
+                  <div className="grid gap-4">
+                    {stateLegislators.map((rep) => (
+                      <div key={rep.id} className="border rounded-lg p-4 flex items-start gap-4">
+                        {rep.imageUrl && (
+                          <img
+                            src={rep.imageUrl}
+                            alt={rep.name}
+                            className="w-16 h-16 rounded-full object-cover"
+                          />
+                        )}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-lg">{rep.name}</h4>
+                            <span className={`text-sm px-2 py-1 rounded-full ${
+                              rep.party === 'Democratic' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' :
+                              rep.party === 'Republican' ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' :
+                              'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                            }`}>
+                              {rep.party}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                            {rep.chamber === 'upper' ? 'State Senator' : 'State Representative'}
+                            {rep.district && ` - District ${rep.district}`}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500">
+                            {rep.state}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
                 <p className="text-sm text-green-700 dark:text-green-300">

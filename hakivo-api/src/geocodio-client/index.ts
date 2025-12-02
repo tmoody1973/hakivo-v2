@@ -22,7 +22,7 @@ export default class extends Service<Env> {
    * Used by user-service for profile setup
    *
    * @param zipCode - 5-digit US zip code
-   * @returns Congressional district information
+   * @returns Congressional district information with coordinates
    */
   async lookupDistrict(zipCode: string): Promise<{
     state: string;
@@ -30,6 +30,8 @@ export default class extends Service<Env> {
     congressionalDistrict: string; // Format: "CA-12"
     city: string;
     county: string;
+    lat: number;
+    lng: number;
   }> {
     const apiKey = this.getApiKey();
 
@@ -69,14 +71,21 @@ export default class extends Service<Env> {
       const district = cd.district_number.toString();
       const congressionalDistrict = `${state}-${district}`;
 
-      console.log(`✓ Geocodio lookup: ${zipCode} → ${congressionalDistrict}`);
+      // Extract coordinates from the result location
+      const location = result.location;
+      const lat = location?.lat || 0;
+      const lng = location?.lng || 0;
+
+      console.log(`✓ Geocodio lookup: ${zipCode} → ${congressionalDistrict} (${lat}, ${lng})`);
 
       return {
         state,
         district,
         congressionalDistrict,
         city: addressComponents.city || '',
-        county: addressComponents.county || ''
+        county: addressComponents.county || '',
+        lat,
+        lng
       };
     } catch (error) {
       console.error('Geocodio lookup error:', error);

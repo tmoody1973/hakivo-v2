@@ -1902,7 +1902,7 @@ app.get('/state-bills', async (c) => {
     console.log(`[StateBills] Fetching bills for state: ${state}, limit: ${limit}, offset: ${offset}`);
 
     // Build WHERE clause
-    const conditions: string[] = ['state_abbr = ?'];
+    const conditions: string[] = ['state = ?'];
     const bindings: any[] = [state];
 
     if (subject) {
@@ -1926,25 +1926,18 @@ app.get('/state-bills', async (c) => {
     // Determine sort column
     const sortColumn = sort === 'identifier' ? 'identifier' : 'latest_action_date';
 
-    // Get bills with primary sponsor info
+    // Get bills with available columns (simplified schema from state-sync-scheduler)
     const billsQuery = `
       SELECT
         sb.id,
-        sb.state_abbr,
-        sb.session,
+        sb.state,
+        sb.session_identifier,
         sb.identifier,
         sb.title,
         sb.subjects,
-        sb.classification,
-        sb.abstract,
         sb.chamber,
         sb.latest_action_date,
-        sb.latest_action_description,
-        sb.openstates_url,
-        sb.first_action_date,
-        sb.primary_sponsor_name,
-        sb.primary_sponsor_party,
-        sb.primary_sponsor_district
+        sb.latest_action_description
       FROM state_bills sb
       WHERE ${whereClause}
       ORDER BY ${sortColumn} ${order.toUpperCase()} NULLS LAST
@@ -1976,7 +1969,6 @@ app.get('/state-bills', async (c) => {
     const bills = (billsResult.results || []).map((bill: any) => {
       // Parse JSON arrays safely
       let subjects: string[] = [];
-      let classification: string[] = [];
 
       try {
         if (bill.subjects) {
@@ -1984,33 +1976,29 @@ app.get('/state-bills', async (c) => {
         }
       } catch { /* ignore parse errors */ }
 
-      try {
-        if (bill.classification) {
-          classification = typeof bill.classification === 'string' ? JSON.parse(bill.classification) : bill.classification;
-        }
-      } catch { /* ignore parse errors */ }
+      // Build OpenStates URL for external linking
+      const stateCode = bill.state?.toLowerCase();
+      const session = bill.session_identifier;
+      const identifierClean = bill.identifier?.replace(/\s+/g, '');
+      const openstatesUrl = stateCode && session && identifierClean
+        ? `https://openstates.org/${stateCode}/bills/${session}/${identifierClean}/`
+        : null;
 
       return {
         id: bill.id,
-        state: bill.state_abbr,
-        session: bill.session,
+        state: bill.state,
+        session: bill.session_identifier,
         identifier: bill.identifier,
         title: bill.title,
         subjects,
-        classification,
-        abstract: bill.abstract,
         chamber: bill.chamber,
         latestAction: {
           date: bill.latest_action_date,
           description: bill.latest_action_description
         },
-        firstActionDate: bill.first_action_date,
-        openstatesUrl: bill.openstates_url,
-        sponsor: bill.primary_sponsor_name ? {
-          name: bill.primary_sponsor_name,
-          party: bill.primary_sponsor_party,
-          district: bill.primary_sponsor_district
-        } : null
+        // URL-safe ID for detail page links (encode the OCD ID)
+        detailId: encodeURIComponent(bill.id),
+        openstatesUrl
       };
     });
 
@@ -2038,10 +2026,12 @@ app.get('/state-bills', async (c) => {
 /**
  * GET /state-bills/:id
  * Get a specific state bill by its OCD ID
+ * Auto-fetches detailed info from OpenStates API if not cached
  */
 app.get('/state-bills/:id', async (c) => {
   try {
     const db = c.env.APP_DB;
+    const openstatesClient = c.env.OPENSTATES_CLIENT;
     const billId = c.req.param('id');
 
     // URL decode the bill ID (OCD IDs contain special chars)
@@ -2049,7 +2039,7 @@ app.get('/state-bills/:id', async (c) => {
 
     console.log(`[StateBills] Fetching bill: ${decodedId}`);
 
-    // Get bill details
+    // Get bill from database
     const bill = await db
       .prepare(`
         SELECT *
@@ -2079,29 +2069,57 @@ app.get('/state-bills/:id', async (c) => {
       }
     } catch { /* ignore */ }
 
+    // Fetch additional details from OpenStates API on-demand
+    let sponsors: Array<{ name: string; classification: string }> = [];
+    let textVersions: Array<{ url: string; date: string | null; note: string | null; mediaType: string | null }> = [];
+    let abstract: string | null = bill.abstract;
+
+    try {
+      console.log(`[StateBills] Fetching details from OpenStates API for: ${decodedId}`);
+      const details = await openstatesClient.getBillDetails(decodedId);
+
+      if (details) {
+        sponsors = details.sponsors || [];
+        textVersions = details.textVersions || [];
+        abstract = details.abstract || abstract;
+
+        // Generate OpenStates URL from bill ID
+        // Format: https://openstates.org/{state}/bills/{session}/{identifier}
+        // Extract state from bill ID: ocd-bill/{uuid} doesn't have state, get from DB
+      }
+    } catch (apiError) {
+      console.warn(`[StateBills] Could not fetch OpenStates details: ${apiError}`);
+      // Continue with database data only
+    }
+
+    // Build OpenStates URL
+    const state = bill.state?.toLowerCase();
+    const session = bill.session_identifier;
+    const identifier = bill.identifier?.replace(/\s+/g, '');
+    const openstatesUrl = state && session && identifier
+      ? `https://openstates.org/${state}/bills/${session}/${identifier}/`
+      : bill.openstates_url;
+
     return c.json({
       success: true,
       bill: {
         id: bill.id,
-        state: bill.state_abbr,
-        session: bill.session,
+        state: bill.state,
+        session: bill.session_identifier,
         identifier: bill.identifier,
         title: bill.title,
         subjects,
         classification,
-        abstract: bill.abstract,
+        abstract,
         chamber: bill.chamber,
         latestAction: {
           date: bill.latest_action_date,
           description: bill.latest_action_description
         },
         firstActionDate: bill.first_action_date,
-        openstatesUrl: bill.openstates_url,
-        sponsor: bill.primary_sponsor_name ? {
-          name: bill.primary_sponsor_name,
-          party: bill.primary_sponsor_party,
-          district: bill.primary_sponsor_district
-        } : null,
+        openstatesUrl,
+        sponsors,
+        textVersions,
         createdAt: bill.created_at,
         updatedAt: bill.updated_at
       }
@@ -2111,6 +2129,293 @@ app.get('/state-bills/:id', async (c) => {
     console.error('[StateBills] Failed to get state bill:', error);
     return c.json({
       error: 'Failed to get state bill',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * POST /state-bills/:id/analyze
+ * Generate deep AI analysis for a state bill (button-triggered)
+ * Returns existing analysis if available, otherwise queues analysis job
+ */
+app.post('/state-bills/:id/analyze', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const queue = c.env.ENRICHMENT_QUEUE;
+    const openstatesClient = c.env.OPENSTATES_CLIENT;
+
+    const billId = decodeURIComponent(c.req.param('id'));
+
+    console.log(`[StateBillAnalyze] Analyzing: ${billId}`);
+
+    // Check if bill exists
+    const bill = await db
+      .prepare('SELECT id, identifier, title, full_text, full_text_url, full_text_format, abstract FROM state_bills WHERE id = ?')
+      .bind(billId)
+      .first() as any;
+
+    if (!bill) {
+      return c.json({ error: 'State bill not found' }, 404);
+    }
+
+    // Check if analysis already exists
+    const existingAnalysis = await db
+      .prepare('SELECT status, analyzed_at, executive_summary FROM state_bill_analysis WHERE bill_id = ?')
+      .bind(billId)
+      .first() as any;
+
+    // If analysis is complete, return it
+    if (existingAnalysis && existingAnalysis.status === 'complete') {
+      return c.json({
+        success: true,
+        status: 'complete',
+        message: 'Analysis already exists',
+        analyzedAt: existingAnalysis.analyzed_at
+      });
+    }
+
+    // If analysis is in progress, return status
+    if (existingAnalysis && existingAnalysis.status === 'processing') {
+      return c.json({
+        success: true,
+        status: 'processing',
+        message: 'Analysis is currently being generated'
+      });
+    }
+
+    // Check if bill has text to analyze
+    let billText = bill.full_text as string | null;
+
+    // If no text, try to fetch it from OpenStates
+    if (!billText || billText.length < 100) {
+      console.log(`[StateBillAnalyze] Bill ${billId} missing text, fetching from OpenStates...`);
+      try {
+        const details = await openstatesClient.getBillDetails(billId);
+
+        if (details.textVersions && details.textVersions.length > 0) {
+          // Prefer HTML over PDF
+          const htmlVersion = details.textVersions.find((v: any) =>
+            v.mediaType?.includes('html') ||
+            v.mediaType?.includes('text') ||
+            v.url?.includes('.html') ||
+            v.url?.includes('.htm')
+          );
+
+          const textVersion = htmlVersion || details.textVersions.find((v: any) =>
+            !v.mediaType?.includes('pdf')
+          );
+
+          if (textVersion && !textVersion.mediaType?.includes('pdf')) {
+            billText = await openstatesClient.getBillText(textVersion.url);
+
+            if (billText && billText.length >= 100) {
+              // Store the text for future use
+              await db
+                .prepare('UPDATE state_bills SET full_text = ?, text_extracted_at = ?, updated_at = ? WHERE id = ?')
+                .bind(billText, Date.now(), Date.now(), billId)
+                .run();
+              console.log(`[StateBillAnalyze] Fetched and stored bill text (${billText.length} chars)`);
+            }
+          }
+        }
+      } catch (textError) {
+        console.error(`[StateBillAnalyze] Failed to fetch bill text:`, textError);
+      }
+    }
+
+    // For state bills, we can analyze even with just abstract + title (AI can fetch PDF)
+    // Include full_text_url for PDF if available
+    const hasPdfUrl = bill.full_text_url && bill.full_text_format?.includes('pdf');
+    const hasContent = (billText && billText.length >= 100) || bill.abstract || hasPdfUrl;
+
+    if (!hasContent) {
+      return c.json({
+        error: 'Bill content not available for analysis',
+        message: 'Cannot analyze bill without text, abstract, or accessible text version.'
+      }, 400);
+    }
+
+    // Create or update analysis record with 'pending' status
+    const now = Date.now();
+    await db
+      .prepare(`
+        INSERT INTO state_bill_analysis (bill_id, status, started_at, analyzed_at, executive_summary)
+        VALUES (?, 'pending', ?, ?, 'Analysis in progress...')
+        ON CONFLICT(bill_id) DO UPDATE SET
+          status = 'pending',
+          started_at = excluded.started_at
+      `)
+      .bind(billId, now, now)
+      .run();
+
+    // Queue analysis job for enrichment-observer to process
+    await queue.send({
+      type: 'deep_analysis_state_bill',
+      bill_id: billId,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log(`[StateBillAnalyze] Queued deep analysis for state bill ${billId}`);
+
+    return c.json({
+      success: true,
+      status: 'queued',
+      message: 'Analysis job queued successfully. Check back in 30-60 seconds.',
+      billId: billId
+    });
+  } catch (error: any) {
+    console.error('[StateBillAnalyze] Error:', error);
+    return c.json({
+      error: 'Failed to queue analysis',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * GET /state-bills/:id/analysis
+ * Get the analysis for a specific state bill
+ */
+app.get('/state-bills/:id/analysis', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const billId = decodeURIComponent(c.req.param('id'));
+
+    const analysis = await db
+      .prepare(`
+        SELECT
+          bill_id,
+          executive_summary,
+          status_quo_vs_change,
+          section_breakdown,
+          mechanism_of_action,
+          agency_powers,
+          fiscal_impact,
+          stakeholder_impact,
+          unintended_consequences,
+          arguments_for,
+          arguments_against,
+          implementation_challenges,
+          passage_likelihood,
+          passage_reasoning,
+          recent_developments,
+          state_impacts,
+          status,
+          analyzed_at,
+          started_at,
+          completed_at,
+          model_used
+        FROM state_bill_analysis
+        WHERE bill_id = ?
+      `)
+      .bind(billId)
+      .first() as any;
+
+    if (!analysis) {
+      return c.json({
+        success: false,
+        error: 'No analysis found for this bill'
+      }, 404);
+    }
+
+    // Parse JSON fields
+    const parseJson = (field: string | null) => {
+      if (!field) return null;
+      try {
+        return JSON.parse(field);
+      } catch {
+        return field;
+      }
+    };
+
+    return c.json({
+      success: true,
+      analysis: {
+        billId: analysis.bill_id,
+        status: analysis.status,
+        executiveSummary: analysis.executive_summary,
+        statusQuoVsChange: analysis.status_quo_vs_change,
+        sectionBreakdown: parseJson(analysis.section_breakdown),
+        mechanismOfAction: analysis.mechanism_of_action,
+        agencyPowers: parseJson(analysis.agency_powers),
+        fiscalImpact: parseJson(analysis.fiscal_impact),
+        stakeholderImpact: parseJson(analysis.stakeholder_impact),
+        unintendedConsequences: parseJson(analysis.unintended_consequences),
+        argumentsFor: parseJson(analysis.arguments_for),
+        argumentsAgainst: parseJson(analysis.arguments_against),
+        implementationChallenges: parseJson(analysis.implementation_challenges),
+        passageLikelihood: analysis.passage_likelihood,
+        passageReasoning: analysis.passage_reasoning,
+        recentDevelopments: parseJson(analysis.recent_developments),
+        stateImpacts: parseJson(analysis.state_impacts),
+        analyzedAt: analysis.analyzed_at,
+        startedAt: analysis.started_at,
+        completedAt: analysis.completed_at,
+        modelUsed: analysis.model_used
+      }
+    });
+  } catch (error: any) {
+    console.error('[StateBillAnalysis] Error:', error);
+    return c.json({
+      error: 'Failed to get analysis',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * STATE LEGISLATORS ENDPOINTS
+ */
+
+/**
+ * GET /state-legislators
+ * Get state legislators by geographic coordinates
+ * Used during onboarding to find user's state senate and house representatives
+ *
+ * Query params:
+ *   lat: number (required) - Latitude
+ *   lng: number (required) - Longitude
+ */
+app.get('/state-legislators', async (c) => {
+  try {
+    // Parse query parameters
+    const lat = parseFloat(c.req.query('lat') || '');
+    const lng = parseFloat(c.req.query('lng') || '');
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return c.json({
+        error: 'Invalid parameters',
+        message: 'lat and lng are required and must be valid numbers'
+      }, 400);
+    }
+
+    // Validate latitude and longitude ranges
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return c.json({
+        error: 'Invalid coordinates',
+        message: 'lat must be between -90 and 90, lng must be between -180 and 180'
+      }, 400);
+    }
+
+    console.log(`[StateLegislators] Looking up legislators at lat=${lat}, lng=${lng}`);
+
+    // Get OpenStates client
+    const openstatesClient = c.env.OPENSTATES_CLIENT;
+    const legislators = await openstatesClient.getLegislatorsByLocation(lat, lng);
+
+    console.log(`[StateLegislators] Found ${legislators.length} state legislators`);
+
+    return c.json({
+      success: true,
+      legislators,
+      count: legislators.length
+    });
+
+  } catch (error: any) {
+    console.error('[StateLegislators] Failed to get state legislators:', error);
+    return c.json({
+      error: 'Failed to get state legislators',
       message: error.message
     }, 500);
   }
