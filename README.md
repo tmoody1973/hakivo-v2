@@ -1,431 +1,324 @@
 # Hakivo - Civic Engagement Platform
 
-> Empowering citizens to stay informed and engaged with their government through personalized news, bill tracking, and AI-powered insights.
+> Empowering citizens to stay informed and engaged with their government through personalized news, bill tracking, AI-powered insights, and representative discovery.
+
+**Live Demo**: [https://hakivo-v2.netlify.app](https://hakivo-v2.netlify.app)
 
 ## What is Hakivo?
 
-Hakivo is a full-stack civic engagement platform that makes it easy for citizens to:
-- **Track Congressional Bills** - Monitor legislation that matters to you
-- **Get Personalized News** - Receive news based on your policy interests (Environment, Healthcare, Economy, etc.)
-- **Find Your Representatives** - Discover and connect with your elected officials
-- **Daily Briefings** - Get AI-generated summaries of the day's legislative activity
-- **Chat with AI** - Ask questions about bills and policies
+Hakivo is a comprehensive civic engagement platform that connects citizens with their government at both federal and state levels. The platform provides:
 
-**Built with modern technologies:**
-- Next.js 16 (Frontend)
-- Raindrop Framework (Serverless Backend)
-- shadcn/ui (Component Library)
-- WorkOS (Authentication)
-- Congress.gov API (Legislative Data)
-- Exa.ai (News Aggregation)
+- **Federal & State Bill Tracking** - Monitor legislation from Congress and your state legislature
+- **AI-Powered Bill Analysis** - Deep forensic analysis of bills using Claude AI with extended thinking
+- **Personalized News Feed** - News aggregated from Perplexity AI based on your policy interests
+- **Find Your Representatives** - Discover your federal and state legislators based on your location
+- **Audio Daily Briefings** - AI-generated audio summaries using Gemini TTS
+- **AI Chat** - Ask questions about bills and policies with Claude AI
+- **State Legislature Support** - Track state bills and legislators via OpenStates API
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Next.js 15, React 19, TypeScript |
+| **UI** | shadcn/ui, Tailwind CSS v4, Radix UI |
+| **Backend** | Raindrop Framework (Cloudflare Workers) |
+| **Database** | Cloudflare D1 (SQLite) |
+| **Authentication** | WorkOS AuthKit |
+| **AI** | Claude (Anthropic), Gemini (Google), Cerebras |
+| **Text-to-Speech** | Google Gemini TTS, ElevenLabs |
+| **APIs** | Congress.gov, OpenStates, Geocodio, Perplexity |
+| **Hosting** | Netlify (Frontend), LiquidMetal (Backend) |
+
+## Key Features
+
+### 1. Bill Tracking & Analysis
+
+**Federal Bills**
+- Real-time sync from Congress.gov API (119th Congress)
+- AI enrichment with plain-language summaries and key points
+- Deep forensic analysis with Claude extended thinking:
+  - Executive summary and status quo comparison
+  - Section-by-section breakdown
+  - Stakeholder impact analysis
+  - Arguments for and against
+  - Passage likelihood scoring
+  - Implementation challenges
+
+**State Bills**
+- Integration with OpenStates API for all 50 states
+- State bill analysis with the same AI-powered insights
+- Filter by your home state from user preferences
+
+### 2. Find Your Representatives
+
+**Federal Representatives**
+- 2 U.S. Senators + 1 U.S. Representative per user
+- Photos, contact info, and office addresses
+- Party affiliation with color coding (D/R/I)
+
+**State Legislators**
+- District-based lookup using Geocodio's `stateleg` field
+- State Senator and State Representative for your exact district
+- 7,262 state legislators loaded across 49 states with photos
+
+### 3. Personalized News
+
+- 12 policy interest categories: Environment, Healthcare, Economy, Education, Immigration, Civil Rights, Foreign Policy, Technology, Housing, Criminal Justice, Energy, Agriculture
+- News sourced via Perplexity AI with interest-specific prompts
+- Smart rotation system - unseen articles first, then viewed articles by recency
+- Bookmark articles for later reading
+
+### 4. Daily & Weekly Briefings
+
+- AI-generated audio briefings using Gemini TTS
+- Personalized based on your policy interests and tracked bills
+- Congressional trivia while briefs generate (via Cerebras)
+- Visual featured images for each brief
+
+### 5. Dashboard Widgets
+
+| Widget | Description |
+|--------|-------------|
+| Daily Brief | Audio player with transcript and featured image |
+| Your Representatives | Federal + State legislators with contact buttons |
+| Latest Actions | Recent congressional and state bill activity |
+| Personalized News | Interest-filtered news carousel |
+| Personalized Bills | Bills matching your policy interests |
+
+## Architecture
+
+### Backend Services (30 Handlers)
+
+**Public Services**
+- `auth-service` - JWT authentication with WorkOS
+- `bills-service` - Federal and state bill data, search, analysis
+- `briefs-service` - Daily/weekly brief generation and delivery
+- `chat-service` - AI chat about bills and policies
+- `dashboard-service` - Dashboard API, news, representatives
+- `user-service` - User profile and preferences
+- `admin-dashboard` - Admin endpoints for data management
+- `db-admin` - Database administration
+
+**Private Services (Internal Clients)**
+- `congress-api-client` - Congress.gov API wrapper
+- `geocodio-client` - Address geocoding with state legislative districts
+- `openstates-client` - State legislature data
+- `claude-client` - Anthropic Claude AI
+- `perplexity-client` - Perplexity AI for news
+- `cerebras-client` - Fast inference for trivia
+- `gemini-tts-client` - Google TTS for audio briefs
+- `elevenlabs-client` - ElevenLabs TTS (fallback)
+- `exa-client` - Exa.ai search (legacy)
+- `vultr-storage-client` - Object storage for audio files
+
+**Observers (Queue Processors)**
+- `enrichment-observer` - Bill enrichment and deep analysis queue
+- `congress-sync-observer` - Bill sync from Congress.gov
+- `bill-indexing-observer` - Search index updates
+
+**Schedulers (Cron Jobs)**
+- `daily-brief-scheduler` - Daily at 7 AM UTC
+- `weekly-brief-scheduler` - Mondays at 7 AM UTC
+- `congress-sync-scheduler` - Daily at 2 AM UTC
+- `congress-actions-scheduler` - 6 AM & 6 PM UTC
+- `news-sync-scheduler` - 6 AM & 6 PM UTC
+- `state-sync-scheduler` - Weekly state legislator sync
+- `audio-retry-scheduler` - Retry failed TTS jobs
+
+### Database Schema (22 Migrations)
+
+**Core Tables**
+- `users`, `user_preferences`, `refresh_tokens`
+- `bills`, `bill_actions`, `bill_tracking`
+- `bill_enrichment`, `bill_analysis`
+- `state_bills`, `state_bill_analysis`, `state_legislators`
+- `members` (Congress members)
+- `briefs`, `chat_sessions`, `chat_messages`
+- `news_articles`, `user_article_views`, `user_bookmarks`
+- `user_bill_views`, `user_bill_bookmarks`
+- `latest_bill_actions`, `indexing_progress`
+
+### Frontend Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Landing page |
+| `/auth/login` | WorkOS authentication |
+| `/onboarding` | New user setup (interests, location) |
+| `/dashboard` | Main dashboard with widgets |
+| `/legislation` | Browse and search bills |
+| `/bills/[id]` | Federal bill detail with AI analysis |
+| `/state-bills/[id]` | State bill detail with AI analysis |
+| `/representatives` | Find your representatives |
+| `/representatives/[id]` | Representative detail page |
+| `/briefs` | Browse generated briefs |
+| `/chat` | AI chat interface |
+| `/settings` | User preferences and state selection |
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+ and npm
-- Raindrop CLI (`npm install -g @liquidmetal-ai/raindrop-cli`)
-- Git
+- Raindrop CLI: `npm install -g @liquidmetal-ai/raindrop-cli`
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/hakivo-v2.git
-   cd hakivo-v2
-   ```
-
-2. **Install frontend dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Install backend dependencies**
-   ```bash
-   cd hakivo-api
-   npm install
-   ```
-
-4. **Set up environment variables**
-
-   Create `.env.local` in the root directory:
-   ```bash
-   # Copy example file
-   cp .env.example .env.local
-   ```
-
-   Add your API keys:
-   ```env
-   # WorkOS Authentication
-   WORKOS_API_KEY=your_workos_api_key
-   WORKOS_CLIENT_ID=your_client_id
-   WORKOS_REDIRECT_URI=http://localhost:3000/api/auth/callback
-
-   # Congress.gov API (get from https://api.congress.gov/sign-up/)
-   CONGRESS_API_KEY=your_congress_api_key
-
-   # Exa.ai for news (get from https://exa.ai)
-   EXA_API_KEY=your_exa_api_key
-   ```
-
-5. **Run the development servers**
-
-   **Frontend** (Terminal 1):
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000)
-
-   **Backend** (Terminal 2):
-   ```bash
-   cd hakivo-api
-   raindrop build dev
-   ```
-
-You should now see the Hakivo dashboard! 🎉
-
-## Project Structure
-
-```
-hakivo-v2/
-├── app/                          # Next.js App Router pages
-│   ├── api/                     # Frontend API routes
-│   │   └── congress/            # Congress.gov proxy endpoints
-│   ├── auth/                    # Authentication pages
-│   ├── dashboard/               # Main dashboard
-│   ├── representatives/         # Find your reps
-│   ├── legislation/             # Browse bills
-│   └── settings/                # User preferences
-│
-├── components/                   # React components
-│   ├── ui/                      # shadcn/ui base components
-│   └── widgets/                 # Dashboard widgets
-│       ├── latest-actions-widget.tsx    # Congressional activity
-│       ├── personalized-content-widget.tsx  # News feed
-│       ├── representatives-horizontal-widget.tsx
-│       └── daily-brief-widget.tsx
-│
-├── lib/                          # Utility functions
-│   ├── api/                     # Backend API clients
-│   ├── auth/                    # Auth context & helpers
-│   └── utils.ts                 # General utilities
-│
-├── hakivo-api/                   # Raindrop Backend
-│   ├── src/                     # Microservices
-│   │   ├── auth-service/        # User authentication
-│   │   ├── bills-service/       # Bill data & search
-│   │   ├── dashboard-service/   # Dashboard API
-│   │   ├── briefs-service/      # Daily/weekly briefs
-│   │   ├── chat-service/        # AI chat
-│   │   ├── news-sync-scheduler/ # News aggregation (runs 2x/day)
-│   │   ├── congress-sync-scheduler/  # Bill sync (daily at 2 AM UTC)
-│   │   └── [other services]/
-│   │
-│   ├── db/                      # Database schema & migrations
-│   │   └── app-db/              # SQL migrations
-│   │
-│   ├── raindrop.manifest        # Infrastructure config
-│   └── package.json
-│
-├── public/                       # Static assets
-├── docs/                         # Documentation
-│   ├── architecture/            # Architecture diagrams & docs
-│   └── specifications/          # Feature specs
-│
-├── package.json                  # Frontend dependencies
-└── README.md                     # This file
-```
-
-## Key Features
-
-### 1. Personalized News Feed
-- **What it does**: Aggregates news from across the web based on your selected policy interests
-- **How it works**:
-  - Twice daily (6 AM & 6 PM UTC), the `news-sync-scheduler` fetches articles using Exa.ai
-  - Articles are categorized by 12 policy interests: Environment, Healthcare, Economy, Education, etc.
-  - Users only see articles matching their selected interests
-  - View history is automatically reset each sync cycle for a fresh feed
-
-**Location**: `components/widgets/personalized-content-widget.tsx`
-
-### 2. Latest Bill Actions
-- **What it does**: Shows the most recent congressional activity on bills
-- **How it works**:
-  - Real-time API fetches from Congress.gov
-  - Caches data for 4 hours
-  - Displays bill status (In Committee, Passed House, Became Law, etc.)
-
-**Location**: `app/api/congress/latest-actions/route.ts`
-
-### 3. Find Your Representatives
-- **What it does**: Look up your representatives by address or zip code
-- **How it works**:
-  - Geocodio API converts address to coordinates
-  - Matches coordinates to congressional districts
-  - Fetches representative data from internal database (synced daily from ProPublica API)
-
-**Location**: `app/representatives/page.tsx`
-
-### 4. Daily Briefings
-- **What it does**: AI-generated summaries of congressional activity
-- **How it works**:
-  - Scheduled task runs daily at 7 AM UTC
-  - Analyzes recent bill actions and votes
-  - Generates summary using Claude AI
-  - Available as text or audio (ElevenLabs TTS)
-
-**Location**: `hakivo-api/src/daily-brief-scheduler/`
-
-## Architecture Highlights
-
-### Frontend Architecture
-- **Framework**: Next.js 16 with App Router
-- **UI**: shadcn/ui components built on Radix UI
-- **State Management**: React Context for auth + local state
-- **Styling**: Tailwind CSS v4
-- **Data Fetching**: Server Components + Client-side fetching
-
-### Backend Architecture
-- **Framework**: Raindrop (serverless microservices)
-- **Services**: 15 microservices (8 public, 7 private)
-- **Database**: SQLite (via Raindrop SQL)
-- **Caching**: 6 KV caches for performance
-- **Storage**: SmartBuckets for bill texts and audio
-- **Scheduling**: Cron tasks for data sync
-- **Queue Processing**: Observers for async jobs
-
-**Full architecture details**: See [ARCHITECTURE.md](./ARCHITECTURE.md)
-
-## Development Workflow
-
-### Frontend Development
-
 ```bash
-# Start Next.js dev server
-npm run dev
+# Clone repository
+git clone https://github.com/tmoody1973/hakivo-v2.git
+cd hakivo-v2
 
-# Build for production
-npm run build
+# Install frontend dependencies
+npm install
 
-# Start production server
-npm run start
-
-# Lint code
-npm run lint
-```
-
-### Backend Development
-
-```bash
+# Install backend dependencies
 cd hakivo-api
-
-# Local development (watch mode)
-raindrop build dev
-
-# Deploy to cloud
-raindrop build deploy
-
-# View logs
-raindrop logs --tail
-
-# Check deployed services
-raindrop build find
-```
-
-## Common Tasks
-
-### Adding a New Policy Interest
-
-1. Update `docs/architecture/policy_interest_mapping.json`:
-   ```json
-   {
-     "interest": "Technology",
-     "keywords": ["artificial intelligence", "cybersecurity", "tech regulation"]
-   }
-   ```
-
-2. The news sync will automatically pick it up on the next run!
-
-### Creating a New Widget
-
-1. Create component in `components/widgets/`:
-   ```tsx
-   'use client';
-
-   export function MyWidget() {
-     // Your widget code
-   }
-   ```
-
-2. Import in `app/dashboard/page.tsx`:
-   ```tsx
-   import { MyWidget } from '@/components/widgets/my-widget';
-
-   // Add to dashboard layout
-   <MyWidget />
-   ```
-
-### Adding a Backend Service
-
-1. Create service in `hakivo-api/src/my-service/`:
-   ```typescript
-   import { Service } from '@liquidmetal-ai/raindrop-framework';
-   import { Hono } from 'hono';
-
-   const app = new Hono();
-
-   app.get('/hello', (c) => c.json({ message: 'Hello!' }));
-
-   export default class extends Service {
-     async fetch(request: Request): Promise<Response> {
-       return app.fetch(request, this.env);
-     }
-   }
-   ```
-
-2. Add to `raindrop.manifest`:
-   ```hcl
-   service "my-service" {
-     visibility = "public"
-   }
-   ```
-
-3. Deploy:
-   ```bash
-   raindrop build deploy
-   ```
-
-## Scheduled Jobs
-
-The backend runs several scheduled tasks (all times in UTC):
-
-| Task | Schedule | Purpose |
-|------|----------|---------|
-| `news-sync-scheduler` | 6 AM & 6 PM | Fetch latest news articles |
-| `congress-sync-scheduler` | 2 AM | Update bill database |
-| `congress-actions-scheduler` | 6 AM & 6 PM | Sync latest bill actions |
-| `daily-brief-scheduler` | 7 AM | Generate daily brief |
-| `weekly-brief-scheduler` | Mon 7 AM | Generate weekly brief |
-
-## API Endpoints
-
-### Public Endpoints
-
-| Endpoint | Purpose |
-|----------|---------|
-| `/auth-service/login` | User authentication |
-| `/dashboard-service/news` | Get personalized news |
-| `/dashboard-service/latest-actions` | Congressional activity |
-| `/bills-service/search` | Search bills |
-| `/briefs-service/daily` | Get daily brief |
-| `/chat-service/message` | AI chat |
-
-**Full API documentation**: See [API_GUIDE.md](./docs/API_GUIDE.md)
-
-## Environment Variables
-
-### Required Variables
-
-```env
-# Authentication
-WORKOS_API_KEY=           # WorkOS API key
-WORKOS_CLIENT_ID=         # WorkOS client ID
-WORKOS_REDIRECT_URI=      # Auth callback URL
-
-# External APIs
-CONGRESS_API_KEY=         # Congress.gov API
-EXA_API_KEY=             # Exa.ai for news
-GEOCODIO_API_KEY=        # Address to coordinates
-
-# Security
-JWT_SECRET=              # JWT signing secret
-```
-
-### Optional Variables
-
-```env
-# Analytics
-VERCEL_ANALYTICS_ID=     # Vercel Analytics
-
-# Feature Flags
-ENABLE_CHAT=true         # Enable AI chat
-ENABLE_AUDIO_BRIEFS=true # Enable audio briefs
-```
-
-## Troubleshooting
-
-### Frontend Issues
-
-**Issue**: "Module not found" errors
-```bash
-# Clear node_modules and reinstall
-rm -rf node_modules package-lock.json
 npm install
 ```
 
-**Issue**: Port 3000 already in use
-```bash
-# Kill process on port 3000
-lsof -ti:3000 | xargs kill -9
+### Environment Variables
 
-# Or use different port
-PORT=3001 npm run dev
+Create `.env.local` in the root directory:
+
+```env
+# WorkOS Authentication
+WORKOS_API_KEY=your_workos_api_key
+WORKOS_CLIENT_ID=your_workos_client_id
+WORKOS_REDIRECT_URI=http://localhost:3000/api/auth/callback
+
+# Backend API URL
+NEXT_PUBLIC_BACKEND_URL=https://your-deployed-backend.lmapp.run
+
+# JWT Secret (must match backend)
+JWT_SECRET=your_jwt_secret
 ```
 
-### Backend Issues
+Backend environment variables (configured in Raindrop):
 
-**Issue**: "Module not converged" errors
+```env
+# External APIs
+CONGRESS_API_KEY=       # Congress.gov API
+GEOCODIO_API_KEY=       # Address geocoding
+OPENSTATES_API_KEY=     # State legislature data
+ANTHROPIC_API_KEY=      # Claude AI
+GEMINI_API_KEY=         # Google Gemini TTS
+PERPLEXITY_API_KEY=     # News aggregation
+CEREBRAS_API_KEY=       # Fast inference
+ELEVENLABS_API_KEY=     # ElevenLabs TTS (optional)
+
+# Storage
+VULTR_OBJECT_STORAGE_HOSTNAME=
+VULTR_OBJECT_STORAGE_ACCESS_KEY=
+VULTR_OBJECT_STORAGE_SECRET_KEY=
+```
+
+### Running Locally
+
+**Frontend** (Terminal 1):
 ```bash
-# Redeploy with fresh build
+npm run dev
+# Open http://localhost:3000
+```
+
+**Backend** (Terminal 2):
+```bash
 cd hakivo-api
-raindrop build deploy --force
+npm run build
+npx raindrop build dev
 ```
 
-**Issue**: Can't find deployed services
+## Development
+
+### Frontend Commands
+
 ```bash
-# Check service status
-raindrop build find
-
-# View recent logs
-raindrop logs --tail -f
+npm run dev          # Start development server
+npm run build        # Build for production
+npm run lint         # Run ESLint
 ```
 
-**Issue**: News not updating
+### Backend Commands
+
 ```bash
-# Manually trigger news sync (requires authenticated request to admin endpoint)
-curl -X POST https://your-dashboard-service-url/admin/sync-news
+cd hakivo-api
+npm run build                    # Compile TypeScript
+npx raindrop build validate      # Validate all services
+npx raindrop build deploy        # Deploy to cloud
+npx raindrop logs --tail         # View live logs
 ```
 
-## Learning Resources
+### Adding a New Feature
 
-- **Raindrop Documentation**: https://docs.liquidmetal.ai
-- **Next.js Docs**: https://nextjs.org/docs
-- **shadcn/ui**: https://ui.shadcn.com
-- **Congress.gov API**: https://api.congress.gov
-- **WorkOS Auth Guide**: https://workos.com/docs
+1. **Database**: Add migration in `hakivo-api/db/app-db/`
+2. **Backend**: Create/update service in `hakivo-api/src/`
+3. **Frontend API**: Add route in `app/api/` if needed
+4. **Frontend UI**: Add page in `app/` or widget in `components/widgets/`
+
+## Scheduled Jobs
+
+| Job | Schedule (UTC) | Purpose |
+|-----|----------------|---------|
+| `congress-sync-scheduler` | 2:00 AM | Sync bills from Congress.gov |
+| `congress-actions-scheduler` | 6:00 AM, 6:00 PM | Update latest bill actions |
+| `news-sync-scheduler` | 6:00 AM, 6:00 PM | Fetch news via Perplexity |
+| `daily-brief-scheduler` | 7:00 AM | Generate daily audio briefs |
+| `weekly-brief-scheduler` | Monday 7:00 AM | Generate weekly summary briefs |
+| `state-sync-scheduler` | Weekly | Sync state legislators from OpenStates |
+| `audio-retry-scheduler` | Hourly | Retry failed TTS generation |
+
+## Data Sources
+
+| Source | Data | Update Frequency |
+|--------|------|------------------|
+| [Congress.gov API](https://api.congress.gov) | Federal bills, actions, members | Daily |
+| [OpenStates API](https://openstates.org) | State bills, legislators | Daily/Weekly |
+| [Geocodio](https://geocod.io) | Address → Congressional & State Districts | Real-time |
+| [Perplexity AI](https://perplexity.ai) | News articles by policy interest | Twice daily |
+
+## API Overview
+
+### Public Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth-service/login` | POST | Authenticate user |
+| `/auth-service/me` | GET | Get current user |
+| `/dashboard-service/news` | GET | Personalized news feed |
+| `/dashboard-service/representatives` | GET | User's representatives |
+| `/dashboard-service/state-bills` | GET | State bills for user's state |
+| `/bills-service/search` | GET | Search federal bills |
+| `/bills-service/:id` | GET | Bill details |
+| `/bills-service/:id/analyze` | POST | Trigger deep analysis |
+| `/bills-service/state/:id` | GET | State bill details |
+| `/bills-service/state/:id/analyze` | POST | Trigger state bill analysis |
+| `/briefs-service/daily` | GET | Get daily brief |
+| `/briefs-service/generate` | POST | Generate on-demand brief |
+| `/chat-service/message` | POST | Send chat message |
 
 ## Contributing
 
-This project is part of a learning journey! Contributions, suggestions, and feedback are welcome.
-
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ## License
 
-MIT License - feel free to use this project for learning!
+MIT License - see [LICENSE](./LICENSE) for details.
 
 ## Acknowledgments
 
-- Built with guidance from the Raindrop community
-- UI components from shadcn/ui
-- Congressional data from Congress.gov
-- News powered by Exa.ai
-- Authentication by WorkOS
+- **LiquidMetal** - Raindrop Framework
+- **shadcn** - UI component library
+- **Congress.gov** - Federal legislative data
+- **OpenStates** - State legislative data
+- **Anthropic** - Claude AI
+- **Google** - Gemini TTS
+- **WorkOS** - Authentication
 
 ---
 
-**Building in public?** Follow my journey on [Twitter](https://twitter.com/yourhandle) | [Blog](https://yourblog.com)
+Built with care by [Tarik Moody](https://github.com/tmoody1973)
