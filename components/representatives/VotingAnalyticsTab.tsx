@@ -197,6 +197,29 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
     { name: 'Attendance', value: attendanceRate, fill: attendanceRate >= 90 ? '#22c55e' : attendanceRate >= 70 ? '#eab308' : '#ef4444' }
   ], [attendanceRate])
 
+  // Calculate date range for the votes
+  const dateRange = useMemo(() => {
+    if (!votes.length) return null
+
+    const dates = votes
+      .map(v => new Date(v.voteDate))
+      .filter(d => !isNaN(d.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime())
+
+    if (dates.length === 0) return null
+
+    const oldest = dates[0]
+    const newest = dates[dates.length - 1]
+
+    const formatDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+    return {
+      from: formatDate(oldest),
+      to: formatDate(newest),
+      count: votes.length
+    }
+  }, [votes])
+
   // Custom tooltip for pie chart
   const CustomPieTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -205,6 +228,36 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
         <div className="bg-card border rounded-lg p-3 shadow-lg">
           <p className="font-medium">{data.name}</p>
           <p className="text-sm text-muted-foreground">{data.value} votes ({data.percentage}%)</p>
+        </div>
+      )
+    }
+    return null
+  }
+
+  // Custom tooltip for bar chart
+  const CustomBarTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const total = payload.reduce((sum: number, entry: any) => sum + (entry.value || 0), 0)
+      return (
+        <div className="bg-card border rounded-lg p-3 shadow-lg min-w-[150px]">
+          <p className="font-semibold mb-2 text-foreground">{label}</p>
+          <div className="space-y-1">
+            {payload.map((entry: any, index: number) => (
+              <div key={index} className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: entry.fill }} />
+                  <span className="text-sm text-foreground">{entry.name}</span>
+                </div>
+                <span className="text-sm font-medium text-foreground">{entry.value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 pt-2 border-t">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Total</span>
+              <span className="font-semibold text-foreground">{total}</span>
+            </div>
+          </div>
         </div>
       )
     }
@@ -282,6 +335,17 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
 
   return (
     <div className="space-y-6">
+      {/* Date Range Context Banner */}
+      {dateRange && (
+        <Alert className="bg-muted/50 border-muted">
+          <Calendar className="h-4 w-4" />
+          <AlertTitle className="text-sm font-medium">Data Coverage</AlertTitle>
+          <AlertDescription className="text-sm">
+            Showing {dateRange.count} votes from <span className="font-medium">{dateRange.from}</span> to <span className="font-medium">{dateRange.to}</span>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Top Metrics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Total Votes */}
@@ -300,21 +364,27 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
           </CardContent>
         </Card>
 
-        {/* Attendance */}
+        {/* Participation Rate */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Target className="h-4 w-4" />
-              Attendance
+              Participation
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              <span className={attendanceRate >= 90 ? 'text-green-500' : attendanceRate >= 70 ? 'text-yellow-500' : 'text-red-500'}>
-                {attendanceRate}%
-              </span>
+              {stats.totalVotes > 0 ? (
+                <span className={attendanceRate >= 90 ? 'text-green-500' : attendanceRate >= 70 ? 'text-yellow-500' : 'text-red-500'}>
+                  {attendanceRate}%
+                </span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
             </div>
-            <Progress value={attendanceRate} className="h-1.5 mt-2" />
+            <p className="text-xs text-muted-foreground mt-1">
+              Cast vote vs abstained
+            </p>
           </CardContent>
         </Card>
 
@@ -327,10 +397,21 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{decisiveness}%</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Clear Yea/Nay votes
-            </p>
+            {stats.totalVotes > 0 && (stats.totalVotes - stats.notVotingCount) > 0 ? (
+              <>
+                <div className="text-3xl font-bold">{decisiveness}%</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Clear Yea/Nay votes
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-muted-foreground">—</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Not enough data
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -440,14 +521,7 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
                       tickLine={false}
                       axisLine={false}
                     />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "var(--radius)",
-                      }}
-                      labelStyle={{ color: "hsl(var(--foreground))" }}
-                    />
+                    <Tooltip content={<CustomBarTooltip />} />
                     <Legend />
                     <Bar dataKey="yea" stackId="votes" fill={VOTE_COLORS.yea} name="Yea" radius={[0, 0, 0, 0]} />
                     <Bar dataKey="nay" stackId="votes" fill={VOTE_COLORS.nay} name="Nay" radius={[0, 0, 0, 0]} />
@@ -467,15 +541,15 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
 
       {/* Attendance Gauge & Key Votes */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Attendance Gauge */}
+        {/* Participation Gauge */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="h-5 w-5" />
-              Attendance Rate
+              Participation Rate
             </CardTitle>
             <CardDescription>
-              Participation in roll call votes
+              Voted vs abstained on roll calls
             </CardDescription>
           </CardHeader>
           <CardContent>
