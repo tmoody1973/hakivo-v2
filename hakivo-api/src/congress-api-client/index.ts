@@ -326,6 +326,7 @@ export default class extends Service<Env> {
   /**
    * Get House votes with member positions for a specific member
    * Fetches recent votes and filters to those where the member voted
+   * Uses parallel requests with batching for better performance
    *
    * @param bioguideId - Member's bioguide ID
    * @param congress - Congress number (default: 119)
@@ -358,15 +359,19 @@ export default class extends Service<Env> {
       notVotingCount: number;
     };
   }> {
-    console.log(`✓ Congress.gov member votes: ${bioguideId} (${congress}th Congress)`);
+    console.log(`✓ Congress.gov member votes: ${bioguideId} (${congress}th Congress), limit: ${limit}`);
 
     // Fetch House votes for the congress
+    // API returns houseRollCallVotes (not houseVotes)
     const votesData = await this.makeRequest(`/house-vote/${congress}`, {
-      limit: 250,
+      limit: Math.min(limit * 2, 250), // Fetch more votes since not all will have this member
       offset: 0
     });
 
-    const houseVotes = votesData.houseVotes || [];
+    // The API returns houseRollCallVotes array
+    const houseVotes = votesData.houseRollCallVotes || votesData.houseVotes || [];
+    console.log(`Found ${houseVotes.length} house votes for Congress ${congress}`);
+
     const memberVotes: Array<{
       rollCallNumber: number;
       voteDate: string;
@@ -381,8 +386,6 @@ export default class extends Service<Env> {
       };
     }> = [];
 
-    // For each vote, we need to fetch the member positions
-    // This is expensive, so we'll fetch details for a limited set
     const stats = {
       totalVotes: 0,
       yeaVotes: 0,
@@ -391,51 +394,80 @@ export default class extends Service<Env> {
       notVotingCount: 0
     };
 
-    // Fetch individual vote details to get member positions
-    // Congress.gov API requires fetching each vote's members separately
-    for (const vote of houseVotes.slice(0, limit)) {
-      try {
-        // Fetch member votes for this roll call
-        const membersData = await this.makeRequest(
-          `/house-vote/${congress}/${vote.sessionNumber}/${vote.rollCallNumber}/members`,
-          { limit: 500 }
-        );
+    // Process votes in parallel batches to improve performance
+    // Use batch size of 10 to balance speed vs rate limiting
+    const BATCH_SIZE = 10;
+    const votesToProcess = houseVotes.slice(0, limit);
 
-        // Find this member's vote
-        const memberVoteRecord = membersData.members?.find(
-          (m: any) => m.bioguideId === bioguideId
-        );
+    for (let i = 0; i < votesToProcess.length; i += BATCH_SIZE) {
+      const batch = votesToProcess.slice(i, i + BATCH_SIZE);
+      console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(votesToProcess.length / BATCH_SIZE)}`);
 
-        if (memberVoteRecord) {
-          const voteValue = memberVoteRecord.voteOption || 'Not Voting';
+      // Process batch in parallel
+      const batchResults = await Promise.allSettled(
+        batch.map(async (vote: any) => {
+          try {
+            const membersData = await this.makeRequest(
+              `/house-vote/${congress}/${vote.sessionNumber}/${vote.rollCallNumber}/members`,
+              { limit: 500 }
+            );
 
-          memberVotes.push({
-            rollCallNumber: vote.rollCallNumber,
-            voteDate: vote.startDate || vote.updateDate,
-            voteQuestion: vote.voteTitle || vote.voteType || 'Unknown',
-            voteResult: vote.result || 'Unknown',
-            voteType: vote.voteType || 'Unknown',
-            memberVote: voteValue,
-            bill: vote.legislationNumber ? {
-              type: vote.legislationType || '',
-              number: vote.legislationNumber || '',
-              title: vote.legislationTitle
-            } : undefined
-          });
+            // The API returns houseRollCallVoteMemberVotes.results array
+            const memberResults = membersData.houseRollCallVoteMemberVotes?.results ||
+                                 membersData.members || [];
+
+            // Find this member's vote - API uses bioguideID (uppercase ID)
+            const memberVoteRecord = memberResults.find(
+              (m: any) => m.bioguideID === bioguideId || m.bioguideId === bioguideId
+            );
+
+            if (memberVoteRecord) {
+              const voteValue = memberVoteRecord.voteCast || memberVoteRecord.voteOption || 'Not Voting';
+              return {
+                rollCallNumber: vote.rollCallNumber,
+                voteDate: vote.startDate || vote.updateDate,
+                voteQuestion: vote.voteTitle || vote.voteType || 'Unknown',
+                voteResult: vote.result || 'Unknown',
+                voteType: vote.voteType || 'Unknown',
+                memberVote: voteValue,
+                bill: vote.legislationNumber ? {
+                  type: vote.legislationType || '',
+                  number: vote.legislationNumber || '',
+                  title: vote.legislationTitle
+                } : undefined
+              };
+            }
+            return null;
+          } catch (error) {
+            console.error(`Error fetching vote details for roll call ${vote.rollCallNumber}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Collect successful results
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled' && result.value) {
+          const voteRecord = result.value;
+          memberVotes.push(voteRecord);
 
           // Update stats
           stats.totalVotes++;
+          const voteValue = voteRecord.memberVote;
           if (voteValue === 'Yea' || voteValue === 'Aye') stats.yeaVotes++;
           else if (voteValue === 'Nay' || voteValue === 'No') stats.nayVotes++;
           else if (voteValue === 'Present') stats.presentVotes++;
           else stats.notVotingCount++;
         }
-      } catch (error) {
-        console.error(`Error fetching vote details for roll call ${vote.rollCallNumber}:`, error);
-        // Continue with other votes
+      }
+
+      // Small delay between batches to avoid rate limiting
+      if (i + BATCH_SIZE < votesToProcess.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 
+    console.log(`Found ${memberVotes.length} votes for member ${bioguideId}`);
     return { votes: memberVotes, stats };
   }
 

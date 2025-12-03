@@ -2787,6 +2787,127 @@ app.get('/state-legislators/:id/voting-record', async (c) => {
   }
 });
 
+/**
+ * GET /members/:bioguide_id/voting-record
+ * Get federal member voting record from Congress.gov API
+ */
+app.get('/members/:bioguide_id/voting-record', async (c) => {
+  try {
+    const bioguideId = c.req.param('bioguide_id');
+    const db = c.env.APP_DB;
+    const congressApiClient = c.env.CONGRESS_API_CLIENT;
+
+    // Query params
+    const congress = parseInt(c.req.query('congress') || '119', 10);
+    const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
+
+    // Get member to check chamber
+    const member = await db
+      .prepare('SELECT bioguide_id, first_name, last_name, party, state, district FROM members WHERE bioguide_id = ?')
+      .bind(bioguideId)
+      .first() as any;
+
+    if (!member) {
+      return c.json({
+        error: 'Member not found',
+        message: `No member found with bioguide_id: ${bioguideId}`
+      }, 404);
+    }
+
+    // Determine chamber (district = null means Senate)
+    const chamber = member.district !== null ? 'House' : 'Senate';
+
+    // Senate votes are not available via Congress.gov API
+    if (chamber === 'Senate') {
+      return c.json({
+        success: true,
+        member: {
+          bioguideId: member.bioguide_id,
+          fullName: `${member.first_name} ${member.last_name}`,
+          party: member.party,
+          state: member.state,
+          chamber: 'Senate'
+        },
+        stats: null,
+        votes: [],
+        pagination: {
+          total: 0,
+          limit,
+          hasMore: false
+        },
+        dataAvailability: {
+          hasData: false,
+          reason: 'senate_not_available',
+          message: 'Senate voting records are not yet available through the Congress.gov API'
+        }
+      });
+    }
+
+    // Fetch House votes for this member
+    console.log(`Fetching voting record for ${bioguideId} (${congress}th Congress)`);
+
+    const votingData = await congressApiClient.getMemberHouseVotes(bioguideId, congress, limit);
+
+    // Calculate additional stats
+    const totalVotesCast = votingData.stats.totalVotes;
+    const missedVotes = votingData.stats.notVotingCount;
+    const missedPercentage = totalVotesCast > 0
+      ? Math.round((missedVotes / (totalVotesCast + missedVotes)) * 100 * 10) / 10
+      : 0;
+
+    // Format response
+    return c.json({
+      success: true,
+      member: {
+        bioguideId: member.bioguide_id,
+        fullName: `${member.first_name} ${member.last_name}`,
+        party: member.party,
+        state: member.state,
+        chamber: 'House'
+      },
+      stats: {
+        totalVotesCast: totalVotesCast,
+        totalMissed: missedVotes,
+        missedPercentage,
+        partyAlignment: null,
+        yeaVotes: votingData.stats.yeaVotes,
+        nayVotes: votingData.stats.nayVotes,
+        presentVotes: votingData.stats.presentVotes
+      },
+      votes: votingData.votes.map(vote => ({
+        id: `${congress}-${vote.rollCallNumber}`,
+        voteDate: vote.voteDate,
+        voteQuestion: vote.voteQuestion,
+        voteResult: vote.voteResult,
+        memberVote: vote.memberVote,
+        bill: vote.bill ? {
+          id: `${congress}-${vote.bill.type.toLowerCase()}-${vote.bill.number}`,
+          title: vote.bill.title || `${vote.bill.type} ${vote.bill.number}`,
+          type: vote.bill.type,
+          number: vote.bill.number
+        } : null,
+        votedWithParty: null
+      })),
+      pagination: {
+        total: votingData.votes.length,
+        limit,
+        hasMore: votingData.votes.length >= limit
+      },
+      dataAvailability: {
+        hasData: votingData.votes.length > 0,
+        reason: votingData.votes.length === 0 ? 'no_votes_found' : undefined
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Failed to get voting record:', error);
+    return c.json({
+      error: 'Failed to get voting record',
+      message: error.message
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

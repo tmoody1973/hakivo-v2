@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { getMemberById, getMemberCosponsoredLegislation, getMemberVotingRecord } from '@/lib/api/backend'
 import type { VotingStats } from '@/lib/api/backend'
-import { VotingRecordTab } from '@/components/representatives'
+import { VotingRecordTab, VotingAnalyticsTab } from '@/components/representatives'
 import {
   Loader2, Phone, MapPin, Globe, ExternalLink, Twitter, Facebook, Youtube, Instagram,
   FileText, TrendingUp, Calendar, Users, CheckCircle2, XCircle, MinusCircle, BarChart3
@@ -397,27 +397,37 @@ export default function RepresentativeDetailPage({
 
       {/* Tabs for Detailed Information */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className={`grid w-full grid-cols-2 ${member.chamber !== 'Senate' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+        <TabsList className={`grid w-full ${member.chamber !== 'Senate' ? 'grid-cols-3 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-3'}`}>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="sponsored">
-            Sponsored Bills
+            <span className="hidden sm:inline">Sponsored Bills</span>
+            <span className="sm:hidden">Sponsored</span>
             {member.sponsoredBillsCount > 0 && (
-              <Badge variant="secondary" className="ml-2">{member.sponsoredBillsCount}</Badge>
+              <Badge variant="secondary" className="ml-2 hidden md:inline-flex">{member.sponsoredBillsCount}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="cosponsored" onClick={fetchCosponsoredBills}>
-            Co-Sponsored
-            <Badge variant="secondary" className="ml-2">
+            <span className="hidden sm:inline">Co-Sponsored</span>
+            <span className="sm:hidden">Co-Spons.</span>
+            <Badge variant="secondary" className="ml-2 hidden md:inline-flex">
               {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
             </Badge>
           </TabsTrigger>
           {member.chamber !== 'Senate' && (
-            <TabsTrigger value="voting">
-              Voting Record
-              <Badge variant="secondary" className="ml-2">
-                {votingStats?.totalVotes ?? '—'}
-              </Badge>
-            </TabsTrigger>
+            <>
+              <TabsTrigger value="voting">
+                <span className="hidden sm:inline">Voting Record</span>
+                <span className="sm:hidden">Votes</span>
+                <Badge variant="secondary" className="ml-2 hidden md:inline-flex">
+                  {votingStats?.totalVotes ?? '—'}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="analytics">
+                <BarChart3 className="h-4 w-4 mr-1 hidden sm:inline" />
+                <span className="hidden sm:inline">Analytics</span>
+                <span className="sm:hidden">Stats</span>
+              </TabsTrigger>
+            </>
           )}
         </TabsList>
 
@@ -646,6 +656,17 @@ export default function RepresentativeDetailPage({
               memberId={bioguideId}
               memberChamber={member.chamber}
               isStateLegislator={false}
+            />
+          </TabsContent>
+        )}
+
+        {/* Voting Analytics Tab - Only shown for House members */}
+        {member.chamber !== 'Senate' && (
+          <TabsContent value="analytics" className="space-y-4">
+            <VotingAnalyticsTab
+              memberId={bioguideId}
+              memberChamber={member.chamber}
+              memberParty={member.party}
             />
           </TabsContent>
         )}

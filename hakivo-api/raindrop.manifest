@@ -102,6 +102,10 @@ application "hakivo-new" {
     visibility = "public"
   }
 
+  service "members-service" {
+    visibility = "public"
+  }
+
   service "admin-dashboard" {
     visibility = "public"
   }
