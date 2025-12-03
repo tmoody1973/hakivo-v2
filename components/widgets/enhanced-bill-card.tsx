@@ -1,11 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
-import { BookmarkPlus, MessageSquare, ExternalLink, Sparkles, TrendingUp, Users } from 'lucide-react'
+import { BookmarkPlus, BookmarkCheck, MessageSquare, ExternalLink, Sparkles, TrendingUp, Users, Loader2 } from 'lucide-react'
 import Link from "next/link"
 
 interface BillEnrichment {
@@ -46,6 +47,9 @@ interface EnrichedBill {
 
 interface EnhancedBillCardProps {
   bill: EnrichedBill
+  isTracked?: boolean
+  onTrack?: (billId: string) => Promise<boolean>
+  onUntrack?: (billId: string) => Promise<boolean>
 }
 
 const impactLevelConfig = {
@@ -64,9 +68,31 @@ const stageConfig = {
   failed: { label: "Failed", color: "bg-red-500/10 text-red-700 dark:text-red-400" },
 }
 
-export function EnhancedBillCard({ bill }: EnhancedBillCardProps) {
+export function EnhancedBillCard({ bill, isTracked = false, onTrack, onUntrack }: EnhancedBillCardProps) {
+  const [tracked, setTracked] = useState(isTracked)
+  const [isLoading, setIsLoading] = useState(false)
+
   const { enrichment, sponsor } = bill
   const partyColor = sponsor?.party === "D" ? "text-blue-600" : sponsor?.party === "R" ? "text-red-600" : "text-gray-600"
+
+  const handleTrackClick = async () => {
+    if (isLoading) return
+
+    setIsLoading(true)
+    try {
+      if (tracked && onUntrack) {
+        const success = await onUntrack(bill.id)
+        if (success) setTracked(false)
+      } else if (!tracked && onTrack) {
+        const success = await onTrack(bill.id)
+        if (success) setTracked(true)
+      }
+    } catch (error) {
+      console.error('Track/untrack error:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const impactInfo = enrichment?.impactLevel
     ? impactLevelConfig[enrichment.impactLevel as keyof typeof impactLevelConfig]
@@ -246,9 +272,20 @@ export function EnhancedBillCard({ bill }: EnhancedBillCardProps) {
               View Details
             </Link>
           </Button>
-          <Button size="sm" variant="outline">
-            <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" />
-            Track
+          <Button
+            size="sm"
+            variant={tracked ? "secondary" : "outline"}
+            onClick={handleTrackClick}
+            disabled={isLoading || (!onTrack && !onUntrack)}
+          >
+            {isLoading ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : tracked ? (
+              <BookmarkCheck className="h-3.5 w-3.5 mr-1.5" />
+            ) : (
+              <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {tracked ? "Tracked" : "Track"}
           </Button>
           <Button size="sm" variant="outline">
             <MessageSquare className="h-3.5 w-3.5 mr-1.5" />

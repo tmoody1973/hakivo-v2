@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { ExternalLink, Newspaper, FileText, Filter, Bookmark, BookmarkCheck, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth/auth-context"
 import { getPersonalizedNews, bookmarkArticle, getPersonalizedBills, bookmarkBill } from "@/lib/api/backend"
 import { EnhancedNewsCard } from "@/components/widgets/enhanced-news-card"
 import { EnhancedBillCard } from "@/components/widgets/enhanced-bill-card"
+import { useTracking } from "@/lib/hooks/use-tracking"
 import policyInterestMapping from "@/hakivo-api/docs/architecture/policy_interest_mapping.json"
 
 // Policy interests matching onboarding
@@ -116,6 +117,38 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
   const [billsCurrentPage, setBillsCurrentPage] = useState(1)
 
   const { accessToken, refreshToken, updateAccessToken } = useAuth()
+
+  // Bill tracking hooks
+  const {
+    trackFederalBill,
+    untrackFederalBill,
+    isFederalBillTracked,
+    getTrackingId
+  } = useTracking({ token: accessToken })
+
+  // Handle track action for a bill
+  const handleTrackBill = useCallback(async (billId: string): Promise<boolean> => {
+    // Parse bill ID format: e.g., "119-hr-1766"
+    const match = billId.match(/^(\d+)-([a-z]+)-(\d+)$/i)
+    if (!match) {
+      console.error('Could not parse bill ID:', billId)
+      return false
+    }
+    const congress = parseInt(match[1], 10)
+    const billType = match[2].toLowerCase()
+    const billNumber = parseInt(match[3], 10)
+    return trackFederalBill(billId, congress, billType, billNumber)
+  }, [trackFederalBill])
+
+  // Handle untrack action for a bill
+  const handleUntrackBill = useCallback(async (billId: string): Promise<boolean> => {
+    const trackingId = getTrackingId(billId)
+    if (!trackingId) {
+      console.error('Could not find tracking ID for bill:', billId)
+      return false
+    }
+    return untrackFederalBill(billId, trackingId)
+  }, [getTrackingId, untrackFederalBill])
 
   // Fetch personalized news on mount
   useEffect(() => {
@@ -519,7 +552,13 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
               <>
                 <div className="space-y-4">
                   {paginatedBills.map((bill) => (
-                    <EnhancedBillCard key={bill.id} bill={bill} />
+                    <EnhancedBillCard
+                      key={bill.id}
+                      bill={bill}
+                      isTracked={isFederalBillTracked(bill.id)}
+                      onTrack={handleTrackBill}
+                      onUntrack={handleUntrackBill}
+                    />
                   ))}
                 </div>
 
