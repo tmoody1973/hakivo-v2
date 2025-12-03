@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useState } from "react"
-import { Phone, Mail, Building2, Landmark } from "lucide-react"
+import { Phone, Mail, Building2, Landmark, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -118,7 +118,7 @@ export function RepresentativesHorizontalWidget() {
                 <Link
                   key={rep.bioguideId}
                   href={`/representatives/${rep.bioguideId}`}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
+                  className="group flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 hover:shadow-md transition-all cursor-pointer"
                 >
                   <Avatar className="h-12 w-12 shrink-0">
                     <AvatarImage src={rep.imageUrl || "/placeholder.svg"} alt={rep.fullName} />
@@ -127,12 +127,15 @@ export function RepresentativesHorizontalWidget() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-semibold text-sm">{rep.fullName}</h4>
+                        <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">{rep.fullName}</h4>
                         <p className="text-xs text-muted-foreground">{rep.role}</p>
                       </div>
-                      <Badge variant="outline" className={`text-xs whitespace-nowrap ${getPartyColor(rep.party)}`}>
-                        {getPartyInitial(rep.party)}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className={`text-xs whitespace-nowrap ${getPartyColor(rep.party)}`}>
+                          {getPartyInitial(rep.party)}
+                        </Badge>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                      </div>
                     </div>
                     <div className="flex gap-2 mt-2" onClick={(e) => e.preventDefault()}>
                       {rep.phoneNumber && (
@@ -183,7 +186,7 @@ export function RepresentativesHorizontalWidget() {
                 <Link
                   key={leg.id}
                   href={`/state-legislators/${encodeURIComponent(leg.id)}`}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
+                  className="group flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 hover:shadow-md transition-all cursor-pointer"
                 >
                   <Avatar className="h-12 w-12 shrink-0">
                     <AvatarImage src={leg.imageUrl || "/placeholder.svg"} alt={leg.fullName} />
@@ -192,15 +195,18 @@ export function RepresentativesHorizontalWidget() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <h4 className="font-semibold text-sm">{leg.fullName}</h4>
+                        <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">{leg.fullName}</h4>
                         <p className="text-xs text-muted-foreground">
                           {leg.role}
                           {leg.district && ` - District ${leg.district}`}
                         </p>
                       </div>
-                      <Badge variant="outline" className={`text-xs whitespace-nowrap ${getPartyColor(leg.party)}`}>
-                        {getPartyInitial(leg.party)}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className={`text-xs whitespace-nowrap ${getPartyColor(leg.party)}`}>
+                          {getPartyInitial(leg.party)}
+                        </Badge>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                      </div>
                     </div>
                     {leg.email && (
                       <div className="flex gap-2 mt-2" onClick={(e) => e.preventDefault()}>
