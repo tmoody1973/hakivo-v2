@@ -439,6 +439,7 @@ export async function saveOnboardingPreferences(
         lastName: data.lastName,
         zipCode: data.zipCode,
         city: data.city,
+        state: data.state,
       }),
     });
 

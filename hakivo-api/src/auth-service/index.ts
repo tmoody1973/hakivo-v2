@@ -60,7 +60,8 @@ const OnboardingSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   zipCode: z.string().regex(/^\d{5}$/).optional(),
-  city: z.string().optional()
+  city: z.string().optional(),
+  state: z.string().length(2).optional(), // 2-letter state code (e.g., 'TX', 'CA')
 });
 
 const UpdateInterestsSchema = z.object({
@@ -1213,7 +1214,7 @@ app.post('/auth/onboarding', async (c) => {
       }, 400);
     }
 
-    const { interests, firstName, lastName, zipCode, city } = validation.data;
+    const { interests, firstName, lastName, zipCode, city, state: userProvidedState } = validation.data;
 
     // Validate interests against available categories
     const validInterestNames = getInterestNames();
@@ -1228,7 +1229,8 @@ app.post('/auth/onboarding', async (c) => {
     }
 
     // Variables to store district and representative information
-    let stateCode: string | null = null;
+    // Prefer user-provided state if available (fallback if geocoding fails)
+    let stateCode: string | null = userProvidedState || null;
     let districtNumber: number | null = null;
     let representatives: any[] = [];
     let stateLegislators: any[] = [];
@@ -1328,9 +1330,12 @@ app.post('/auth/onboarding', async (c) => {
         }
       } catch (error) {
         console.warn('Failed to lookup district:', error);
-        // Continue without district info
+        // Continue without district info - user-provided state (if any) will be used as fallback
       }
     }
+
+    // Log final state value for debugging
+    console.log(`✓ Final stateCode: ${stateCode} (user-provided: ${userProvidedState || 'none'})`);
 
     // Update users table with personal info, city, zipCode, and congressional district
     const userUpdates: string[] = [];
