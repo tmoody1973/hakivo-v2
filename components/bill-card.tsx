@@ -1,10 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { BookmarkPlus, MessageSquare, ExternalLink } from 'lucide-react'
+import { BookmarkPlus, BookmarkCheck, MessageSquare, ExternalLink, Loader2 } from 'lucide-react'
 import Link from "next/link"
 
 interface BillCardProps {
@@ -24,6 +25,9 @@ interface BillCardProps {
     summary: string
     cosponsors: number
   }
+  isTracked?: boolean
+  onTrack?: (billId: string) => Promise<boolean>
+  onUntrack?: (billId: string) => Promise<boolean>
 }
 
 const statusConfig = {
@@ -34,9 +38,31 @@ const statusConfig = {
   "enacted": { label: "Enacted", color: "bg-purple-500/10 text-purple-700 dark:text-purple-400" }
 }
 
-export function BillCard({ bill }: BillCardProps) {
+export function BillCard({ bill, isTracked = false, onTrack, onUntrack }: BillCardProps) {
+  const [tracked, setTracked] = useState(isTracked)
+  const [isLoading, setIsLoading] = useState(false)
+
   const statusInfo = statusConfig[bill.status as keyof typeof statusConfig] || statusConfig.introduced
   const partyColor = bill.sponsor.party === "D" ? "text-blue-600" : "text-red-600"
+
+  const handleTrackClick = async () => {
+    if (isLoading) return
+
+    setIsLoading(true)
+    try {
+      if (tracked && onUntrack) {
+        const success = await onUntrack(bill.id)
+        if (success) setTracked(false)
+      } else if (!tracked && onTrack) {
+        const success = await onTrack(bill.id)
+        if (success) setTracked(true)
+      }
+    } catch (error) {
+      console.error('Track/untrack error:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <Card className="hover:shadow-md transition-shadow">
@@ -106,9 +132,20 @@ export function BillCard({ bill }: BillCardProps) {
               View Details
             </Link>
           </Button>
-          <Button size="sm" variant="outline">
-            <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" />
-            Track
+          <Button
+            size="sm"
+            variant={tracked ? "secondary" : "outline"}
+            onClick={handleTrackClick}
+            disabled={isLoading || (!onTrack && !onUntrack)}
+          >
+            {isLoading ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : tracked ? (
+              <BookmarkCheck className="h-3.5 w-3.5 mr-1.5" />
+            ) : (
+              <BookmarkPlus className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {tracked ? "Tracked" : "Track"}
           </Button>
           <Button size="sm" variant="outline">
             <MessageSquare className="h-3.5 w-3.5 mr-1.5" />

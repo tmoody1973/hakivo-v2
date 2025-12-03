@@ -9,6 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { ListSkeleton } from "@/components/ui/loading-skeleton";
 import { useOnline } from "@/lib/hooks/use-online";
+import { useAuth } from "@/lib/auth/auth-context";
+import { useTracking } from "@/lib/hooks/use-tracking";
 import { semanticSearchBills } from "@/lib/api/backend";
 
 interface Bill {
@@ -41,6 +43,50 @@ export const LegislationPageClient: FC<LegislationPageClientProps> = ({ initialB
   const [congress, setCongress] = useState(119);
   const [limit, setLimit] = useState(10);
   const isOnline = useOnline();
+
+  // Auth and tracking hooks
+  const { accessToken } = useAuth();
+  const {
+    trackFederalBill,
+    untrackFederalBill,
+    isFederalBillTracked,
+    getTrackingId
+  } = useTracking({ token: accessToken });
+
+  // Parse bill ID to extract congress, type, and number
+  // Bill ID format: "119-hr-1766" or just store the original API ID
+  const parseBillId = (billId: string): { congress: number; billType: string; billNumber: number } | null => {
+    // Try parsing format like "119-hr-1766"
+    const match = billId.match(/^(\d+)-([a-z]+)-(\d+)$/i);
+    if (match) {
+      return {
+        congress: parseInt(match[1], 10),
+        billType: match[2].toLowerCase(),
+        billNumber: parseInt(match[3], 10)
+      };
+    }
+    return null;
+  };
+
+  // Handle track action for a bill
+  const handleTrackBill = useCallback(async (billId: string): Promise<boolean> => {
+    const parsed = parseBillId(billId);
+    if (!parsed) {
+      console.error('Could not parse bill ID:', billId);
+      return false;
+    }
+    return trackFederalBill(billId, parsed.congress, parsed.billType, parsed.billNumber);
+  }, [trackFederalBill]);
+
+  // Handle untrack action for a bill
+  const handleUntrackBill = useCallback(async (billId: string): Promise<boolean> => {
+    const trackingId = getTrackingId(billId);
+    if (!trackingId) {
+      console.error('Could not find tracking ID for bill:', billId);
+      return false;
+    }
+    return untrackFederalBill(billId, trackingId);
+  }, [getTrackingId, untrackFederalBill]);
 
   // Map API response to component format
   const mapApiBillToComponent = (apiBill: any): Bill => {
@@ -292,7 +338,13 @@ export const LegislationPageClient: FC<LegislationPageClientProps> = ({ initialB
 
         <div className="space-y-4">
           {bills.map((bill) => (
-            <BillCard key={bill.id} bill={bill} />
+            <BillCard
+              key={bill.id}
+              bill={bill}
+              isTracked={isFederalBillTracked(bill.id)}
+              onTrack={handleTrackBill}
+              onUntrack={handleUntrackBill}
+            />
           ))}
         </div>
       </div>
