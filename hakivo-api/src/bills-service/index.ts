@@ -2709,6 +2709,98 @@ app.get('/state-legislators', async (c) => {
 });
 
 /**
+ * GET /state-legislators/:id
+ * Get details for a single state legislator by ID
+ * First checks local database, then falls back to OpenStates API
+ *
+ * @param id - OpenStates person ID (ocd-person/uuid format, URL-encoded)
+ */
+app.get('/state-legislators/:id', async (c) => {
+  try {
+    const legislatorId = decodeURIComponent(c.req.param('id'));
+
+    // Skip if this is a voting-record request (handled by next route)
+    if (legislatorId === 'voting-record') {
+      return c.json({ error: 'Invalid legislator ID' }, 400);
+    }
+
+    console.log(`[StateLegislator] Fetching details for ${legislatorId}`);
+
+    const db = c.env.APP_DB;
+
+    // First check our local database
+    const dbLegislator = await db
+      .prepare(`
+        SELECT id, name, party, state, current_role_title, current_role_district,
+               current_role_chamber, image_url, email
+        FROM state_legislators
+        WHERE id = ?
+      `)
+      .bind(legislatorId)
+      .first() as any;
+
+    if (dbLegislator) {
+      console.log(`[StateLegislator] Found in database: ${dbLegislator.name}`);
+      const nameParts = dbLegislator.name.split(' ');
+      return c.json({
+        success: true,
+        member: {
+          id: dbLegislator.id,
+          fullName: dbLegislator.name,
+          firstName: nameParts[0],
+          lastName: nameParts.slice(1).join(' '),
+          party: dbLegislator.party,
+          state: dbLegislator.state,
+          chamber: dbLegislator.current_role_chamber,
+          district: dbLegislator.current_role_district,
+          imageUrl: dbLegislator.image_url,
+          email: dbLegislator.email,
+          role: dbLegislator.current_role_title,
+          currentMember: true
+        }
+      });
+    }
+
+    // Fall back to OpenStates API if not in database
+    console.log(`[StateLegislator] Not in database, checking OpenStates API`);
+    const openstatesClient = c.env.OPENSTATES_CLIENT;
+    const legislator = await openstatesClient.getLegislatorById(legislatorId);
+
+    if (!legislator) {
+      return c.json({
+        error: 'Legislator not found',
+        message: `No legislator found with ID: ${legislatorId}`
+      }, 404);
+    }
+
+    console.log(`[StateLegislator] Found from OpenStates: ${legislator.name}`);
+
+    return c.json({
+      success: true,
+      member: {
+        id: legislator.id,
+        fullName: legislator.name,
+        firstName: legislator.name.split(' ')[0],
+        lastName: legislator.name.split(' ').slice(1).join(' '),
+        party: legislator.party,
+        state: legislator.state,
+        chamber: legislator.chamber,
+        district: legislator.district,
+        imageUrl: legislator.imageUrl,
+        currentMember: true
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[StateLegislator] Failed to get legislator:', error);
+    return c.json({
+      error: 'Failed to get legislator',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
  * GET /state-legislators/:id/voting-record
  * Get voting record for a state legislator from OpenStates API
  *
@@ -2848,6 +2940,33 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
 
     const votingData = await congressApiClient.getMemberHouseVotes(bioguideId, congress, limit);
 
+    // Enrich votes with bill titles from our database
+    const billsToLookup = votingData.votes
+      .filter((v: any) => v.bill && (!v.bill.title || v.bill.title === `${v.bill.type} ${v.bill.number}`))
+      .map((v: any) => ({ type: v.bill.type.toLowerCase(), number: v.bill.number }));
+
+    const titleMap = new Map<string, string>();
+    if (billsToLookup.length > 0) {
+      for (const bill of billsToLookup) {
+        try {
+          const billRecord = await db
+            .prepare(`
+              SELECT title FROM bills
+              WHERE congress = ? AND bill_type = ? AND bill_number = ?
+              LIMIT 1
+            `)
+            .bind(congress, bill.type, parseInt(bill.number, 10))
+            .first() as any;
+
+          if (billRecord?.title) {
+            titleMap.set(`${bill.type}-${bill.number}`, billRecord.title);
+          }
+        } catch (e) {
+          // Continue if lookup fails
+        }
+      }
+    }
+
     // Calculate additional stats
     const totalVotesCast = votingData.stats.totalVotes;
     const missedVotes = votingData.stats.notVotingCount;
@@ -2855,7 +2974,7 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
       ? Math.round((missedVotes / (totalVotesCast + missedVotes)) * 100 * 10) / 10
       : 0;
 
-    // Format response
+    // Format response with enriched titles
     return c.json({
       success: true,
       member: {
@@ -2874,20 +2993,24 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
         nayVotes: votingData.stats.nayVotes,
         presentVotes: votingData.stats.presentVotes
       },
-      votes: votingData.votes.map(vote => ({
-        id: `${congress}-${vote.rollCallNumber}`,
-        voteDate: vote.voteDate,
-        voteQuestion: vote.voteQuestion,
-        voteResult: vote.voteResult,
-        memberVote: vote.memberVote,
-        bill: vote.bill ? {
-          id: `${congress}-${vote.bill.type.toLowerCase()}-${vote.bill.number}`,
-          title: vote.bill.title || `${vote.bill.type} ${vote.bill.number}`,
-          type: vote.bill.type,
-          number: vote.bill.number
-        } : null,
-        votedWithParty: null
-      })),
+      votes: votingData.votes.map((vote: any) => {
+        const billKey = vote.bill ? `${vote.bill.type.toLowerCase()}-${vote.bill.number}` : null;
+        const enrichedTitle = billKey ? titleMap.get(billKey) : null;
+        return {
+          id: `${congress}-${vote.rollCallNumber}`,
+          voteDate: vote.voteDate,
+          voteQuestion: vote.voteQuestion,
+          voteResult: vote.voteResult,
+          memberVote: vote.memberVote,
+          bill: vote.bill ? {
+            id: `${congress}-${vote.bill.type.toLowerCase()}-${vote.bill.number}`,
+            title: enrichedTitle || vote.bill.title || `${vote.bill.type} ${vote.bill.number}`,
+            type: vote.bill.type,
+            number: vote.bill.number
+          } : null,
+          votedWithParty: null
+        };
+      }),
       pagination: {
         total: votingData.votes.length,
         limit,

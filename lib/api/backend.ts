@@ -2167,6 +2167,69 @@ export async function getStateLegislators(params: {
   }
 }
 
+/**
+ * Get a single state legislator by ID
+ *
+ * API ENDPOINT: GET /state-legislators/:id
+ * SUCCESS RESPONSE (200): {
+ *   success: true,
+ *   member: {
+ *     id: string,
+ *     fullName: string,
+ *     firstName: string,
+ *     lastName: string,
+ *     party: string,
+ *     state: string,
+ *     chamber: string,
+ *     district: string,
+ *     imageUrl: string | null,
+ *     currentMember: boolean
+ *   }
+ * }
+ */
+export async function getStateLegislatorById(legislatorId: string): Promise<APIResponse<any>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const url = `${BILLS_API_URL}/state-legislators/${encodeURIComponent(legislatorId)}`;
+    console.log('[getStateLegislatorById] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getStateLegislatorById] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getStateLegislatorById] Error response:', errorText);
+      let errorMessage = 'Failed to get state legislator';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get state legislator';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getStateLegislatorById] Success:', result.member?.fullName);
+    return {
+      success: true,
+      data: result.member,
+    };
+  } catch (error) {
+    console.error('[getStateLegislatorById] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get state legislator',
+      },
+    };
+  }
+}
+
 // ============================================================================
 // Bills Semantic Search APIs
 // ============================================================================

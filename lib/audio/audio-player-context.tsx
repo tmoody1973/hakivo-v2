@@ -39,68 +39,117 @@ export interface AudioPlayerContextType extends AudioPlayerState {
 // Create context
 const AudioPlayerContext = createContext<AudioPlayerContextType | undefined>(undefined);
 
+// Global audio instance - persists across provider re-mounts
+// This ensures audio continues playing even if React re-renders
+let globalAudio: HTMLAudioElement | null = null;
+let globalTrack: AudioTrack | null = null;
+
+function getGlobalAudio(): HTMLAudioElement {
+  if (typeof window !== 'undefined' && !globalAudio) {
+    globalAudio = new Audio();
+    globalAudio.volume = 0.75;
+  }
+  return globalAudio!;
+}
+
 // AudioPlayerProvider component
 export function AudioPlayerProvider({ children }: { children: ReactNode }) {
-  const [playerState, setPlayerState] = useState<AudioPlayerState>({
-    currentTrack: null,
-    isPlaying: false,
-    currentTime: 0,
-    duration: 0,
-    volume: 0.75,
-    isLoading: false,
-    error: null,
+  // Initialize state from global audio if it exists (handles re-mounts)
+  const [playerState, setPlayerState] = useState<AudioPlayerState>(() => {
+    if (typeof window !== 'undefined' && globalAudio) {
+      return {
+        currentTrack: globalTrack,
+        isPlaying: !globalAudio.paused && !globalAudio.ended,
+        currentTime: globalAudio.currentTime || 0,
+        duration: globalAudio.duration || 0,
+        volume: globalAudio.volume,
+        isLoading: false,
+        error: null,
+      };
+    }
+    return {
+      currentTrack: null,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      volume: 0.75,
+      isLoading: false,
+      error: null,
+    };
   });
 
-  // Audio element ref (persists across renders and navigation)
+  // Audio element ref (points to global audio)
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const listenersAttachedRef = useRef(false);
 
-  // Initialize audio element once
+  // Initialize audio element and sync state
   useEffect(() => {
-    if (typeof window !== 'undefined' && !audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.volume = playerState.volume;
+    if (typeof window === 'undefined') return;
 
-      // Set up event listeners
-      const audio = audioRef.current;
+    const audio = getGlobalAudio();
+    audioRef.current = audio;
 
-      audio.addEventListener('loadedmetadata', () => {
-        setPlayerState(prev => ({
-          ...prev,
-          duration: audio.duration,
-          isLoading: false,
-        }));
-      });
-
-      audio.addEventListener('ended', () => {
-        setPlayerState(prev => ({
-          ...prev,
-          isPlaying: false,
-          currentTime: 0,
-        }));
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-        }
-      });
-
-      audio.addEventListener('error', () => {
-        console.error('[AudioPlayer] Audio error:', audio.error);
-        setPlayerState(prev => ({
-          ...prev,
-          isPlaying: false,
-          isLoading: false,
-          error: 'Failed to load audio',
-        }));
-      });
-
-      audio.addEventListener('waiting', () => {
-        setPlayerState(prev => ({ ...prev, isLoading: true }));
-      });
-
-      audio.addEventListener('canplay', () => {
-        setPlayerState(prev => ({ ...prev, isLoading: false }));
-      });
+    // Sync state from global audio (handles page navigation)
+    if (globalTrack && audio.src) {
+      setPlayerState(prev => ({
+        ...prev,
+        currentTrack: globalTrack,
+        isPlaying: !audio.paused && !audio.ended,
+        currentTime: audio.currentTime || 0,
+        duration: audio.duration || 0,
+        volume: audio.volume,
+      }));
     }
+
+    // Only attach listeners once per audio element
+    if (listenersAttachedRef.current) return;
+    listenersAttachedRef.current = true;
+
+    audio.addEventListener('loadedmetadata', () => {
+      setPlayerState(prev => ({
+        ...prev,
+        duration: audio.duration,
+        isLoading: false,
+      }));
+    });
+
+    audio.addEventListener('ended', () => {
+      setPlayerState(prev => ({
+        ...prev,
+        isPlaying: false,
+        currentTime: 0,
+      }));
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    });
+
+    audio.addEventListener('error', () => {
+      console.error('[AudioPlayer] Audio error:', audio.error);
+      setPlayerState(prev => ({
+        ...prev,
+        isPlaying: false,
+        isLoading: false,
+        error: 'Failed to load audio',
+      }));
+    });
+
+    audio.addEventListener('waiting', () => {
+      setPlayerState(prev => ({ ...prev, isLoading: true }));
+    });
+
+    audio.addEventListener('canplay', () => {
+      setPlayerState(prev => ({ ...prev, isLoading: false }));
+    });
+
+    audio.addEventListener('play', () => {
+      setPlayerState(prev => ({ ...prev, isPlaying: true }));
+    });
+
+    audio.addEventListener('pause', () => {
+      setPlayerState(prev => ({ ...prev, isPlaying: false }));
+    });
 
     return () => {
       if (animationFrameRef.current) {
@@ -152,6 +201,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Update global track reference for persistence across navigation
+    globalTrack = track;
+
     // New track - load and play
     console.log('[AudioPlayer] Setting new track in state');
     setPlayerState(prev => {
@@ -202,6 +254,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   // Stop playback and clear track
   const stop = useCallback(() => {
+    // Clear global track reference
+    globalTrack = null;
+
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;

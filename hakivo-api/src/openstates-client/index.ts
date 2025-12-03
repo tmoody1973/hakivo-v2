@@ -604,20 +604,28 @@ export default class extends Service<Env> {
     console.log(`✓ OpenStates legislator: ${legislatorId}`);
 
     try {
-      const data = await this.restRequest(`/people/${legislatorId}`);
+      // OpenStates v3 API doesn't have a direct /people/{id} endpoint
+      // We need to use the search endpoint with the id parameter
+      const data = await this.restRequest('/people', {
+        id: legislatorId
+      });
 
-      if (!data) {
+      // The API returns results as an array
+      const person = data.results?.[0];
+
+      if (!person) {
+        console.log(`OpenStates legislator not found: ${legislatorId}`);
         return null;
       }
 
       return {
-        id: data.id,
-        name: data.name,
-        party: data.party || '',
-        chamber: data.current_role?.org_classification || '',
-        district: data.current_role?.district || '',
-        state: data.jurisdiction?.name || '',
-        imageUrl: data.image || null
+        id: person.id,
+        name: person.name,
+        party: person.party || '',
+        chamber: person.current_role?.org_classification || '',
+        district: person.current_role?.district || '',
+        state: person.jurisdiction?.name || '',
+        imageUrl: person.image || null
       };
     } catch (error) {
       console.error(`Failed to fetch legislator ${legislatorId}:`, error);
