@@ -180,9 +180,10 @@ export function RepresentativesHorizontalWidget() {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {stateLegislators.map((leg) => (
-                <div
+                <Link
                   key={leg.id}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-card"
+                  href={`/state-legislators/${encodeURIComponent(leg.id)}`}
+                  className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
                 >
                   <Avatar className="h-12 w-12 shrink-0">
                     <AvatarImage src={leg.imageUrl || "/placeholder.svg"} alt={leg.fullName} />
@@ -202,12 +203,15 @@ export function RepresentativesHorizontalWidget() {
                       </Badge>
                     </div>
                     {leg.email && (
-                      <div className="flex gap-2 mt-2">
+                      <div className="flex gap-2 mt-2" onClick={(e) => e.preventDefault()}>
                         <Button
                           size="sm"
                           variant="outline"
                           className="h-7 text-xs bg-transparent"
-                          onClick={() => window.open(`mailto:${leg.email}`, '_self')}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            window.open(`mailto:${leg.email}`, '_self')
+                          }}
                         >
                           <Mail className="h-3 w-3 mr-1" />
                           Email
@@ -215,7 +219,7 @@ export function RepresentativesHorizontalWidget() {
                       </div>
                     )}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
