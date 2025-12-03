@@ -2708,6 +2708,85 @@ app.get('/state-legislators', async (c) => {
   }
 });
 
+/**
+ * GET /state-legislators/:id/voting-record
+ * Get voting record for a state legislator from OpenStates API
+ *
+ * @param id - OpenStates person ID (ocd-person/uuid format, URL-encoded)
+ * @query limit - Number of votes to return (default: 50)
+ */
+app.get('/state-legislators/:id/voting-record', async (c) => {
+  try {
+    const legislatorId = decodeURIComponent(c.req.param('id'));
+    const limit = parseInt(c.req.query('limit') || '50', 10);
+
+    console.log(`[StateLegislatorVotes] Fetching votes for ${legislatorId}, limit ${limit}`);
+
+    // Get OpenStates client
+    const openstatesClient = c.env.OPENSTATES_CLIENT;
+
+    // Get legislator info first
+    const legislator = await openstatesClient.getLegislatorById(legislatorId);
+
+    if (!legislator) {
+      return c.json({
+        error: 'Legislator not found',
+        message: `No legislator found with ID: ${legislatorId}`
+      }, 404);
+    }
+
+    // Get voting record
+    const votingData = await openstatesClient.getLegislatorVotes(legislatorId, limit);
+
+    console.log(`[StateLegislatorVotes] Found ${votingData.votes.length} votes for ${legislator.name}`);
+
+    return c.json({
+      success: true,
+      member: {
+        id: legislator.id,
+        fullName: legislator.name,
+        party: legislator.party,
+        state: legislator.state,
+        chamber: legislator.chamber,
+        district: legislator.district
+      },
+      stats: votingData.stats,
+      votes: votingData.votes.map((vote: any) => ({
+        voteId: vote.voteId,
+        voteDate: vote.voteDate,
+        voteQuestion: vote.motion || 'Vote',
+        voteResult: vote.result === 'pass' ? 'Passed' : 'Failed',
+        memberVote: vote.memberVote,
+        bill: vote.billId ? {
+          id: vote.billId,
+          identifier: vote.billIdentifier,
+          title: vote.billTitle
+        } : undefined,
+        yesCount: vote.yesCount,
+        noCount: vote.noCount,
+        absentCount: vote.absentCount
+      })),
+      pagination: {
+        total: votingData.votes.length,
+        limit,
+        hasMore: votingData.votes.length >= limit
+      },
+      dataAvailability: {
+        hasData: votingData.votes.length > 0,
+        reason: votingData.votes.length === 0 ? 'no_votes_found' : undefined,
+        message: votingData.votes.length === 0 ? 'No voting records found for this legislator' : undefined
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[StateLegislatorVotes] Failed to get voting record:', error);
+    return c.json({
+      error: 'Failed to get voting record',
+      message: error.message
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

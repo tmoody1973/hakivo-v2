@@ -988,6 +988,199 @@ export async function getRepresentatives(
   }
 }
 
+// ============================================================================
+// Voting Record Types & APIs
+// ============================================================================
+
+/**
+ * Voting record statistics
+ */
+export interface VotingStats {
+  totalVotes: number;
+  yeaVotes: number;
+  nayVotes: number;
+  presentVotes?: number;
+  notVotingCount: number;
+  attendancePercentage?: number;
+  partyAlignmentPercentage?: number;
+}
+
+/**
+ * Individual vote record
+ */
+export interface VoteRecord {
+  id?: string;
+  rollCallNumber?: number;
+  voteId?: string;
+  voteDate: string;
+  voteQuestion: string;
+  voteResult: string;
+  voteType?: string;
+  memberVote: string; // 'Yea' | 'Nay' | 'Not Voting' | 'Present' | 'yes' | 'no' | 'absent' | 'excused' | 'other'
+  bill?: {
+    id?: string;
+    type?: string;
+    number?: string;
+    identifier?: string;
+    title?: string;
+  };
+  votedWithParty?: boolean | null;
+  motion?: string;
+  yesCount?: number;
+  noCount?: number;
+  absentCount?: number;
+}
+
+/**
+ * Voting record response from API
+ */
+export interface VotingRecordResponse {
+  success: boolean;
+  member: {
+    bioguideId?: string;
+    id?: string;
+    fullName: string;
+    party: string;
+    state: string;
+    chamber: 'House' | 'Senate' | 'upper' | 'lower';
+    district?: string | null;
+  };
+  stats: VotingStats | null;
+  votes: VoteRecord[];
+  pagination: {
+    total: number;
+    limit: number;
+    hasMore: boolean;
+    offset?: number;
+  };
+  dataAvailability: {
+    hasData: boolean;
+    reason?: 'senate_not_available' | 'no_votes_found';
+    message?: string;
+  };
+}
+
+/**
+ * Get voting record for a federal House member
+ *
+ * API ENDPOINT: GET /members/:bioguideId/voting-record
+ * QUERY PARAMETERS: { congress?: number, limit?: number }
+ *
+ * Note: Senate voting records are NOT available via Congress.gov API.
+ * For Senate members, the response will have dataAvailability.hasData = false
+ * and reason = 'senate_not_available'
+ */
+export async function getMemberVotingRecord(
+  bioguideId: string,
+  params?: { congress?: number; limit?: number }
+): Promise<APIResponse<VotingRecordResponse>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    if (params?.congress) queryParams.append('congress', String(params.congress));
+    if (params?.limit) queryParams.append('limit', String(params.limit));
+
+    const url = `${BILLS_API_URL}/members/${encodeURIComponent(bioguideId)}/voting-record?${queryParams.toString()}`;
+    console.log('[getMemberVotingRecord] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getMemberVotingRecord] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getMemberVotingRecord] Error response:', errorText);
+      let errorMessage = 'Failed to get voting record';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get voting record';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getMemberVotingRecord] Success, found:', result.votes?.length || 0, 'votes');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getMemberVotingRecord] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get voting record',
+      },
+    };
+  }
+}
+
+/**
+ * Get voting record for a state legislator
+ *
+ * API ENDPOINT: GET /state-legislators/:id/voting-record
+ * QUERY PARAMETERS: { limit?: number }
+ *
+ * Returns voting history from OpenStates API
+ */
+export async function getStateLegislatorVotingRecord(
+  legislatorId: string,
+  params?: { limit?: number }
+): Promise<APIResponse<VotingRecordResponse>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', String(params.limit));
+
+    const url = `${BILLS_API_URL}/state-legislators/${encodeURIComponent(legislatorId)}/voting-record?${queryParams.toString()}`;
+    console.log('[getStateLegislatorVotingRecord] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getStateLegislatorVotingRecord] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getStateLegislatorVotingRecord] Error response:', errorText);
+      let errorMessage = 'Failed to get voting record';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get voting record';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getStateLegislatorVotingRecord] Success, found:', result.votes?.length || 0, 'votes');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getStateLegislatorVotingRecord] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get voting record',
+      },
+    };
+  }
+}
+
 /**
  * Search all members of Congress
  *

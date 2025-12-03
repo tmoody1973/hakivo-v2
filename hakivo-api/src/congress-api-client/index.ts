@@ -271,6 +271,175 @@ export default class extends Service<Env> {
   }
 
   /**
+   * Get House roll call votes (BETA endpoint)
+   * Note: Senate votes are NOT available via this API
+   *
+   * @param congress - Congress number (e.g., 118, 119)
+   * @param limit - Number of results (default: 50)
+   * @param offset - Pagination offset (default: 0)
+   * @returns House vote results with pagination
+   */
+  async getHouseVotes(
+    congress: number,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<any> {
+    console.log(`✓ Congress.gov House votes: Congress ${congress}, limit ${limit}, offset ${offset}`);
+
+    return await this.makeRequest(`/house-vote/${congress}`, {
+      limit,
+      offset
+    });
+  }
+
+  /**
+   * Get specific House vote details with member positions
+   *
+   * @param congress - Congress number
+   * @param rollCallNumber - Roll call vote number
+   * @returns Vote details including how each member voted
+   */
+  async getHouseVoteDetails(
+    congress: number,
+    rollCallNumber: number
+  ): Promise<any> {
+    console.log(`✓ Congress.gov House vote details: Roll call ${rollCallNumber} (${congress}th Congress)`);
+
+    // Get the vote details - need to find by rollCallNumber
+    const votesData = await this.makeRequest(`/house-vote/${congress}`, {
+      limit: 250,
+      offset: 0
+    });
+
+    // Find the specific vote
+    const vote = votesData.houseVotes?.find(
+      (v: any) => v.rollCallNumber === rollCallNumber
+    );
+
+    if (!vote) {
+      throw new Error(`Vote not found: roll call ${rollCallNumber}`);
+    }
+
+    return vote;
+  }
+
+  /**
+   * Get House votes with member positions for a specific member
+   * Fetches recent votes and filters to those where the member voted
+   *
+   * @param bioguideId - Member's bioguide ID
+   * @param congress - Congress number (default: 119)
+   * @param limit - Number of votes to return (default: 50)
+   * @returns Member's voting record
+   */
+  async getMemberHouseVotes(
+    bioguideId: string,
+    congress: number = 119,
+    limit: number = 50
+  ): Promise<{
+    votes: Array<{
+      rollCallNumber: number;
+      voteDate: string;
+      voteQuestion: string;
+      voteResult: string;
+      voteType: string;
+      memberVote: string;
+      bill?: {
+        type: string;
+        number: string;
+        title?: string;
+      };
+    }>;
+    stats: {
+      totalVotes: number;
+      yeaVotes: number;
+      nayVotes: number;
+      presentVotes: number;
+      notVotingCount: number;
+    };
+  }> {
+    console.log(`✓ Congress.gov member votes: ${bioguideId} (${congress}th Congress)`);
+
+    // Fetch House votes for the congress
+    const votesData = await this.makeRequest(`/house-vote/${congress}`, {
+      limit: 250,
+      offset: 0
+    });
+
+    const houseVotes = votesData.houseVotes || [];
+    const memberVotes: Array<{
+      rollCallNumber: number;
+      voteDate: string;
+      voteQuestion: string;
+      voteResult: string;
+      voteType: string;
+      memberVote: string;
+      bill?: {
+        type: string;
+        number: string;
+        title?: string;
+      };
+    }> = [];
+
+    // For each vote, we need to fetch the member positions
+    // This is expensive, so we'll fetch details for a limited set
+    const stats = {
+      totalVotes: 0,
+      yeaVotes: 0,
+      nayVotes: 0,
+      presentVotes: 0,
+      notVotingCount: 0
+    };
+
+    // Fetch individual vote details to get member positions
+    // Congress.gov API requires fetching each vote's members separately
+    for (const vote of houseVotes.slice(0, limit)) {
+      try {
+        // Fetch member votes for this roll call
+        const membersData = await this.makeRequest(
+          `/house-vote/${congress}/${vote.sessionNumber}/${vote.rollCallNumber}/members`,
+          { limit: 500 }
+        );
+
+        // Find this member's vote
+        const memberVoteRecord = membersData.members?.find(
+          (m: any) => m.bioguideId === bioguideId
+        );
+
+        if (memberVoteRecord) {
+          const voteValue = memberVoteRecord.voteOption || 'Not Voting';
+
+          memberVotes.push({
+            rollCallNumber: vote.rollCallNumber,
+            voteDate: vote.startDate || vote.updateDate,
+            voteQuestion: vote.voteTitle || vote.voteType || 'Unknown',
+            voteResult: vote.result || 'Unknown',
+            voteType: vote.voteType || 'Unknown',
+            memberVote: voteValue,
+            bill: vote.legislationNumber ? {
+              type: vote.legislationType || '',
+              number: vote.legislationNumber || '',
+              title: vote.legislationTitle
+            } : undefined
+          });
+
+          // Update stats
+          stats.totalVotes++;
+          if (voteValue === 'Yea' || voteValue === 'Aye') stats.yeaVotes++;
+          else if (voteValue === 'Nay' || voteValue === 'No') stats.nayVotes++;
+          else if (voteValue === 'Present') stats.presentVotes++;
+          else stats.notVotingCount++;
+        }
+      } catch (error) {
+        console.error(`Error fetching vote details for roll call ${vote.rollCallNumber}:`, error);
+        // Continue with other votes
+      }
+    }
+
+    return { votes: memberVotes, stats };
+  }
+
+  /**
    * Required fetch method for Raindrop Service
    * This is a private service, so fetch returns 501 Not Implemented
    */

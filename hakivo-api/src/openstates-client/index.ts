@@ -472,6 +472,160 @@ export default class extends Service<Env> {
   }
 
   /**
+   * Get voting records for a state legislator
+   * Fetches bills the legislator sponsored/voted on with vote details
+   *
+   * @param legislatorId - OpenStates person ID (ocd-person/uuid format)
+   * @param limit - Number of results (default: 50)
+   * @returns Voting record with stats and vote details
+   */
+  async getLegislatorVotes(
+    legislatorId: string,
+    limit: number = 50
+  ): Promise<{
+    votes: Array<{
+      voteId: string;
+      voteDate: string;
+      billId: string;
+      billIdentifier: string;
+      billTitle: string;
+      motion: string;
+      result: 'pass' | 'fail';
+      memberVote: 'yes' | 'no' | 'absent' | 'not voting' | 'excused' | 'other';
+      yesCount: number;
+      noCount: number;
+      absentCount: number;
+    }>;
+    stats: {
+      totalVotes: number;
+      yesVotes: number;
+      noVotes: number;
+      absentCount: number;
+      otherCount: number;
+    };
+  }> {
+    console.log(`✓ OpenStates votes: ${legislatorId}, limit ${limit}`);
+
+    // Fetch bills the legislator has voted on
+    // We need to search for bills with votes that include this person
+    // OpenStates API: GET /votes?voter={person_id}
+    const votesData = await this.restRequest('/votes', {
+      voter: legislatorId,
+      per_page: limit,
+      sort: 'date_desc',
+      include: 'bill'
+    });
+
+    const votes: Array<{
+      voteId: string;
+      voteDate: string;
+      billId: string;
+      billIdentifier: string;
+      billTitle: string;
+      motion: string;
+      result: 'pass' | 'fail';
+      memberVote: 'yes' | 'no' | 'absent' | 'not voting' | 'excused' | 'other';
+      yesCount: number;
+      noCount: number;
+      absentCount: number;
+    }> = [];
+
+    const stats = {
+      totalVotes: 0,
+      yesVotes: 0,
+      noVotes: 0,
+      absentCount: 0,
+      otherCount: 0
+    };
+
+    for (const vote of (votesData.results || [])) {
+      // Find this legislator's vote in the vote record
+      let memberVote: 'yes' | 'no' | 'absent' | 'not voting' | 'excused' | 'other' = 'other';
+
+      // Check each vote category
+      const yesList = vote.votes?.filter((v: any) => v.option === 'yes') || [];
+      const noList = vote.votes?.filter((v: any) => v.option === 'no') || [];
+      const absentList = vote.votes?.filter((v: any) => v.option === 'absent' || v.option === 'not voting') || [];
+      const excusedList = vote.votes?.filter((v: any) => v.option === 'excused') || [];
+
+      // Find this legislator's vote
+      if (yesList.some((v: any) => v.voter_id === legislatorId)) {
+        memberVote = 'yes';
+        stats.yesVotes++;
+      } else if (noList.some((v: any) => v.voter_id === legislatorId)) {
+        memberVote = 'no';
+        stats.noVotes++;
+      } else if (absentList.some((v: any) => v.voter_id === legislatorId)) {
+        memberVote = 'absent';
+        stats.absentCount++;
+      } else if (excusedList.some((v: any) => v.voter_id === legislatorId)) {
+        memberVote = 'excused';
+        stats.otherCount++;
+      } else {
+        stats.otherCount++;
+      }
+
+      stats.totalVotes++;
+
+      votes.push({
+        voteId: vote.id || '',
+        voteDate: vote.start_date || vote.date || '',
+        billId: vote.bill?.id || vote.bill_id || '',
+        billIdentifier: vote.bill?.identifier || '',
+        billTitle: vote.bill?.title || '',
+        motion: vote.motion_text || vote.motion_classification?.[0] || 'Vote',
+        result: vote.result?.toLowerCase().includes('pass') ? 'pass' : 'fail',
+        memberVote,
+        yesCount: vote.counts?.find((c: any) => c.option === 'yes')?.value || yesList.length,
+        noCount: vote.counts?.find((c: any) => c.option === 'no')?.value || noList.length,
+        absentCount: vote.counts?.find((c: any) => c.option === 'absent' || c.option === 'not voting')?.value || absentList.length
+      });
+    }
+
+    console.log(`  Found ${votes.length} votes for legislator`);
+    return { votes, stats };
+  }
+
+  /**
+   * Get a specific legislator by ID
+   *
+   * @param legislatorId - OpenStates person ID (ocd-person/uuid format)
+   * @returns Legislator details
+   */
+  async getLegislatorById(legislatorId: string): Promise<{
+    id: string;
+    name: string;
+    party: string;
+    chamber: string;
+    district: string;
+    state: string;
+    imageUrl: string | null;
+  } | null> {
+    console.log(`✓ OpenStates legislator: ${legislatorId}`);
+
+    try {
+      const data = await this.restRequest(`/people/${legislatorId}`);
+
+      if (!data) {
+        return null;
+      }
+
+      return {
+        id: data.id,
+        name: data.name,
+        party: data.party || '',
+        chamber: data.current_role?.org_classification || '',
+        district: data.current_role?.district || '',
+        state: data.jurisdiction?.name || '',
+        imageUrl: data.image || null
+      };
+    } catch (error) {
+      console.error(`Failed to fetch legislator ${legislatorId}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Required fetch method for Raindrop Service
    * This is a private service, so fetch returns 501 Not Implemented
    */

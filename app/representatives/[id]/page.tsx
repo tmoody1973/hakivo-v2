@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { getMemberById, getMemberCosponsoredLegislation } from '@/lib/api/backend'
+import { getMemberById, getMemberCosponsoredLegislation, getMemberVotingRecord } from '@/lib/api/backend'
+import type { VotingStats } from '@/lib/api/backend'
+import { VotingRecordTab } from '@/components/representatives'
 import {
   Loader2, Phone, MapPin, Globe, ExternalLink, Twitter, Facebook, Youtube, Instagram,
   FileText, TrendingUp, Calendar, Users, CheckCircle2, XCircle, MinusCircle, BarChart3
@@ -25,6 +27,8 @@ export default function RepresentativeDetailPage({
   const [cosponsoredBills, setCosponsoredBills] = useState<any[]>([])
   const [cosponsoredLoading, setCosponsoredLoading] = useState(false)
   const [cosponsoredTotal, setCosponsoredTotal] = useState(0)
+  const [votingStats, setVotingStats] = useState<VotingStats | null>(null)
+  const [votingStatsLoaded, setVotingStatsLoaded] = useState(false)
 
   useEffect(() => {
     params.then(p => setBioguideId(p.id))
@@ -73,6 +77,30 @@ export default function RepresentativeDetailPage({
       setCosponsoredLoading(false)
     }
   }
+
+  // Fetch voting stats for the stats grid (House only)
+  const fetchVotingStats = async () => {
+    if (!bioguideId || votingStatsLoaded) return
+    if (member?.chamber === 'Senate') return // Senate votes not available
+
+    try {
+      const response = await getMemberVotingRecord(bioguideId, { limit: 10 })
+      if (response.success && response.data?.stats) {
+        setVotingStats(response.data.stats)
+      }
+    } catch (err) {
+      console.error('Failed to fetch voting stats:', err)
+    } finally {
+      setVotingStatsLoaded(true)
+    }
+  }
+
+  // Fetch voting stats when member loads and is House
+  useEffect(() => {
+    if (member && member.chamber === 'House' && !votingStatsLoaded) {
+      fetchVotingStats()
+    }
+  }, [member, votingStatsLoaded])
 
   if (loading) {
     return (
@@ -220,8 +248,31 @@ export default function RepresentativeDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-            <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
+            {member.chamber === 'Senate' ? (
+              <>
+                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                <p className="text-xs text-muted-foreground mt-1">Senate data unavailable</p>
+              </>
+            ) : votingStats ? (
+              <>
+                <div className="text-2xl md:text-3xl font-bold">{votingStats.totalVotes}</div>
+                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                  <span className="text-green-600 dark:text-green-400">{votingStats.yeaVotes} Yea</span>
+                  <span>/</span>
+                  <span className="text-red-600 dark:text-red-400">{votingStats.nayVotes} Nay</span>
+                </div>
+              </>
+            ) : votingStatsLoaded ? (
+              <>
+                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                <p className="text-xs text-muted-foreground mt-1">No data available</p>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">...</div>
+                <p className="text-xs text-muted-foreground mt-1">Loading</p>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -233,8 +284,32 @@ export default function RepresentativeDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-            <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
+            {member.chamber === 'Senate' ? (
+              <>
+                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                <p className="text-xs text-muted-foreground mt-1">Senate data unavailable</p>
+              </>
+            ) : votingStats ? (
+              <>
+                <div className="text-2xl md:text-3xl font-bold">{votingStats.notVotingCount}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {votingStats.attendancePercentage ? `${votingStats.attendancePercentage}% attendance` :
+                   votingStats.totalVotes > 0 ?
+                     `${Math.round(((votingStats.totalVotes - votingStats.notVotingCount) / votingStats.totalVotes) * 100)}% attendance` :
+                     'No attendance data'}
+                </p>
+              </>
+            ) : votingStatsLoaded ? (
+              <>
+                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                <p className="text-xs text-muted-foreground mt-1">No data available</p>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">...</div>
+                <p className="text-xs text-muted-foreground mt-1">Loading</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -322,7 +397,7 @@ export default function RepresentativeDetailPage({
 
       {/* Tabs for Detailed Information */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+        <TabsList className={`grid w-full grid-cols-2 ${member.chamber !== 'Senate' ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="sponsored">
             Sponsored Bills
@@ -336,10 +411,14 @@ export default function RepresentativeDetailPage({
               {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="voting">
-            Voting Record
-            <Badge variant="secondary" className="ml-2 bg-muted">—</Badge>
-          </TabsTrigger>
+          {member.chamber !== 'Senate' && (
+            <TabsTrigger value="voting">
+              Voting Record
+              <Badge variant="secondary" className="ml-2">
+                {votingStats?.totalVotes ?? '—'}
+              </Badge>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Overview Tab */}
@@ -560,56 +639,16 @@ export default function RepresentativeDetailPage({
           </Card>
         </TabsContent>
 
-        {/* Voting Record Tab (Placeholder) */}
-        <TabsContent value="voting" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Voting Record & Analysis
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-12">
-                <BarChart3 className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-                <h3 className="text-lg font-semibold mb-2">Voting Data Coming Soon</h3>
-                <p className="text-muted-foreground max-w-md mx-auto mb-6">
-                  We're integrating voting records from the Congress.gov API. Soon you'll be able to see:
-                </p>
-                <div className="grid gap-4 md:grid-cols-2 max-w-2xl mx-auto text-left">
-                  <div className="p-4 border rounded-lg">
-                    <CheckCircle2 className="h-8 w-8 mb-2 text-green-500" />
-                    <h4 className="font-semibold mb-1">Vote History</h4>
-                    <p className="text-sm text-muted-foreground">
-                      See how they voted on recent bills and resolutions
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <XCircle className="h-8 w-8 mb-2 text-red-500" />
-                    <h4 className="font-semibold mb-1">Missed Votes</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Track attendance and participation rate
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <TrendingUp className="h-8 w-8 mb-2 text-blue-500" />
-                    <h4 className="font-semibold mb-1">Voting Patterns</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Analyze voting trends by policy area
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <Users className="h-8 w-8 mb-2 text-purple-500" />
-                    <h4 className="font-semibold mb-1">Party Alignment</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Compare voting with party positions
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {/* Voting Record Tab - Only shown for House members */}
+        {member.chamber !== 'Senate' && (
+          <TabsContent value="voting" className="space-y-4">
+            <VotingRecordTab
+              memberId={bioguideId}
+              memberChamber={member.chamber}
+              isStateLegislator={false}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
