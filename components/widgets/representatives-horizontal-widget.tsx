@@ -81,7 +81,8 @@ export function RepresentativesHorizontalWidget() {
   }
 
   // Helper to get party color
-  const getPartyColor = (party: string) => {
+  const getPartyColor = (party: string | null | undefined) => {
+    if (!party) return 'bg-gray-500/10 text-gray-500 border-gray-500/20'
     const p = party.toLowerCase()
     if (p.includes('democrat')) return 'bg-blue-500/10 text-blue-500 border-blue-500/20'
     if (p.includes('republican')) return 'bg-red-500/10 text-red-500 border-red-500/20'
@@ -89,7 +90,8 @@ export function RepresentativesHorizontalWidget() {
   }
 
   // Helper to get party initial
-  const getPartyInitial = (party: string) => {
+  const getPartyInitial = (party: string | null | undefined) => {
+    if (!party) return '?'
     const p = party.toLowerCase()
     if (p.includes('democrat')) return 'D'
     if (p.includes('republican')) return 'R'
