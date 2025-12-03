@@ -50,8 +50,8 @@ function VoteHistoryItem({ vote, isStateLegislator }: { vote: VoteRecord; isStat
 
   const billLink = isStateLegislator && vote.bill?.id
     ? `/state-bills/${encodeURIComponent(vote.bill.id)}`
-    : vote.bill?.type && vote.bill?.number
-    ? `/bills/${vote.bill.type.toLowerCase()}${vote.bill.number}`
+    : vote.bill?.id
+    ? `/bills/${vote.bill.id}`
     : null
 
   return (
