@@ -141,9 +141,9 @@ const markdownComponents: Components = {
       </a>
     );
   },
-  // Enhanced paragraph styling
+  // Enhanced paragraph styling - high contrast for accessibility
   p: ({ children, ...props }) => (
-    <p className="mb-6 leading-8 text-foreground/85" {...props}>
+    <p className="mb-6 leading-8 text-foreground" {...props}>
       {children}
     </p>
   ),
@@ -170,14 +170,14 @@ const markdownComponents: Components = {
       {children}
     </strong>
   ),
-  // Style lists
+  // Style lists - high contrast for accessibility
   ul: ({ children, ...props }) => (
-    <ul className="my-6 ml-6 list-disc space-y-2 text-foreground/85" {...props}>
+    <ul className="my-6 ml-6 list-disc space-y-2 text-foreground" {...props}>
       {children}
     </ul>
   ),
   ol: ({ children, ...props }) => (
-    <ol className="my-6 ml-6 list-decimal space-y-2 text-foreground/85" {...props}>
+    <ol className="my-6 ml-6 list-decimal space-y-2 text-foreground" {...props}>
       {children}
     </ol>
   ),
@@ -186,10 +186,10 @@ const markdownComponents: Components = {
       {children}
     </li>
   ),
-  // Style blockquotes
+  // Style blockquotes - high contrast for accessibility
   blockquote: ({ children, ...props }) => (
     <blockquote
-      className="my-6 border-l-4 border-sky-500/50 bg-muted/30 py-3 px-5 rounded-r-lg text-foreground/80"
+      className="my-6 border-l-4 border-sky-500/50 bg-muted/30 py-3 px-5 rounded-r-lg text-foreground"
       {...props}
     >
       {children}
@@ -480,7 +480,7 @@ export default function BriefDetailPage() {
                     .brief-article > p:first-of-type {
                       font-size: 1.125rem;
                       line-height: 2;
-                      color: hsl(var(--foreground) / 0.9);
+                      color: hsl(var(--foreground));
                     }
                   `}</style>
                   <div className="brief-article">
