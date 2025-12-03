@@ -513,10 +513,12 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
         chamber: 'House'
       },
       stats: {
-        totalVotesCast: totalVotesCast,
-        totalMissed: missedVotes,
+        totalVotes: totalVotesCast,
+        totalVotesCast: totalVotesCast, // Keep for backwards compat
+        notVotingCount: missedVotes,
+        totalMissed: missedVotes, // Keep for backwards compat
         missedPercentage,
-        partyAlignment: null, // TODO: Calculate party alignment
+        partyAlignmentPercentage: null, // TODO: Calculate party alignment
         yeaVotes: votingData.stats.yeaVotes,
         nayVotes: votingData.stats.nayVotes,
         presentVotes: votingData.stats.presentVotes
