@@ -149,13 +149,21 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
   const pieData = useMemo(() => {
     if (!stats) return []
 
-    const total = stats.yeaVotes + stats.nayVotes + (stats.presentVotes || 0) + stats.notVotingCount
+    // Safely get values with defaults
+    const yeaVotes = stats.yeaVotes || 0
+    const nayVotes = stats.nayVotes || 0
+    const presentVotes = stats.presentVotes || 0
+    const notVotingCount = stats.notVotingCount || 0
+
+    const total = yeaVotes + nayVotes + presentVotes + notVotingCount
+
+    if (total === 0) return []
 
     return [
-      { name: 'Yea', value: stats.yeaVotes, color: VOTE_COLORS.yea, percentage: total > 0 ? Math.round((stats.yeaVotes / total) * 100) : 0 },
-      { name: 'Nay', value: stats.nayVotes, color: VOTE_COLORS.nay, percentage: total > 0 ? Math.round((stats.nayVotes / total) * 100) : 0 },
-      { name: 'Present', value: stats.presentVotes || 0, color: VOTE_COLORS.present, percentage: total > 0 ? Math.round(((stats.presentVotes || 0) / total) * 100) : 0 },
-      { name: 'Not Voting', value: stats.notVotingCount, color: VOTE_COLORS.notVoting, percentage: total > 0 ? Math.round((stats.notVotingCount / total) * 100) : 0 }
+      { name: 'Yea', value: yeaVotes, color: VOTE_COLORS.yea, percentage: Math.round((yeaVotes / total) * 100) },
+      { name: 'Nay', value: nayVotes, color: VOTE_COLORS.nay, percentage: Math.round((nayVotes / total) * 100) },
+      { name: 'Present', value: presentVotes, color: VOTE_COLORS.present, percentage: Math.round((presentVotes / total) * 100) },
+      { name: 'Not Voting', value: notVotingCount, color: VOTE_COLORS.notVoting, percentage: Math.round((notVotingCount / total) * 100) }
     ].filter(d => d.value > 0)
   }, [stats])
 
@@ -177,10 +185,13 @@ export function VotingAnalyticsTab({ memberId, memberChamber, memberParty }: Vot
       }))
   }, [votes])
 
-  // Calculate attendance rate
+  // Calculate attendance rate (participation rate)
   const attendanceRate = useMemo(() => {
-    if (!stats || stats.totalVotes === 0) return 0
-    return Math.round(((stats.totalVotes - stats.notVotingCount) / stats.totalVotes) * 100)
+    if (!stats) return 0
+    const totalVotes = stats.totalVotes || 0
+    const notVotingCount = stats.notVotingCount || 0
+    if (totalVotes === 0) return 0
+    return Math.round(((totalVotes - notVotingCount) / totalVotes) * 100)
   }, [stats])
 
   // Calculate voting decisiveness (Yea or Nay vs Present/Abstain)

@@ -434,8 +434,80 @@ app.get('/members/parties', async (c) => {
 });
 
 /**
+ * Helper function to enrich votes with bill titles from our database
+ */
+async function enrichVotesWithBillTitles(
+  db: any,
+  votes: Array<{
+    rollCallNumber: number;
+    voteDate: string;
+    voteQuestion: string;
+    voteResult: string;
+    memberVote: string;
+    bill?: { type: string; number: string; title?: string };
+  }>,
+  congress: number
+): Promise<Array<{
+  rollCallNumber: number;
+  voteDate: string;
+  voteQuestion: string;
+  voteResult: string;
+  memberVote: string;
+  bill?: { type: string; number: string; title?: string };
+}>> {
+  // Collect all bill types/numbers that need enrichment
+  const billsToEnrich = votes
+    .filter(v => v.bill && (!v.bill.title || v.bill.title === `${v.bill.type} ${v.bill.number}`))
+    .map(v => ({ type: v.bill!.type.toLowerCase(), number: v.bill!.number }));
+
+  if (billsToEnrich.length === 0) return votes;
+
+  // Build a map of enriched titles
+  const titleMap = new Map<string, string>();
+
+  // Query our bills table for titles (batch lookup)
+  for (const bill of billsToEnrich) {
+    try {
+      const billRecord = await db
+        .prepare(`
+          SELECT title FROM bills
+          WHERE congress = ? AND bill_type = ? AND bill_number = ?
+          LIMIT 1
+        `)
+        .bind(congress, bill.type, parseInt(bill.number, 10))
+        .first() as any;
+
+      if (billRecord?.title) {
+        titleMap.set(`${bill.type}-${bill.number}`, billRecord.title);
+      }
+    } catch (e) {
+      // Continue if lookup fails
+    }
+  }
+
+  // Enrich votes with titles
+  return votes.map(vote => {
+    if (vote.bill) {
+      const key = `${vote.bill.type.toLowerCase()}-${vote.bill.number}`;
+      const enrichedTitle = titleMap.get(key);
+      if (enrichedTitle) {
+        return {
+          ...vote,
+          bill: {
+            ...vote.bill,
+            title: enrichedTitle
+          }
+        };
+      }
+    }
+    return vote;
+  });
+}
+
+/**
  * GET /members/:bioguide_id/voting-record
  * Get voting record for a House member
+ * First checks cache, then falls back to Congress.gov API
  * Note: Senate voting records are NOT available via Congress.gov API
  */
 app.get('/members/:bioguide_id/voting-record', async (c) => {
@@ -446,7 +518,8 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
 
     // Query params
     const congress = parseInt(c.req.query('congress') || '119', 10);
-    const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
+    const limit = Math.min(parseInt(c.req.query('limit') || '100', 10), 250); // Increased default for better analytics
+    const forceRefresh = c.req.query('refresh') === 'true';
 
     // Get member to check chamber
     const member = await db
@@ -475,7 +548,14 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
           state: member.state,
           chamber: 'Senate'
         },
-        stats: null,
+        stats: {
+          totalVotes: 0,
+          yeaVotes: 0,
+          nayVotes: 0,
+          presentVotes: 0,
+          notVotingCount: 0,
+          partyAlignmentPercentage: null
+        },
         votes: [],
         pagination: {
           total: 0,
@@ -490,17 +570,144 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
       });
     }
 
-    // Fetch House votes for this member
-    console.log(`Fetching voting record for ${bioguideId} (${congress}th Congress)`);
+    // Try to get cached votes first (unless force refresh)
+    let cachedVotes: any[] = [];
+    let cachedStats: any = null;
+    let useCache = false;
+
+    if (!forceRefresh) {
+      try {
+        // Check for cached stats
+        cachedStats = await db
+          .prepare(`
+            SELECT * FROM member_voting_stats
+            WHERE bioguide_id = ? AND congress = ?
+          `)
+          .bind(bioguideId, congress)
+          .first() as any;
+
+        // Get cached votes
+        const cachedResult = await db
+          .prepare(`
+            SELECT * FROM member_votes
+            WHERE bioguide_id = ? AND congress = ?
+            ORDER BY vote_date DESC
+            LIMIT ?
+          `)
+          .bind(bioguideId, congress, limit)
+          .all();
+
+        cachedVotes = cachedResult.results || [];
+
+        // Use cache if we have reasonable data (at least 10 votes or stats exist)
+        if (cachedVotes.length >= 10 || cachedStats) {
+          useCache = true;
+          console.log(`Using cached voting data for ${bioguideId}: ${cachedVotes.length} votes`);
+        }
+      } catch (e) {
+        // Cache tables might not exist yet, continue to API
+        console.log('Cache lookup failed, falling back to API:', e);
+      }
+    }
+
+    // If we have good cached data, return it
+    if (useCache && cachedVotes.length > 0) {
+      const votes = cachedVotes.map((v: any) => ({
+        id: v.id,
+        rollCallNumber: v.roll_call_number,
+        voteDate: v.vote_date,
+        voteQuestion: v.vote_question,
+        voteResult: v.vote_result,
+        memberVote: v.member_vote,
+        bill: v.bill_type ? {
+          id: v.bill_id,
+          type: v.bill_type,
+          number: v.bill_number,
+          title: v.bill_title || `${v.bill_type.toUpperCase()} ${v.bill_number}`
+        } : null
+      }));
+
+      // Calculate stats from cached data if no cached stats
+      let stats = cachedStats ? {
+        totalVotes: cachedStats.total_votes,
+        yeaVotes: cachedStats.yea_votes,
+        nayVotes: cachedStats.nay_votes,
+        presentVotes: cachedStats.present_votes,
+        notVotingCount: cachedStats.not_voting_count,
+        partyAlignmentPercentage: cachedStats.party_alignment_rate,
+        participationRate: cachedStats.participation_rate,
+        firstVoteDate: cachedStats.first_vote_date,
+        lastVoteDate: cachedStats.last_vote_date
+      } : null;
+
+      if (!stats) {
+        // Calculate from votes
+        const yeaVotes = votes.filter((v: any) => ['yea', 'aye', 'yes'].includes(v.memberVote?.toLowerCase())).length;
+        const nayVotes = votes.filter((v: any) => ['nay', 'no'].includes(v.memberVote?.toLowerCase())).length;
+        const presentVotes = votes.filter((v: any) => v.memberVote?.toLowerCase() === 'present').length;
+        const notVoting = votes.filter((v: any) => !['yea', 'aye', 'yes', 'nay', 'no', 'present'].includes(v.memberVote?.toLowerCase())).length;
+
+        // Calculate date range from votes
+        const voteDates = votes.map((v: any) => v.voteDate).filter(Boolean).sort();
+        const firstVoteDate = voteDates.length > 0 ? voteDates[0] : null;
+        const lastVoteDate = voteDates.length > 0 ? voteDates[voteDates.length - 1] : null;
+
+        stats = {
+          totalVotes: votes.length,
+          yeaVotes,
+          nayVotes,
+          presentVotes,
+          notVotingCount: notVoting,
+          partyAlignmentPercentage: null,
+          participationRate: votes.length > 0 ? Math.round(((votes.length - notVoting) / votes.length) * 100) : 0,
+          firstVoteDate,
+          lastVoteDate
+        };
+      }
+
+      return c.json({
+        success: true,
+        member: {
+          bioguideId: member.bioguide_id,
+          fullName: `${member.first_name} ${member.last_name}`,
+          party: member.party,
+          state: member.state,
+          chamber: 'House'
+        },
+        stats,
+        votes,
+        pagination: {
+          total: cachedVotes.length,
+          limit,
+          hasMore: cachedVotes.length >= limit
+        },
+        dataAvailability: {
+          hasData: true,
+          cached: true,
+          lastSynced: cachedStats?.last_synced_at
+        }
+      });
+    }
+
+    // Fetch from Congress.gov API
+    console.log(`Fetching voting record for ${bioguideId} (${congress}th Congress) from API`);
 
     const votingData = await congressApiClient.getMemberHouseVotes(bioguideId, congress, limit);
 
-    // Calculate additional stats
+    // Enrich votes with bill titles from our database
+    const enrichedVotes = await enrichVotesWithBillTitles(db, votingData.votes, congress);
+
+    // Calculate stats
     const totalVotesCast = votingData.stats.totalVotes;
     const missedVotes = votingData.stats.notVotingCount;
-    const missedPercentage = totalVotesCast > 0
-      ? Math.round((missedVotes / (totalVotesCast + missedVotes)) * 100 * 10) / 10
+    const participationRate = totalVotesCast > 0
+      ? Math.round(((totalVotesCast - missedVotes) / totalVotesCast) * 100)
       : 0;
+
+    // Cache the votes asynchronously (don't wait for it)
+    cacheVotesInBackground(db, bioguideId, congress, enrichedVotes, votingData.stats).catch(e => {
+      console.error('Failed to cache votes:', e);
+    });
 
     // Format response
     return c.json({
@@ -514,37 +721,36 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
       },
       stats: {
         totalVotes: totalVotesCast,
-        totalVotesCast: totalVotesCast, // Keep for backwards compat
         notVotingCount: missedVotes,
-        totalMissed: missedVotes, // Keep for backwards compat
-        missedPercentage,
-        partyAlignmentPercentage: null, // TODO: Calculate party alignment
+        participationRate,
+        partyAlignmentPercentage: null,
         yeaVotes: votingData.stats.yeaVotes,
         nayVotes: votingData.stats.nayVotes,
         presentVotes: votingData.stats.presentVotes
       },
-      votes: votingData.votes.map(vote => ({
+      votes: enrichedVotes.map(vote => ({
         id: `${congress}-${vote.rollCallNumber}`,
+        rollCallNumber: vote.rollCallNumber,
         voteDate: vote.voteDate,
         voteQuestion: vote.voteQuestion,
         voteResult: vote.voteResult,
         memberVote: vote.memberVote,
         bill: vote.bill ? {
           id: `${congress}-${vote.bill.type.toLowerCase()}-${vote.bill.number}`,
-          title: vote.bill.title || `${vote.bill.type} ${vote.bill.number}`,
-          billType: vote.bill.type,
-          billNumber: parseInt(vote.bill.number, 10) || 0
-        } : null,
-        votedWithParty: null // TODO: Calculate based on party majority
+          type: vote.bill.type,
+          number: parseInt(vote.bill.number, 10) || 0,
+          title: vote.bill.title || `${vote.bill.type.toUpperCase()} ${vote.bill.number}`
+        } : null
       })),
       pagination: {
-        total: votingData.votes.length,
+        total: enrichedVotes.length,
         limit,
-        hasMore: votingData.votes.length >= limit
+        hasMore: enrichedVotes.length >= limit
       },
       dataAvailability: {
-        hasData: votingData.votes.length > 0,
-        reason: votingData.votes.length === 0 ? 'no_votes_found' : undefined
+        hasData: enrichedVotes.length > 0,
+        cached: false,
+        reason: enrichedVotes.length === 0 ? 'no_votes_found' : undefined
       }
     });
 
@@ -554,6 +760,140 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
       error: 'Failed to get voting record',
       message: error.message
     }, 500);
+  }
+});
+
+/**
+ * Background function to cache votes in the database
+ */
+async function cacheVotesInBackground(
+  db: any,
+  bioguideId: string,
+  congress: number,
+  votes: Array<any>,
+  stats: { totalVotes: number; yeaVotes: number; nayVotes: number; presentVotes: number; notVotingCount: number }
+) {
+  try {
+    // Insert votes
+    for (const vote of votes) {
+      const voteId = `${congress}-${vote.rollCallNumber}`;
+      await db
+        .prepare(`
+          INSERT OR REPLACE INTO member_votes (
+            id, bioguide_id, congress, roll_call_number, vote_date,
+            vote_question, vote_result, member_vote,
+            bill_type, bill_number, bill_title, chamber, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'House', datetime('now'))
+        `)
+        .bind(
+          voteId,
+          bioguideId,
+          congress,
+          vote.rollCallNumber,
+          vote.voteDate,
+          vote.voteQuestion,
+          vote.voteResult,
+          vote.memberVote,
+          vote.bill?.type || null,
+          vote.bill?.number ? parseInt(vote.bill.number, 10) : null,
+          vote.bill?.title || null
+        )
+        .run();
+    }
+
+    // Calculate date range
+    const dates = votes
+      .map(v => v.voteDate)
+      .filter(Boolean)
+      .sort();
+    const firstVoteDate = dates[0] || null;
+    const lastVoteDate = dates[dates.length - 1] || null;
+
+    // Calculate participation rate
+    const participationRate = stats.totalVotes > 0
+      ? ((stats.totalVotes - stats.notVotingCount) / stats.totalVotes) * 100
+      : 0;
+
+    // Insert/update stats
+    const statsId = `${bioguideId}-${congress}`;
+    await db
+      .prepare(`
+        INSERT OR REPLACE INTO member_voting_stats (
+          id, bioguide_id, congress,
+          total_votes, yea_votes, nay_votes, present_votes, not_voting_count,
+          participation_rate, first_vote_date, last_vote_date,
+          last_synced_at, votes_synced, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, datetime('now'))
+      `)
+      .bind(
+        statsId,
+        bioguideId,
+        congress,
+        stats.totalVotes,
+        stats.yeaVotes,
+        stats.nayVotes,
+        stats.presentVotes,
+        stats.notVotingCount,
+        participationRate,
+        firstVoteDate,
+        lastVoteDate,
+        votes.length
+      )
+      .run();
+
+    console.log(`Cached ${votes.length} votes for ${bioguideId} (Congress ${congress})`);
+  } catch (error) {
+    console.error('Error caching votes:', error);
+    throw error;
+  }
+}
+
+/**
+ * POST /members/:bioguide_id/sync-votes
+ * Manually trigger a vote sync for a specific member
+ */
+app.post('/members/:bioguide_id/sync-votes', async (c) => {
+  try {
+    const bioguideId = c.req.param('bioguide_id');
+    const db = c.env.APP_DB;
+    const congressApiClient = c.env.CONGRESS_API_CLIENT;
+
+    const congress = parseInt(c.req.query('congress') || '119', 10);
+    const limit = Math.min(parseInt(c.req.query('limit') || '100', 10), 250);
+
+    // Get member to check chamber
+    const member = await db
+      .prepare('SELECT bioguide_id, first_name, last_name, party, district FROM members WHERE bioguide_id = ?')
+      .bind(bioguideId)
+      .first() as any;
+
+    if (!member) {
+      return c.json({ error: 'Member not found' }, 404);
+    }
+
+    if (member.district === null) {
+      return c.json({ error: 'Senate votes not available' }, 400);
+    }
+
+    // Fetch and cache votes
+    console.log(`Syncing votes for ${bioguideId} (${congress}th Congress)`);
+    const votingData = await congressApiClient.getMemberHouseVotes(bioguideId, congress, limit);
+
+    // Enrich with bill titles
+    const enrichedVotes = await enrichVotesWithBillTitles(db, votingData.votes, congress);
+
+    // Cache votes
+    await cacheVotesInBackground(db, bioguideId, congress, enrichedVotes, votingData.stats);
+
+    return c.json({
+      success: true,
+      message: `Synced ${enrichedVotes.length} votes for ${member.first_name} ${member.last_name}`,
+      stats: votingData.stats
+    });
+
+  } catch (error: any) {
+    console.error('Vote sync failed:', error);
+    return c.json({ error: 'Vote sync failed', message: error.message }, 500);
   }
 });
 
