@@ -1,6 +1,6 @@
 "use client";
 
-import { FC, useState } from "react";
+import { FC, useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Volume2, RotateCcw, BookOpen, FileText, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "@/components/ui/error-state";
 import { useOnline } from "@/lib/hooks/use-online";
+import { C1Artifact, isC1Response } from "@/components/c1";
 
 const suggestedTopics = [
   { icon: FileText, label: "Current Legislation", query: "What are the most important bills being discussed right now?" },
@@ -36,8 +37,18 @@ export const ChatPageClient: FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isOnline = useOnline();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -52,32 +63,90 @@ export const ChatPageClient: FC = () => {
     setMessages(newMessages);
     setInput("");
     setIsLoading(true);
+    setIsStreaming(true);
     setError(null);
 
+    // Add empty assistant message for streaming
+    setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/chat', {
-      //   method: 'POST',
-      //   body: JSON.stringify({ messages: newMessages }),
-      // });
-      // const data = await response.json();
+      // Cancel any previous request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
 
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      // Call the C1 API with streaming
+      const response = await fetch('/api/chat/c1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages.map(m => ({ role: m.role, content: m.content }))
+        }),
+        signal: abortControllerRef.current.signal,
+      });
 
-      // Simulate response
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content:
-            "I'm your Congressional Assistant, powered by AI to help you understand legislation and civic processes. In production, I would provide detailed analysis of bills, track legislative activity, and answer questions about Congress using real-time data from the legislative database.",
-        },
-      ]);
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              setIsStreaming(false);
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                assistantContent += parsed.content;
+                // Update the last message with new content
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    role: "assistant",
+                    content: assistantContent,
+                  };
+                  return updated;
+                });
+              }
+              if (parsed.error) {
+                throw new Error(parsed.error);
+              }
+            } catch (parseErr) {
+              // Ignore JSON parse errors for incomplete chunks
+              if (data !== '' && !data.startsWith('[')) {
+                console.warn('[Chat] Parse warning:', parseErr);
+              }
+            }
+          }
+        }
+      }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Request was cancelled, ignore
+        return;
+      }
       setError(err instanceof Error ? err.message : "Failed to send message. Please try again.");
+      // Remove the empty assistant message on error
+      setMessages(prev => prev.slice(0, -1));
     } finally {
       setIsLoading(false);
+      setIsStreaming(false);
     }
   };
 
@@ -171,37 +240,55 @@ export const ChatPageClient: FC = () => {
 
             <Card>
               <CardContent className="p-0">
-                <ScrollArea className="h-[500px] p-6">
+                <ScrollArea className="h-[500px] p-6" ref={scrollRef}>
                   <div className="space-y-6">
-                    {messages.map((message, index) => (
-                      <div
-                        key={index}
-                        className={`flex gap-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                      >
-                        {message.role === "assistant" && (
-                          <Avatar className="h-10 w-10 bg-primary text-primary-foreground">
-                            <AvatarFallback>AI</AvatarFallback>
-                          </Avatar>
-                        )}
+                    {messages.map((message, index) => {
+                      const isLastMessage = index === messages.length - 1;
+                      const showC1 = message.role === "assistant" && isC1Response(message.content);
+
+                      return (
                         <div
-                          className={`rounded-lg px-4 py-3 max-w-[75%] ${
-                            message.role === "user"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
+                          key={index}
+                          className={`flex gap-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
                         >
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                          {message.role === "assistant" && (
+                            <Avatar className="h-10 w-10 bg-primary text-primary-foreground flex-shrink-0">
+                              <AvatarFallback>AI</AvatarFallback>
+                            </Avatar>
+                          )}
+                          <div
+                            className={`rounded-lg px-4 py-3 ${
+                              message.role === "user"
+                                ? "bg-primary text-primary-foreground max-w-[75%]"
+                                : showC1 ? "bg-muted w-full max-w-[90%]" : "bg-muted max-w-[75%]"
+                            }`}
+                          >
+                            {message.role === "assistant" && showC1 ? (
+                              <C1Artifact
+                                response={message.content}
+                                isStreaming={isLastMessage && isStreaming}
+                                onAction={(action) => {
+                                  // Handle C1 UI interactions - send follow-up message
+                                  console.log("[Chat] C1 action:", action.humanFriendlyMessage);
+                                  setInput(action.llmFriendlyMessage);
+                                }}
+                                className="c1-artifact"
+                              />
+                            ) : (
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                            )}
+                          </div>
+                          {message.role === "user" && (
+                            <Avatar className="h-10 w-10 bg-accent flex-shrink-0">
+                              <AvatarFallback>You</AvatarFallback>
+                            </Avatar>
+                          )}
                         </div>
-                        {message.role === "user" && (
-                          <Avatar className="h-10 w-10 bg-accent">
-                            <AvatarFallback>You</AvatarFallback>
-                          </Avatar>
-                        )}
-                      </div>
-                    ))}
-                    {isLoading && (
+                      );
+                    })}
+                    {isLoading && messages[messages.length - 1]?.content === "" && (
                       <div className="flex gap-4">
-                        <Avatar className="h-10 w-10 bg-primary text-primary-foreground">
+                        <Avatar className="h-10 w-10 bg-primary text-primary-foreground flex-shrink-0">
                           <AvatarFallback>AI</AvatarFallback>
                         </Avatar>
                         <div className="rounded-lg px-4 py-3 bg-muted">

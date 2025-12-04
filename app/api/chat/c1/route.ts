@@ -305,6 +305,54 @@ const tools: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "semantic_search",
+      description: "Search bill text using natural language (meaning-based, not just keyword). Great for finding bills about specific topics even when exact words don't match.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Natural language description of what you're looking for (e.g., 'legislation protecting endangered species')" },
+          congress: { type: "number", description: "Filter by Congress number (119 for current)" },
+          limit: { type: "number", description: "Max results (default 10)" },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_state_bills",
+      description: "Search state-level legislation. Requires a state code (e.g., 'CA', 'TX', 'NY').",
+      parameters: {
+        type: "object",
+        properties: {
+          state: { type: "string", description: "Two-letter state code (e.g., 'CA', 'TX')" },
+          query: { type: "string", description: "Search keywords" },
+          subject: { type: "string", description: "Policy area filter (optional)" },
+        },
+        required: ["state"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_members",
+      description: "Search for congressional members (representatives and senators) by state, party, or name.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Name search" },
+          state: { type: "string", description: "Two-letter state code" },
+          party: { type: "string", enum: ["D", "R", "I"], description: "Party filter" },
+          chamber: { type: "string", enum: ["house", "senate"], description: "Chamber filter" },
+        },
+      },
+    },
+  },
 ];
 
 // Execute tool calls
@@ -329,29 +377,75 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       }
       case "search_news": {
         const { query, recency = "week" } = args as { query: string; recency?: string };
-        const apiKey = process.env.PERPLEXITY_API_KEY;
-        if (!apiKey) {
-          return JSON.stringify({ error: "Perplexity API key not configured" });
+
+        // Try Perplexity first
+        const perplexityKey = process.env.PERPLEXITY_API_KEY;
+        if (perplexityKey) {
+          const response = await fetch("https://api.perplexity.ai/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${perplexityKey}`,
+            },
+            body: JSON.stringify({
+              model: "sonar",
+              messages: [
+                { role: "system", content: `You are a congressional news researcher. Find recent news from the past ${recency} about the query. Focus on: legislative activity, votes, statements by legislators, policy developments. Provide source citations.` },
+                { role: "user", content: query },
+              ],
+              max_tokens: 1500,
+              return_citations: true,
+              search_recency_filter: recency,
+            }),
+          });
+          if (response.ok) {
+            return JSON.stringify(await response.json());
+          }
         }
-        const response = await fetch("https://api.perplexity.ai/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "sonar",
-            messages: [
-              { role: "system", content: `You are a congressional news researcher. Find recent news from the past ${recency} about the query. Focus on: legislative activity, votes, statements by legislators, policy developments. Provide source citations.` },
-              { role: "user", content: query },
-            ],
-            max_tokens: 1500,
-            return_citations: true,
-            search_recency_filter: recency,
-          }),
-        });
-        if (!response.ok) throw new Error(`Perplexity error: ${response.status}`);
-        return JSON.stringify(await response.json());
+
+        // Fallback to Exa for web search
+        const exaKey = process.env.EXA_API_KEY;
+        if (exaKey) {
+          // Calculate date range based on recency
+          const now = new Date();
+          const startDate = new Date();
+          if (recency === "day") startDate.setDate(now.getDate() - 1);
+          else if (recency === "week") startDate.setDate(now.getDate() - 7);
+          else startDate.setMonth(now.getMonth() - 1);
+
+          const response = await fetch("https://api.exa.ai/search", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": exaKey,
+            },
+            body: JSON.stringify({
+              query: `${query} congress legislation news`,
+              type: "neural",
+              useAutoprompt: true,
+              numResults: 10,
+              startPublishedDate: startDate.toISOString().split("T")[0],
+              contents: {
+                text: { maxCharacters: 1000 },
+                highlights: { numSentences: 3 },
+              },
+            }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            // Transform to news format
+            const news = data.results?.map((r: { title?: string; url?: string; publishedDate?: string; text?: string; highlights?: string[] }) => ({
+              title: r.title,
+              url: r.url,
+              publishedDate: r.publishedDate,
+              summary: r.text?.substring(0, 500),
+              highlights: r.highlights,
+            })) || [];
+            return JSON.stringify({ source: "exa", news, query });
+          }
+        }
+
+        return JSON.stringify({ error: "No web search API configured. Please add PERPLEXITY_API_KEY or EXA_API_KEY to environment variables.", query });
       }
       case "get_bill_statistics": {
         const { congress = 119, groupBy } = args as { congress?: number; groupBy: string };
@@ -480,6 +574,122 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
 
         return JSON.stringify(actionGuide);
       }
+      case "semantic_search": {
+        const { query, congress = 119, limit = 10 } = args as { query: string; congress?: number; limit?: number };
+        // Use the SmartBucket semantic search endpoint
+        const response = await fetch(`${BILLS_API}/bills/semantic-search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, congress, limit }),
+        });
+        if (!response.ok) {
+          // Fallback to regular search if semantic search not available
+          const fallbackResponse = await fetch(`${BILLS_API}/bills/search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query, congress, limit }),
+          });
+          if (!fallbackResponse.ok) throw new Error(`Search API error: ${fallbackResponse.status}`);
+          return JSON.stringify(await fallbackResponse.json());
+        }
+        return JSON.stringify(await response.json());
+      }
+      case "search_state_bills": {
+        const { state, query, subject } = args as { state: string; query?: string; subject?: string };
+        // Use OpenStates API for state legislation
+        const apiKey = process.env.OPENSTATES_API_KEY;
+        if (!apiKey) {
+          return JSON.stringify({ error: "OpenStates API key not configured", state, message: "State bill search unavailable" });
+        }
+
+        // Build GraphQL query for OpenStates
+        const graphqlQuery = `
+          query {
+            bills(first: 10, jurisdiction: "${state.toLowerCase()}"${query ? `, searchQuery: "${query}"` : ""}${subject ? `, subject: "${subject}"` : ""}) {
+              edges {
+                node {
+                  id
+                  identifier
+                  title
+                  classification
+                  latestActionDate
+                  latestActionDescription
+                  openstatesUrl
+                  legislativeSession {
+                    identifier
+                  }
+                  fromOrganization {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        `;
+
+        const response = await fetch("https://openstates.org/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-KEY": apiKey,
+          },
+          body: JSON.stringify({ query: graphqlQuery }),
+        });
+
+        if (!response.ok) throw new Error(`OpenStates API error: ${response.status}`);
+        const data = await response.json();
+
+        // Transform response
+        const bills = data.data?.bills?.edges?.map((edge: { node: {
+          identifier: string;
+          title: string;
+          classification: string[];
+          latestActionDate: string;
+          latestActionDescription: string;
+          openstatesUrl: string;
+          legislativeSession: { identifier: string };
+          fromOrganization: { name: string };
+        } }) => ({
+          identifier: edge.node.identifier,
+          title: edge.node.title,
+          classification: edge.node.classification,
+          latestAction: {
+            date: edge.node.latestActionDate,
+            description: edge.node.latestActionDescription,
+          },
+          url: edge.node.openstatesUrl,
+          session: edge.node.legislativeSession?.identifier,
+          chamber: edge.node.fromOrganization?.name,
+        })) || [];
+
+        return JSON.stringify({ state, bills, count: bills.length });
+      }
+      case "search_members": {
+        const { query, state, party, chamber } = args as { query?: string; state?: string; party?: string; chamber?: string };
+
+        // Build SQL query for member search
+        let sqlQuery = "SELECT * FROM members WHERE 1=1";
+        const conditions: string[] = [];
+
+        if (query) conditions.push(`(name ILIKE '%${query}%' OR last_name ILIKE '%${query}%')`);
+        if (state) conditions.push(`state = '${state.toUpperCase()}'`);
+        if (party) conditions.push(`party_code = '${party.toUpperCase()}'`);
+        if (chamber) conditions.push(`chamber = '${chamber.toLowerCase()}'`);
+
+        if (conditions.length > 0) {
+          sqlQuery += " AND " + conditions.join(" AND ");
+        }
+        sqlQuery += " LIMIT 20";
+
+        const response = await fetch(`${BILLS_API}/api/database/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: sqlQuery }),
+        });
+
+        if (!response.ok) throw new Error(`Members search error: ${response.status}`);
+        return JSON.stringify(await response.json());
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -563,6 +773,9 @@ export async function POST(request: NextRequest) {
                 compare_bills: "⚖️ Comparing legislation...\n\n",
                 explain_civics_concept: "📚 Preparing educational content...\n\n",
                 get_civic_action_guide: "🗳️ Building your action guide...\n\n",
+                semantic_search: "🧠 Searching bill text semantically...\n\n",
+                search_state_bills: "🏛️ Searching state legislation...\n\n",
+                search_members: "👤 Looking up congressional members...\n\n",
               };
               if (toolCallCount === 1 && progressMessages[toolName]) {
                 send(progressMessages[toolName]);
