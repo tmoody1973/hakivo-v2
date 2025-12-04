@@ -888,7 +888,7 @@ export default function ChatPage() {
         )}
 
         {/* Input Area - T3 Style */}
-        <div className="border-t border-border bg-background p-4">
+        <div className="border-t border-border bg-background p-4 pb-24">
           <div className="max-w-3xl mx-auto">
             <div className="relative rounded-2xl border border-border bg-card shadow-sm">
               <textarea
