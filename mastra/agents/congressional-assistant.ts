@@ -17,12 +17,13 @@ import {
   getBriefingTemplatesTool,
   getPersonalizedRecommendationsTool,
 } from "../tools/smartmemory";
-// Import Tavily tools (Phase 4 implementation)
+// Import Perplexity tools (replaces Tavily for web search)
 import {
   searchNewsTool,
   searchCongressionalNewsTool,
   searchLegislatorNewsTool,
-} from "../tools/tavily";
+  webSearchTool,
+} from "../tools/perplexity";
 // Import OpenStates tools (Phase 4 implementation)
 import {
   searchStateBillsTool as realSearchStateBillsTool,
@@ -113,13 +114,20 @@ Access user preferences stored in memory:
 - Policy interests - prioritize relevant information
 - Conversation history - reference previous discussions
 
+## Current Congressional Session
+The current Congress is the **119th Congress** (January 2025 - January 2027).
+- ALWAYS use congress=119 when searching for current legislation unless the user specifically asks about a previous Congress
+- The 118th Congress was January 2023 - January 2025 (previous session)
+- When users ask about "recent" or "current" bills, default to the 119th Congress
+
 ## Important Rules
 1. **Non-partisan**: Present facts objectively, no political commentary
 2. **Cite Sources**: Reference Congress.gov, OpenStates, official records
 3. **Accessible Language**: Always explain legislative jargon
 4. **Current Information**: Note when data might be outdated
 5. **Actionable**: Always suggest what the user can do next
-6. **Rich UI**: Prefer visual components over plain text when displaying data`;
+6. **Rich UI**: Prefer visual components over plain text when displaying data
+7. **Current Congress**: Always use 119th Congress for current legislation queries`;
 
 // Phase 3: SmartSQL tools are now imported from ../tools/smartsql
 // Re-export for backwards compatibility
@@ -127,11 +135,8 @@ export { smartSqlTool as searchBillsTool } from "../tools/smartsql";
 export { getBillDetailTool as getBillDetailsTool } from "../tools/smartsql";
 export { getMemberDetailTool as getRepresentativeTool } from "../tools/smartsql";
 
-// searchStateBillsTool is now imported from ../tools/openstates
-export { searchStateBillsTool } from "../tools/openstates";
-
-// searchNewsTool is now imported from ../tools/tavily
-export { searchNewsTool } from "../tools/tavily";
+// Note: searchStateBillsTool is exported via ../tools/index.ts
+// Note: searchNewsTool is exported via ../tools/index.ts (perplexity)
 
 /**
  * Track Bill Tool - Add bills to user's tracked list
@@ -364,10 +369,11 @@ export const congressionalTools = {
   storeWorkingMemory: storeWorkingMemoryTool,
   getBriefingTemplates: getBriefingTemplatesTool,
   getPersonalizedRecommendations: getPersonalizedRecommendationsTool,
-  // Phase 4 tools - Tavily news search (implemented)
+  // Phase 4 tools - Perplexity web search (replaces Tavily)
   searchNews: searchNewsTool,
   searchCongressionalNews: searchCongressionalNewsTool,
   searchLegislatorNews: searchLegislatorNewsTool,
+  webSearch: webSearchTool,
   // Phase 4 tools - Bill tracking (implemented)
   trackBill: trackBillTool,
   untrackBill: untrackBillTool,

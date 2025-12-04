@@ -653,7 +653,7 @@ export const getBillDetailTool = createTool({
   description:
     "Get comprehensive details about a specific federal bill including analysis, sponsors, and actions.",
   inputSchema: z.object({
-    congress: z.number().describe("Congress number, e.g., 118 or 119"),
+    congress: z.number().describe("Congress number. Use 119 for current Congress (2025-2027), 118 for previous (2023-2025)"),
     billType: z
       .string()
       .describe("Bill type: hr, s, hjres, sjres, hconres, sconres, hres, sres"),

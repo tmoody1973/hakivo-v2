@@ -97,7 +97,7 @@ Example queries:
     congress: z
       .number()
       .optional()
-      .describe("Filter by specific Congress number (e.g., 118, 119)"),
+      .describe("Filter by Congress number. Use 119 for current (2025-2027), 118 for previous"),
   }),
   execute: async ({ context }) => {
     const { query, limit = 10, congress } = context;

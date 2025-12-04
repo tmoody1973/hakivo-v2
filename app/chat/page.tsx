@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { Send, Sparkles, Volume2, RotateCcw, FileText, Users, BookOpen, Loader2, ArrowDown, History, X, MessageSquare, Trash2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import ReactMarkdown from "react-markdown"
 import {
   componentRegistry,
   type ComponentName,
@@ -191,9 +192,35 @@ function MessageContent({ content }: { content: string }) {
       {segments.map((segment, index) => {
         if (segment.type === "text") {
           return (
-            <p key={index} className="text-sm leading-relaxed whitespace-pre-wrap">
-              {segment.content}
-            </p>
+            <div key={index} className="prose prose-sm prose-invert max-w-none">
+              <ReactMarkdown
+                components={{
+                  // Style headings
+                  h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-base font-bold mt-3 mb-2">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+                  // Style paragraphs
+                  p: ({ children }) => <p className="text-sm leading-relaxed mb-2">{children}</p>,
+                  // Style lists
+                  ul: ({ children }) => <ul className="text-sm list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                  ol: ({ children }) => <ol className="text-sm list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                  li: ({ children }) => <li className="text-sm">{children}</li>,
+                  // Style bold/italic
+                  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  // Style code
+                  code: ({ children }) => <code className="px-1 py-0.5 bg-muted rounded text-xs font-mono">{children}</code>,
+                  // Style links
+                  a: ({ href, children }) => (
+                    <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {segment.content || ""}
+              </ReactMarkdown>
+            </div>
           )
         }
 

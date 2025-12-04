@@ -9,35 +9,35 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-// Import all tools
+// Import all tools (from root mastra folder)
 import {
   smartSqlTool,
   getBillDetailTool,
   getMemberDetailTool,
-} from "../mastra/tools/smartsql";
+} from "../../mastra/tools/smartsql";
 
 import {
   semanticSearchTool,
   billTextRagTool,
   policyAreaSearchTool,
-} from "../mastra/tools/smartbucket";
+} from "../../mastra/tools/smartbucket";
 
 import {
   getUserContextTool,
   getUserRepresentativesTool,
   getTrackedBillsTool,
   storeWorkingMemoryTool,
-} from "../mastra/tools/smartmemory";
+} from "../../mastra/tools/smartmemory";
 
 import {
   searchNewsTool,
   searchCongressionalNewsTool,
-} from "../mastra/tools/tavily";
+} from "../../mastra/tools/tavily";
 
 import {
   searchStateBillsTool,
   getStateLegislatorsByLocationTool,
-} from "../mastra/tools/openstates";
+} from "../../mastra/tools/openstates";
 
 // Test result tracking
 interface TestResult {

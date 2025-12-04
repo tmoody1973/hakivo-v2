@@ -38,13 +38,14 @@ export {
   smartMemoryTools,
 } from "./smartmemory";
 
-// Tavily Tools - News search
+// Perplexity Tools - Web search (replaces Tavily)
 export {
   searchNewsTool,
   searchCongressionalNewsTool,
   searchLegislatorNewsTool,
-  tavilyTools,
-} from "./tavily";
+  webSearchTool,
+  perplexityTools,
+} from "./perplexity";
 
 // OpenStates Tools - State legislation
 export {
@@ -75,7 +76,7 @@ export {
 import { smartSqlTools } from "./smartsql";
 import { smartBucketTools } from "./smartbucket";
 import { smartMemoryTools } from "./smartmemory";
-import { tavilyTools } from "./tavily";
+import { perplexityTools } from "./perplexity";
 import { openstatesTools } from "./openstates";
 import { c1ArtifactsTools } from "./c1-artifacts";
 import { audioBriefingTools } from "./audio-briefing";
@@ -84,7 +85,7 @@ export const allTools = {
   ...smartSqlTools,
   ...smartBucketTools,
   ...smartMemoryTools,
-  ...tavilyTools,
+  ...perplexityTools,
   ...openstatesTools,
   ...c1ArtifactsTools,
   ...audioBriefingTools,
