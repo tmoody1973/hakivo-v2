@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { C1Chat } from "@thesysai/genui-sdk";
 import "@crayonai/react-ui/styles/index.css";
 import { useAuth } from "@/lib/auth/auth-context";
+
+const C1_USER_KEY = "hakivo_c1_user_id";
 
 /**
  * Chat Page using thesys C1 Generative UI
@@ -19,33 +21,40 @@ import { useAuth } from "@/lib/auth/auth-context";
  */
 export const ChatPageClient = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
-  const prevUserIdRef = useRef<string | null>(null);
+  const [isReady, setIsReady] = useState(false);
 
-  // Clear C1 localStorage when user changes
+  // Check user identity and clear C1 data if user changed
   useEffect(() => {
     if (isLoading) return;
 
-    const currentUserId = user?.id || null;
-    const prevUserId = prevUserIdRef.current;
+    const currentUserId = user?.id || "anonymous";
+    const storedUserId = localStorage.getItem(C1_USER_KEY);
 
-    // If user changed (including logout/login), clear C1 chat data
-    if (prevUserId !== null && prevUserId !== currentUserId) {
-      console.log("[Chat] User changed, clearing C1 chat history");
+    console.log("[Chat] Current user:", currentUserId, "Stored user:", storedUserId);
+
+    // If user is different from stored user, clear all C1 data
+    if (storedUserId && storedUserId !== currentUserId) {
+      console.log("[Chat] User changed from", storedUserId, "to", currentUserId, "- clearing C1 data");
       clearC1ChatData();
     }
 
-    prevUserIdRef.current = currentUserId;
+    // Store current user ID for next comparison
+    localStorage.setItem(C1_USER_KEY, currentUserId);
+
+    // Mark as ready to render C1Chat
+    setIsReady(true);
   }, [user?.id, isLoading]);
 
-  // Clear C1 chat data on logout
+  // Also clear on logout (when isAuthenticated becomes false)
   useEffect(() => {
     if (!isAuthenticated && !isLoading) {
       console.log("[Chat] User logged out, clearing C1 chat history");
       clearC1ChatData();
+      localStorage.removeItem(C1_USER_KEY);
     }
   }, [isAuthenticated, isLoading]);
 
-  if (isLoading) {
+  if (isLoading || !isReady) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Loading...</div>
@@ -77,16 +86,33 @@ function clearC1ChatData() {
   if (typeof window === "undefined") return;
 
   // Find and remove all C1-related localStorage keys
+  // Match known patterns and be more aggressive to catch all SDK storage
   const keysToRemove: string[] = [];
+  const preservePatterns = ["hakivo_"]; // Our auth keys to preserve
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && (
-      key.includes("c1-") ||
+    if (!key) continue;
+
+    // Skip our auth/app keys
+    if (preservePatterns.some(pattern => key.startsWith(pattern))) {
+      continue;
+    }
+
+    // Remove C1 SDK related keys
+    if (
+      key.includes("c1") ||
+      key.includes("C1") ||
       key.includes("thread") ||
+      key.includes("Thread") ||
       key.includes("crayon") ||
-      key.includes("genui")
-    )) {
+      key.includes("Crayon") ||
+      key.includes("genui") ||
+      key.includes("message") ||
+      key.includes("Message") ||
+      key.includes("chat") ||
+      key.includes("Chat")
+    ) {
       keysToRemove.push(key);
     }
   }

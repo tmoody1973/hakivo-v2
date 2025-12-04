@@ -371,15 +371,31 @@ function clearC1ChatData() {
   if (typeof window === "undefined") return;
 
   const keysToRemove: string[] = [];
+  const preservePatterns = ["hakivo_"]; // Our auth keys to preserve
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key && (
-      key.includes("c1-") ||
+    if (!key) continue;
+
+    // Skip our auth/app keys
+    if (preservePatterns.some(pattern => key.startsWith(pattern))) {
+      continue;
+    }
+
+    // Remove C1 SDK related keys - be aggressive to catch all storage
+    if (
+      key.includes("c1") ||
+      key.includes("C1") ||
       key.includes("thread") ||
+      key.includes("Thread") ||
       key.includes("crayon") ||
-      key.includes("genui")
-    )) {
+      key.includes("Crayon") ||
+      key.includes("genui") ||
+      key.includes("message") ||
+      key.includes("Message") ||
+      key.includes("chat") ||
+      key.includes("Chat")
+    ) {
       keysToRemove.push(key);
     }
   }
