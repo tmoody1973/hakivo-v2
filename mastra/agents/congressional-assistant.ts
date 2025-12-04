@@ -395,11 +395,12 @@ import {
   type ModelTier,
 } from "../config/smartinference";
 
-// Congressional Assistant Agent (default configuration with gpt-4o)
+// Congressional Assistant Agent - Powered by Raindrop SmartInference
+// Uses Llama 3.3 70B via Raindrop for unified AI access
 export const congressionalAssistant = new Agent({
   name: "congressional-assistant",
   instructions: congressionalSystemPrompt,
-  model: openai("gpt-4o"),
+  model: getMastraModel("standard"), // Raindrop SmartInference (llama-3.3-70b)
   tools: congressionalTools,
 });
 

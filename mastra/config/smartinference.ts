@@ -2,20 +2,42 @@
  * SmartInference Configuration for Hakivo Congressional Assistant
  *
  * Provides intelligent model routing based on task complexity and type.
- * Routes requests to the most appropriate model for cost and performance optimization.
+ * Routes requests through Raindrop SmartInference for unified AI access.
  *
  * Model Tiers:
- * - Fast: Quick responses for simple queries (gpt-4o-mini, llama-3.1-8b)
- * - Standard: Balanced performance (gpt-4o, claude-3.5-sonnet)
- * - Complex: Deep analysis and reasoning (gpt-4o, claude-3.5-sonnet, deepseek-r1)
+ * - Fast: Quick responses for simple queries (llama-3.1-8b-instant via Raindrop)
+ * - Standard: Balanced performance (llama-3.3-70b via Raindrop)
+ * - Complex: Deep analysis and reasoning (deepseek-r1 via Raindrop)
  * - Creative: UI generation and creative content (thesys C1)
+ *
+ * RAINDROP SMARTINFERENCE BENEFITS:
+ * - 50+ AI models through one endpoint
+ * - No vendor lock-in (switch models without code changes)
+ * - Unified billing and observability
+ * - Built-in caching and rate limiting
  */
 
 import { openai, createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 
-// Create anthropic provider instance
+// Create anthropic provider instance (fallback)
 const anthropic = createAnthropic({});
+
+/**
+ * Raindrop SmartInference Provider
+ *
+ * Routes AI requests through Raindrop's unified AI gateway.
+ * Access to Llama, DeepSeek, Mistral, and 50+ other models.
+ */
+const RAINDROP_CHAT_SERVICE =
+  process.env.RAINDROP_CHAT_URL ||
+  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+
+const raindropAI = createOpenAI({
+  apiKey: process.env.RAINDROP_API_KEY || "raindrop-internal",
+  baseURL: `${RAINDROP_CHAT_SERVICE}/v1`,
+  compatibility: "compatible",
+});
 
 /**
  * Thesys C1 Provider - Uses OpenAI-compatible API with thesys baseURL
@@ -41,7 +63,7 @@ export type TaskType =
   | "conversation";
 
 interface ModelConfig {
-  provider: "openai" | "anthropic" | "thesys";
+  provider: "openai" | "anthropic" | "thesys" | "raindrop";
   modelId: string;
   maxTokens: number;
   temperature: number;
@@ -54,28 +76,28 @@ interface TaskClassification {
   reasoning: string;
 }
 
-// Available models by tier
+// Available models by tier - Now powered by Raindrop SmartInference
 export const MODEL_CONFIGS: Record<ModelTier, ModelConfig> = {
   fast: {
-    provider: "openai",
-    modelId: "gpt-4o-mini",
+    provider: "raindrop",
+    modelId: "llama-3.1-8b-instant", // Fast, efficient model via Raindrop
     maxTokens: 1000,
     temperature: 0.7,
-    description: "Fast, efficient responses for simple queries",
+    description: "Fast responses via Raindrop SmartInference (Llama 3.1 8B)",
   },
   standard: {
-    provider: "openai",
-    modelId: "gpt-4o",
+    provider: "raindrop",
+    modelId: "llama-3.3-70b", // High-quality model via Raindrop
     maxTokens: 2000,
     temperature: 0.7,
-    description: "Balanced performance for most queries",
+    description: "Balanced performance via Raindrop SmartInference (Llama 3.3 70B)",
   },
   complex: {
-    provider: "anthropic",
-    modelId: "claude-sonnet-4-5-20250929",
+    provider: "raindrop",
+    modelId: "deepseek-r1", // Advanced reasoning model via Raindrop
     maxTokens: 4000,
     temperature: 0.5,
-    description: "Deep analysis and complex reasoning",
+    description: "Deep reasoning via Raindrop SmartInference (DeepSeek R1)",
   },
   creative: {
     provider: "thesys",
@@ -208,11 +230,17 @@ export function getModelForQuery(query: string): ModelConfig & { tier: ModelTier
 
 /**
  * Get Mastra-compatible model instance for a tier
+ *
+ * Now defaults to Raindrop SmartInference for unified AI access.
+ * This gives you access to 50+ models through one endpoint.
  */
 export function getMastraModel(tier: ModelTier = "standard") {
   const config = MODEL_CONFIGS[tier];
 
   switch (config.provider) {
+    case "raindrop":
+      // Use Raindrop SmartInference - unified AI gateway
+      return raindropAI(config.modelId);
     case "openai":
       return openai(config.modelId);
     case "anthropic":
@@ -221,8 +249,8 @@ export function getMastraModel(tier: ModelTier = "standard") {
       // Use thesys C1 provider for generative UI
       return thesysC1.chat(config.modelId);
     default:
-      // Default to OpenAI gpt-4o
-      return openai("gpt-4o");
+      // Default to Raindrop SmartInference with Llama 3.3 70B
+      return raindropAI("llama-3.3-70b");
   }
 }
 
