@@ -34,8 +34,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create the congressional assistant agent with query-based model selection
-    const agent = createCongressionalAssistant(lastMessage.content);
+    // Create the congressional assistant agent
+    const agent = createCongressionalAssistant();
 
     // Build conversation context from previous messages
     const conversationContext = messages

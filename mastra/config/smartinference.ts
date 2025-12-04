@@ -2,7 +2,7 @@
  * SmartInference Configuration for Hakivo Congressional Assistant
  *
  * Provides intelligent model routing based on task complexity and type.
- * Uses Cerebras via Mastra for ultra-fast inference.
+ * Uses Cerebras via AI SDK OpenAI-compatible provider for ultra-fast inference.
  *
  * Model Tiers:
  * - Fast: Quick responses for simple queries (Cerebras GPT-OSS 120B)
@@ -14,19 +14,17 @@
  * - 10x faster inference than typical cloud providers
  * - High-quality models at incredible speed
  * - Competitive pricing
- * - Mastra native integration via model router
+ * - OpenAI-compatible API
  */
 
-/**
- * Mastra Model Router Strings
- *
- * Mastra's built-in model router uses format: "provider/model-id"
- * - Cerebras models: "cerebras/llama-3.3-70b", "cerebras/gpt-oss-120b"
- * - OpenAI models: "openai/gpt-4o", "openai/gpt-4o-mini"
- *
- * These are returned as strings and used directly in Agent config.
- * Authentication is automatic via CEREBRAS_API_KEY env var.
- */
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+// Create Cerebras provider using OpenAI-compatible SDK
+const cerebras = createOpenAICompatible({
+  name: "cerebras",
+  baseURL: "https://api.cerebras.ai/v1",
+  apiKey: process.env.CEREBRAS_API_KEY || "",
+});
 
 // Model configuration types
 export type ModelTier = "fast" | "standard" | "complex" | "creative";
@@ -211,32 +209,21 @@ export function getModelForQuery(query: string): ModelConfig & { tier: ModelTier
 }
 
 /**
- * Get Mastra-compatible model for a tier
+ * Get AI SDK model instance for a tier
  *
- * Returns model string for Mastra's built-in model router OR
- * provider instance for external APIs (thesys).
- *
- * Mastra model router format: "provider/model-id"
- * - Uses CEREBRAS_API_KEY automatically for cerebras/ models
- * - Uses OPENAI_API_KEY automatically for openai/ models
+ * Returns a proper AI SDK model instance for use with Mastra Agent.
+ * Uses Cerebras via OpenAI-compatible provider for all tiers.
  */
-export function getMastraModel(tier: ModelTier = "standard"): string {
+export function getMastraModel(tier: ModelTier = "standard") {
   const config = MODEL_CONFIGS[tier];
 
-  switch (config.provider) {
-    case "cerebras":
-      // Return Mastra model router string (e.g., "cerebras/gpt-oss-120b")
-      return config.modelId;
-    case "openai":
-      // Return OpenAI model via Mastra router
-      return `openai/${config.modelId}`;
-    case "anthropic":
-      // Return Anthropic model via Mastra router
-      return `anthropic/${config.modelId}`;
-    default:
-      // Default to Cerebras GPT-OSS
-      return "cerebras/gpt-oss-120b";
-  }
+  // All tiers use Cerebras via OpenAI-compatible provider
+  // Extract model ID from the full modelId (e.g., "cerebras/gpt-oss-120b" -> "gpt-oss-120b")
+  const modelName = config.modelId.includes("/")
+    ? config.modelId.split("/")[1]
+    : config.modelId;
+
+  return cerebras.chatModel(modelName);
 }
 
 /**
@@ -292,7 +279,7 @@ export const modelSelector = createModelSelector();
  */
 export interface SmartInferenceContext {
   tier: ModelTier;
-  model: string; // Mastra model router string (e.g., "cerebras/gpt-oss-120b")
+  model: ReturnType<typeof getMastraModel>; // AI SDK model instance
   maxTokens: number;
   temperature: number;
 }

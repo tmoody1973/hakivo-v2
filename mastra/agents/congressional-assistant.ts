@@ -1,7 +1,18 @@
 import { Agent } from "@mastra/core/agent";
-import { openai } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+
+// Create Cerebras provider using OpenAI-compatible SDK
+// Cerebras provides 10x faster inference than typical cloud providers
+const cerebras = createOpenAICompatible({
+  name: "cerebras",
+  baseURL: "https://api.cerebras.ai/v1",
+  apiKey: process.env.CEREBRAS_API_KEY || "",
+});
+
+// Single model for all queries - keep it simple
+const CEREBRAS_MODEL = "gpt-oss-120b";
 
 // Import SmartSQL tools (Phase 3 implementation)
 import { smartSqlTool, getBillDetailTool, getMemberDetailTool } from "../tools/smartsql";
@@ -388,66 +399,25 @@ export const congressionalTools = {
   generateBriefingSlides: generateBriefingSlidesTool,
 };
 
-// Import SmartInference for dynamic model selection
-import {
-  getMastraModel,
-  classifyQuery,
-  type ModelTier,
-} from "../config/smartinference";
-
-// Congressional Assistant Agent - Powered by Raindrop SmartInference
-// Uses Llama 3.3 70B via Raindrop for unified AI access
+// Congressional Assistant Agent - Powered by Cerebras for ultra-fast inference
 export const congressionalAssistant = new Agent({
   name: "congressional-assistant",
   instructions: congressionalSystemPrompt,
-  model: getMastraModel("standard"), // Raindrop SmartInference (llama-3.3-70b)
+  model: cerebras.chatModel(CEREBRAS_MODEL),
   tools: congressionalTools,
 });
 
 /**
- * Create a Congressional Assistant with dynamic model selection
+ * Create a Congressional Assistant
  *
- * Uses SmartInference to route to the appropriate model based on:
- * - Query complexity (simple vs complex)
- * - Task type (search, analysis, report generation)
- * - Cost/performance optimization
- *
- * @param query - User query to classify for model selection
- * @param forceTier - Force a specific model tier
+ * Uses Cerebras GPT-OSS 120B for all queries.
+ * Simple and fast - no complex routing needed.
  */
-export function createCongressionalAssistant(
-  query?: string,
-  forceTier?: ModelTier
-) {
-  let tier: ModelTier = "standard";
-
-  if (forceTier) {
-    tier = forceTier;
-  } else if (query) {
-    const classification = classifyQuery(query);
-    tier = classification.tier;
-  }
-
-  const model = getMastraModel(tier);
-
+export function createCongressionalAssistant() {
   return new Agent({
     name: "congressional-assistant",
     instructions: congressionalSystemPrompt,
-    model,
+    model: cerebras.chatModel(CEREBRAS_MODEL),
     tools: congressionalTools,
   });
-}
-
-/**
- * Get agent configuration info for a given query
- * Useful for logging and debugging model selection
- */
-export function getAgentConfigForQuery(query: string) {
-  const classification = classifyQuery(query);
-  return {
-    query,
-    tier: classification.tier,
-    confidence: classification.confidence,
-    reasoning: classification.reasoning,
-  };
 }
