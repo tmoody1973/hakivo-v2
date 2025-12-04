@@ -2,7 +2,6 @@
 
 import { usePathname } from 'next/navigation'
 import { DashboardHeader } from "./dashboard-header"
-import { SearchBar } from "./search-bar"
 
 export function ConditionalNav() {
   const pathname = usePathname()
@@ -16,10 +15,5 @@ export function ConditionalNav() {
     return null
   }
 
-  return (
-    <>
-      <DashboardHeader />
-      <SearchBar />
-    </>
-  )
+  return <DashboardHeader />
 }
