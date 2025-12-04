@@ -4,8 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import {
   Send, RotateCcw, Loader2, ArrowDown,
   PanelLeftClose, PanelLeft, Search, Paperclip,
-  MessageSquare, Trash2, Plus, ChevronDown, Copy, Check,
-  User
+  MessageSquare, Trash2, Plus, ChevronDown, Copy, Check
 } from 'lucide-react'
 import { CongressIcon } from "@/components/icons/congress-icon"
 import { Button } from "@/components/ui/button"
@@ -755,18 +754,6 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* User Profile */}
-        <div className="p-3 border-t border-border">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-              <User className="h-4 w-4 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">User</p>
-              <p className="text-xs text-muted-foreground">Free Plan</p>
-            </div>
-          </div>
-        </div>
       </aside>
 
       {/* Main Chat Area */}
