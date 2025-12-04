@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import {
-  Send, Sparkles, RotateCcw, Loader2, ArrowDown,
+  Send, RotateCcw, Loader2, ArrowDown,
   PanelLeftClose, PanelLeft, Search, Paperclip,
   MessageSquare, Trash2, Plus, ChevronDown, Copy, Check,
   User
 } from 'lucide-react'
+import { CongressIcon } from "@/components/icons/congress-icon"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
@@ -769,7 +770,7 @@ export default function ChatPage() {
             )}
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                <Sparkles className="h-4 w-4 text-white" />
+                <CongressIcon className="h-4 w-4 text-white" />
               </div>
               <span className="font-medium">Congressional Assistant</span>
             </div>
@@ -796,7 +797,7 @@ export default function ChatPage() {
             <div className="flex flex-col items-center justify-center min-h-full px-4 py-12">
               <div className="max-w-2xl w-full space-y-8 text-center">
                 <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/25">
-                  <Sparkles className="h-10 w-10 text-white" />
+                  <CongressIcon className="h-10 w-10 text-white" />
                 </div>
                 <div className="space-y-2">
                   <h1 className="text-3xl font-bold tracking-tight">
@@ -825,7 +826,7 @@ export default function ChatPage() {
                     <div className="relative">
                       <div className="flex items-start gap-4">
                         <div className="shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                          <Sparkles className="h-4 w-4 text-white" />
+                          <CongressIcon className="h-4 w-4 text-white" />
                         </div>
                         <div className="flex-1 min-w-0 pt-1">
                           <MessageContent content={message.content} />
@@ -855,7 +856,7 @@ export default function ChatPage() {
               {isLoading && messages[messages.length - 1]?.role === "user" && (
                 <div className="flex items-start gap-4">
                   <div className="shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                    <Sparkles className="h-4 w-4 text-white" />
+                    <CongressIcon className="h-4 w-4 text-white" />
                   </div>
                   <div className="pt-2">
                     <div className="flex gap-1.5">
@@ -912,14 +913,14 @@ export default function ChatPage() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="h-8 gap-1 text-muted-foreground hover:text-foreground">
-                        <Sparkles className="h-3.5 w-3.5" />
+                        <CongressIcon className="h-3.5 w-3.5" />
                         <span className="text-xs">Cerebras GPT</span>
                         <ChevronDown className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
                       <DropdownMenuItem>
-                        <Sparkles className="h-4 w-4 mr-2" />
+                        <CongressIcon className="h-4 w-4 mr-2" />
                         Cerebras GPT (Fast)
                       </DropdownMenuItem>
                     </DropdownMenuContent>
