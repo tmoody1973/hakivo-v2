@@ -33,6 +33,8 @@ export interface Env {
   ENRICHMENT_QUEUE: Queue<import('../enrichment-observer').Body>;
   EXA_API_KEY: string;
   EXA_CLIENT: ServiceStub<import('../exa-client/index.js').default>;
+  FEC_API_KEY: string;
+  FEC_CLIENT: ServiceStub<import('../fec-client/index.js').default>;
   GEMINI_API_KEY: string;
   GEMINI_TTS_CLIENT: ServiceStub<import('../gemini-tts-client/index.js').default>;
   GEOCODIO_API_KEY: string;
@@ -43,11 +45,13 @@ export interface Env {
   JWT_SECRET: string;
   logger: Logger;
   mem: KvCache;
+  MEMBERS_SERVICE: ServiceStub<import('../members-service/index.js').default>;
   NEWS_CACHE: KvCache;
   OPENSTATES_API_KEY: string;
   OPENSTATES_CLIENT: ServiceStub<import('../openstates-client/index.js').default>;
   PERPLEXITY_API_KEY: string;
   PERPLEXITY_CLIENT: ServiceStub<import('../perplexity-client/index.js').default>;
+  PEXELS_API_KEY: string;
   SESSION_CACHE: KvCache;
   SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;

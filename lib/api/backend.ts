@@ -850,6 +850,80 @@ export async function getMemberById(bioguideId: string): Promise<APIResponse<any
 }
 
 /**
+ * Refresh member data from Congress.gov API
+ *
+ * Checks Congress.gov for the latest member information.
+ * This helps detect when members have left office or data is stale.
+ */
+export interface MemberRefreshResponse {
+  success: boolean;
+  source: 'congress_gov';
+  member: {
+    bioguideId: string;
+    firstName: string;
+    lastName: string;
+    fullName: string;
+    party: string;
+    state: string;
+    district?: number;
+    chamber: 'House' | 'Senate';
+    imageUrl?: string;
+    officialWebsiteUrl?: string;
+    phoneNumber?: string;
+    officeAddress?: string;
+    currentMember: boolean;
+    updateDate?: string;
+  } | null;
+  isStale: boolean;
+  staleReason?: string;
+  error?: string;
+}
+
+export async function refreshMemberFromCongressGov(
+  bioguideId: string
+): Promise<APIResponse<MemberRefreshResponse>> {
+  try {
+    const url = `/api/members/${encodeURIComponent(bioguideId)}/refresh`;
+    console.log('[refreshMemberFromCongressGov] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[refreshMemberFromCongressGov] Response status:', response.status);
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error('[refreshMemberFromCongressGov] Error response:', result);
+      return {
+        success: false,
+        data: result,
+        error: {
+          code: response.status === 404 ? 'NOT_FOUND' : 'API_ERROR',
+          message: result.error || 'Failed to refresh member data',
+        },
+      };
+    }
+
+    console.log('[refreshMemberFromCongressGov] Success, isStale:', result.isStale);
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[refreshMemberFromCongressGov] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to refresh member data',
+      },
+    };
+  }
+}
+
+/**
  * Get co-sponsored legislation for a member by bioguide ID
  */
 export async function getMemberCosponsoredLegislation(
@@ -2226,6 +2300,193 @@ export async function getStateLegislatorById(legislatorId: string): Promise<APIR
       error: {
         code: 'FETCH_ERROR',
         message: error instanceof Error ? error.message : 'Failed to get state legislator',
+      },
+    };
+  }
+}
+
+// ============================================================================
+// Campaign Finance APIs
+// ============================================================================
+
+/**
+ * Campaign finance contribution by employer
+ */
+export interface ContributionByEmployer {
+  committee_id: string;
+  cycle: number;
+  employer: string;
+  total: number;
+  count: number;
+}
+
+/**
+ * Campaign finance contribution by occupation
+ */
+export interface ContributionByOccupation {
+  committee_id: string;
+  cycle: number;
+  occupation: string;
+  total: number;
+  count: number;
+}
+
+/**
+ * Campaign finance contribution by state
+ */
+export interface ContributionByState {
+  committee_id: string;
+  cycle: number;
+  state: string;
+  state_full: string;
+  total: number;
+  count: number;
+}
+
+/**
+ * Campaign finance contribution by size
+ */
+export interface ContributionBySize {
+  size: number;
+  sizeLabel: string;
+  total: number;
+  count: number | null;
+}
+
+/**
+ * Campaign finance summary response
+ */
+export interface CampaignFinanceData {
+  candidateId: string;
+  committeeId: string;
+  opensecretsId?: string;
+  cycle: number;
+  availableCycles: number[];
+  totalRaised: number;
+  totalSpent: number;
+  cashOnHand: number;
+  debts: number;
+  individualContributions: number;
+  individualItemized: number;
+  individualUnitemized: number;
+  pacContributions: number;
+  partyContributions: number;
+  selfFinanced: number;
+  transfers: number;
+  coverageStart: string;
+  coverageEnd: string;
+  topContributorsByEmployer: ContributionByEmployer[];
+  topContributorsByOccupation: ContributionByOccupation[];
+  contributionsByState: ContributionByState[];
+  contributionsBySize: ContributionBySize[];
+  lastUpdated: string;
+  source: 'fec_api' | 'cache';
+}
+
+/**
+ * Get campaign finance data for a member by bioguide ID
+ *
+ * API ENDPOINT: GET /members/:bioguide_id/campaign-finance
+ * QUERY PARAMETERS: { cycle?: number } (defaults to 2024)
+ * SUCCESS RESPONSE (200): CampaignFinanceData
+ */
+export async function getMemberCampaignFinance(
+  bioguideId: string,
+  cycle?: number
+): Promise<APIResponse<CampaignFinanceData>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    const queryParams = new URLSearchParams();
+    if (cycle) queryParams.append('cycle', String(cycle));
+
+    const url = `${BILLS_API_URL}/members/${encodeURIComponent(bioguideId)}/campaign-finance?${queryParams.toString()}`;
+    console.log('[getMemberCampaignFinance] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getMemberCampaignFinance] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getMemberCampaignFinance] Error response:', errorText);
+      let errorMessage = 'Failed to get campaign finance data';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get campaign finance data';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getMemberCampaignFinance] Success');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getMemberCampaignFinance] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get campaign finance data',
+      },
+    };
+  }
+}
+
+/**
+ * Get available election cycles for a member's campaign finance data
+ *
+ * API ENDPOINT: GET /members/:bioguide_id/campaign-finance/cycles
+ * SUCCESS RESPONSE (200): { cycles: number[] }
+ */
+export async function getMemberCampaignFinanceCycles(
+  bioguideId: string
+): Promise<APIResponse<{ cycles: number[] }>> {
+  try {
+    const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+    const url = `${BILLS_API_URL}/members/${encodeURIComponent(bioguideId)}/campaign-finance/cycles`;
+    console.log('[getMemberCampaignFinanceCycles] Fetching from:', url);
+
+    const response = await fetch(url, {
+      method: 'GET',
+    });
+
+    console.log('[getMemberCampaignFinanceCycles] Response status:', response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[getMemberCampaignFinanceCycles] Error response:', errorText);
+      let errorMessage = 'Failed to get campaign finance cycles';
+      try {
+        const error = JSON.parse(errorText);
+        errorMessage = error.error || error.message || errorText;
+      } catch {
+        errorMessage = errorText || 'Failed to get campaign finance cycles';
+      }
+      throw new Error(errorMessage);
+    }
+
+    const result = await response.json();
+    console.log('[getMemberCampaignFinanceCycles] Success, found:', result.cycles?.length || 0, 'cycles');
+    return {
+      success: true,
+      data: result,
+    };
+  } catch (error) {
+    console.error('[getMemberCampaignFinanceCycles] Caught error:', error);
+    return {
+      success: false,
+      error: {
+        code: 'FETCH_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to get campaign finance cycles',
       },
     };
   }

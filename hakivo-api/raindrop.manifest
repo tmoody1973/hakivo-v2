@@ -81,6 +81,10 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "FEC_API_KEY" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -163,6 +167,11 @@ application "hakivo-new" {
 
   // Perplexity API client for news search with structured JSON output
   service "perplexity-client" {
+    visibility = "private"
+  }
+
+  // FEC API client for campaign finance data
+  service "fec-client" {
     visibility = "private"
   }
 

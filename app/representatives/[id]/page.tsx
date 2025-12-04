@@ -6,13 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { getMemberById, getMemberCosponsoredLegislation, getMemberVotingRecord } from '@/lib/api/backend'
-import type { VotingStats } from '@/lib/api/backend'
-import { VotingRecordTab, VotingAnalyticsTab } from '@/components/representatives'
+import { getMemberById, getMemberCosponsoredLegislation, getMemberVotingRecord, refreshMemberFromCongressGov } from '@/lib/api/backend'
+import type { VotingStats, MemberRefreshResponse } from '@/lib/api/backend'
+import { VotingRecordTab, VotingAnalyticsTab, CampaignFinanceTab } from '@/components/representatives'
 import {
   Loader2, Phone, MapPin, Globe, ExternalLink, Twitter, Facebook, Youtube, Instagram,
-  FileText, TrendingUp, Calendar, Users, CheckCircle2, XCircle, MinusCircle, BarChart3
+  FileText, TrendingUp, Calendar, Users, CheckCircle2, XCircle, MinusCircle, BarChart3,
+  AlertTriangle, RefreshCw, DollarSign
 } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import Link from 'next/link'
 
 export default function RepresentativeDetailPage({
@@ -29,6 +31,8 @@ export default function RepresentativeDetailPage({
   const [cosponsoredTotal, setCosponsoredTotal] = useState(0)
   const [votingStats, setVotingStats] = useState<VotingStats | null>(null)
   const [votingStatsLoaded, setVotingStatsLoaded] = useState(false)
+  const [refreshData, setRefreshData] = useState<MemberRefreshResponse | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   useEffect(() => {
     params.then(p => setBioguideId(p.id))
@@ -102,6 +106,45 @@ export default function RepresentativeDetailPage({
     }
   }, [member, votingStatsLoaded])
 
+  // Check Congress.gov for fresh data when member loads
+  const refreshFromCongressGov = async () => {
+    if (!bioguideId) return
+
+    setIsRefreshing(true)
+    try {
+      const response = await refreshMemberFromCongressGov(bioguideId)
+      if (response.success && response.data) {
+        const refreshResult = response.data
+        setRefreshData(refreshResult)
+
+        // If Congress.gov has fresh data, optionally update member display
+        if (refreshResult.member && !refreshResult.isStale) {
+          // Update key fields from fresh data
+          const freshMember = refreshResult.member
+          setMember((prev: any) => ({
+            ...prev,
+            party: freshMember.party || prev.party,
+            url: freshMember.officialWebsiteUrl || prev.url,
+            phoneNumber: freshMember.phoneNumber || prev.phoneNumber,
+            imageUrl: freshMember.imageUrl || prev.imageUrl,
+            currentMember: freshMember.currentMember,
+          }))
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh from Congress.gov:', err)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  // Auto-refresh from Congress.gov when member loads
+  useEffect(() => {
+    if (member && bioguideId && !refreshData) {
+      refreshFromCongressGov()
+    }
+  }, [member, bioguideId])
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 flex items-center justify-center min-h-[400px]">
@@ -132,6 +175,30 @@ export default function RepresentativeDetailPage({
 
   return (
     <div className="container mx-auto px-4 py-6 md:py-8 space-y-6">
+      {/* Stale Data Warning */}
+      {refreshData?.isStale && (
+        <Alert variant="destructive" className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-800 dark:text-amber-200">Outdated Information</AlertTitle>
+          <AlertDescription className="text-amber-700 dark:text-amber-300">
+            {refreshData.staleReason || 'This member may no longer be serving in Congress. The information shown may be outdated.'}
+            {refreshData.member?.currentMember === false && (
+              <span className="block mt-2">
+                This seat may now be held by a different representative. Check the current representative for this district.
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Refresh Status Indicator */}
+      {isRefreshing && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <span>Checking Congress.gov for updates...</span>
+        </div>
+      )}
+
       {/* Hero Section */}
       <Card className="overflow-hidden">
         <div className="relative bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-6 md:p-8">
@@ -157,12 +224,18 @@ export default function RepresentativeDetailPage({
                 <Badge variant={partyColor === 'blue' ? 'default' : 'secondary'} className="px-3 py-1">
                   {member.party}
                 </Badge>
-                {member.currentMember && (
-                  <Badge variant="outline" className="px-3 py-1">
+                {/* Show serving status based on Congress.gov refresh data if available */}
+                {refreshData?.member?.currentMember === false ? (
+                  <Badge variant="destructive" className="px-3 py-1">
+                    <XCircle className="h-3 w-3 mr-1" />
+                    No Longer Serving
+                  </Badge>
+                ) : member.currentMember ? (
+                  <Badge variant="outline" className="px-3 py-1 border-green-500 text-green-700 dark:text-green-400">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
                     Currently Serving
                   </Badge>
-                )}
+                ) : null}
               </div>
 
               {/* Contact Actions - Desktop */}
@@ -397,7 +470,7 @@ export default function RepresentativeDetailPage({
 
       {/* Tabs for Detailed Information */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className={`grid w-full ${member.chamber !== 'Senate' ? 'grid-cols-3 md:grid-cols-5' : 'grid-cols-2 md:grid-cols-3'}`}>
+        <TabsList className={`grid w-full ${member.chamber !== 'Senate' ? 'grid-cols-3 md:grid-cols-6' : 'grid-cols-2 md:grid-cols-4'}`}>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="sponsored">
             <span className="hidden sm:inline">Sponsored Bills</span>
@@ -412,6 +485,11 @@ export default function RepresentativeDetailPage({
             <Badge variant="secondary" className="ml-2 hidden md:inline-flex">
               {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
             </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="finance">
+            <DollarSign className="h-4 w-4 mr-1 hidden sm:inline" />
+            <span className="hidden sm:inline">Finance</span>
+            <span className="sm:hidden">Finance</span>
           </TabsTrigger>
           {member.chamber !== 'Senate' && (
             <>
@@ -647,6 +725,14 @@ export default function RepresentativeDetailPage({
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Campaign Finance Tab */}
+        <TabsContent value="finance" className="space-y-4">
+          <CampaignFinanceTab
+            memberId={bioguideId}
+            memberName={member.fullName}
+          />
         </TabsContent>
 
         {/* Voting Record Tab - Only shown for House members */}
