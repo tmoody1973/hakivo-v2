@@ -279,6 +279,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(STORAGE_KEYS.WORKOS_SESSION_ID);
       localStorage.removeItem(STORAGE_KEYS.USER);
 
+      // Clear C1 chat history to prevent data leakage between users
+      clearC1ChatData();
+
       // Clear React state
       setAuthState({
         accessToken: null,
@@ -358,4 +361,32 @@ export function useAuth(): AuthContextType {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+}
+
+/**
+ * Clear all C1 SDK localStorage data
+ * Prevents chat history leakage between different users
+ */
+function clearC1ChatData() {
+  if (typeof window === "undefined") return;
+
+  const keysToRemove: string[] = [];
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (
+      key.includes("c1-") ||
+      key.includes("thread") ||
+      key.includes("crayon") ||
+      key.includes("genui")
+    )) {
+      keysToRemove.push(key);
+    }
+  }
+
+  keysToRemove.forEach(key => {
+    localStorage.removeItem(key);
+  });
+
+  console.log(`[Auth] Cleared ${keysToRemove.length} C1 chat localStorage keys`);
 }
