@@ -36,7 +36,6 @@ const RAINDROP_CHAT_SERVICE =
 const raindropAI = createOpenAI({
   apiKey: process.env.RAINDROP_API_KEY || "raindrop-internal",
   baseURL: `${RAINDROP_CHAT_SERVICE}/v1`,
-  compatibility: "compatible",
 });
 
 /**

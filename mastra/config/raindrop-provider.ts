@@ -35,7 +35,6 @@ const RAINDROP_AI_ENDPOINT = `${RAINDROP_CHAT_SERVICE}/v1`;
 export const raindropAI = createOpenAI({
   apiKey: process.env.RAINDROP_API_KEY || "raindrop-internal",
   baseURL: RAINDROP_AI_ENDPOINT,
-  compatibility: "compatible", // Use OpenAI-compatible mode
 });
 
 /**

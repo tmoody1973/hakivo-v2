@@ -8,11 +8,8 @@ import { NextRequest } from "next/server";
 import { mastra } from "@/mastra";
 
 export const POST = async (req: NextRequest) => {
-  // Get local Mastra agents - using the congressional assistant
-  const mastraAgents = MastraAgent.getLocalAgents({
-    mastra,
-    agentId: "congressionalAssistant",
-  });
+  // Get local Mastra agents - agent is selected via frontend <CopilotKit agent="...">
+  const mastraAgents = MastraAgent.getLocalAgents({ mastra });
 
   const runtime = new CopilotRuntime({
     agents: mastraAgents,
