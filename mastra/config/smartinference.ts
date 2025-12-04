@@ -11,8 +11,17 @@
  * - Creative: UI generation and creative content (thesys C1)
  */
 
-import { openai } from "@ai-sdk/openai";
+import { openai, createOpenAI } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
+
+/**
+ * Thesys C1 Provider - Uses OpenAI-compatible API with thesys baseURL
+ * Requires THESYS_API_KEY environment variable
+ */
+const thesysC1 = createOpenAI({
+  apiKey: process.env.THESYS_API_KEY,
+  baseURL: "https://api.thesys.dev/v1/embed",
+});
 
 // Model configuration types
 export type ModelTier = "fast" | "standard" | "complex" | "creative";
@@ -66,11 +75,11 @@ export const MODEL_CONFIGS: Record<ModelTier, ModelConfig> = {
     description: "Deep analysis and complex reasoning",
   },
   creative: {
-    provider: "openai",
-    modelId: "gpt-4o",
+    provider: "thesys",
+    modelId: "c1/anthropic/claude-sonnet-4/v-20250815",
     maxTokens: 4000,
     temperature: 0.8,
-    description: "Creative content and UI generation",
+    description: "Generative UI powered by thesys C1",
   },
 };
 
@@ -205,6 +214,9 @@ export function getMastraModel(tier: ModelTier = "standard") {
       return openai(config.modelId);
     case "anthropic":
       return anthropic(config.modelId);
+    case "thesys":
+      // Use thesys C1 provider for generative UI
+      return thesysC1.chat(config.modelId);
     default:
       // Default to OpenAI gpt-4o
       return openai("gpt-4o");
@@ -303,6 +315,7 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 }, // per 1K tokens
   "gpt-4o": { input: 0.0025, output: 0.01 },
   "claude-sonnet-4-5-20250929": { input: 0.003, output: 0.015 },
+  "c1/anthropic/claude-sonnet-4/v-20250815": { input: 0.003, output: 0.015 }, // thesys C1
 };
 
 /**
