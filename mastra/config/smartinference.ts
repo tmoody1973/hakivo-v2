@@ -75,28 +75,30 @@ interface TaskClassification {
   reasoning: string;
 }
 
-// Available models by tier - Now powered by Raindrop SmartInference
+// Available models by tier
+// Note: Raindrop SmartInference is for internal handlers only (env.AI)
+// External services use OpenAI/Anthropic directly
 export const MODEL_CONFIGS: Record<ModelTier, ModelConfig> = {
   fast: {
-    provider: "raindrop",
-    modelId: "llama-3.1-8b-instant", // Fast, efficient model via Raindrop
+    provider: "openai",
+    modelId: "gpt-4o-mini", // Fast, efficient model
     maxTokens: 1000,
     temperature: 0.7,
-    description: "Fast responses via Raindrop SmartInference (Llama 3.1 8B)",
+    description: "Fast responses via OpenAI GPT-4o-mini",
   },
   standard: {
-    provider: "raindrop",
-    modelId: "llama-3.3-70b", // High-quality model via Raindrop
+    provider: "openai",
+    modelId: "gpt-4o", // High-quality model for conversational AI
     maxTokens: 2000,
     temperature: 0.7,
-    description: "Balanced performance via Raindrop SmartInference (Llama 3.3 70B)",
+    description: "Balanced performance via OpenAI GPT-4o",
   },
   complex: {
-    provider: "raindrop",
-    modelId: "deepseek-r1", // Advanced reasoning model via Raindrop
+    provider: "anthropic",
+    modelId: "claude-sonnet-4-20250514", // Advanced reasoning
     maxTokens: 4000,
     temperature: 0.5,
-    description: "Deep reasoning via Raindrop SmartInference (DeepSeek R1)",
+    description: "Deep reasoning via Claude Sonnet 4",
   },
   creative: {
     provider: "thesys",
@@ -230,16 +232,13 @@ export function getModelForQuery(query: string): ModelConfig & { tier: ModelTier
 /**
  * Get Mastra-compatible model instance for a tier
  *
- * Now defaults to Raindrop SmartInference for unified AI access.
- * This gives you access to 50+ models through one endpoint.
+ * Uses OpenAI/Anthropic for external API access.
+ * Raindrop SmartInference is only available inside Raindrop handlers (env.AI).
  */
 export function getMastraModel(tier: ModelTier = "standard") {
   const config = MODEL_CONFIGS[tier];
 
   switch (config.provider) {
-    case "raindrop":
-      // Use Raindrop SmartInference - unified AI gateway
-      return raindropAI(config.modelId);
     case "openai":
       return openai(config.modelId);
     case "anthropic":
@@ -247,9 +246,13 @@ export function getMastraModel(tier: ModelTier = "standard") {
     case "thesys":
       // Use thesys C1 provider for generative UI
       return thesysC1.chat(config.modelId);
+    case "raindrop":
+      // Raindrop SmartInference - only works inside Raindrop handlers
+      // Falls back to OpenAI for external use
+      return openai("gpt-4o");
     default:
-      // Default to Raindrop SmartInference with Llama 3.3 70B
-      return raindropAI("llama-3.3-70b");
+      // Default to OpenAI GPT-4o
+      return openai("gpt-4o");
   }
 }
 
