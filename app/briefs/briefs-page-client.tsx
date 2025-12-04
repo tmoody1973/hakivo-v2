@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Search, Play, Pause } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { ListSkeleton } from "@/components/ui/loading-skeleton";
 import { useOnline } from "@/lib/hooks/use-online";
+import { useAudioPlayer, type AudioTrack } from "@/lib/audio/audio-player-context";
 
 interface Brief {
   id: number;
@@ -21,6 +22,8 @@ interface Brief {
   topics: string[];
   description: string;
   imageUrl?: string;
+  audioUrl?: string;
+  audioDuration?: number;
 }
 
 interface BriefsPageClientProps {
@@ -37,6 +40,36 @@ export const BriefsPageClient: FC<BriefsPageClientProps> = ({ initialBriefs = []
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const isOnline = useOnline();
+  const { play, pause, currentTrack, isPlaying } = useAudioPlayer();
+
+  // Handle play button click - plays through persistent player
+  const handlePlayBrief = (brief: Brief) => {
+    if (!brief.audioUrl) return;
+
+    // If this brief is currently playing, pause it
+    if (currentTrack?.id === String(brief.id) && isPlaying) {
+      pause();
+      return;
+    }
+
+    // Play this brief through the persistent player
+    const track: AudioTrack = {
+      id: String(brief.id),
+      title: brief.title,
+      type: 'brief',
+      audioUrl: brief.audioUrl,
+      imageUrl: brief.imageUrl,
+      duration: brief.audioDuration,
+      createdAt: brief.date,
+    };
+
+    play(track);
+  };
+
+  // Check if a specific brief is currently playing
+  const isBriefPlaying = (briefId: number) => {
+    return currentTrack?.id === String(briefId) && isPlaying;
+  };
 
   // Fetch briefs
   const fetchBriefs = async () => {
@@ -323,8 +356,22 @@ export const BriefsPageClient: FC<BriefsPageClientProps> = ({ initialBriefs = []
                     <Button size="sm" variant="outline" asChild>
                       <a href={`/briefs/${brief.id}`}>View</a>
                     </Button>
-                    <Button size="sm">
-                      Play
+                    <Button
+                      size="sm"
+                      onClick={() => handlePlayBrief(brief)}
+                      disabled={!brief.audioUrl}
+                    >
+                      {isBriefPlaying(brief.id) ? (
+                        <>
+                          <Pause className="mr-1 h-3 w-3" />
+                          Pause
+                        </>
+                      ) : (
+                        <>
+                          <Play className="mr-1 h-3 w-3" />
+                          Play
+                        </>
+                      )}
                     </Button>
                   </div>
                 </div>

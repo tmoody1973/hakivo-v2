@@ -72,6 +72,17 @@ export {
   audioBriefingTools,
 } from "./audio-briefing";
 
+// Congressional Analytics Tools - Aggregation and journalist-style queries
+export {
+  getMostProlificSponsorsTool,
+  getPolicyAreaBreakdownTool,
+  getLegislativeProductivityTool,
+  getPartisanBreakdownTool,
+  getRecentBillsTool,
+  searchBillsByStatusTool,
+  congressionalAnalyticsTools,
+} from "./congressional-analytics";
+
 // Re-export all tools as a single object for agent configuration
 import { smartSqlTools } from "./smartsql";
 import { smartBucketTools } from "./smartbucket";
@@ -80,6 +91,7 @@ import { perplexityTools } from "./perplexity";
 import { openstatesTools } from "./openstates";
 import { c1ArtifactsTools } from "./c1-artifacts";
 import { audioBriefingTools } from "./audio-briefing";
+import { congressionalAnalyticsTools } from "./congressional-analytics";
 
 export const allTools = {
   ...smartSqlTools,
@@ -89,4 +101,5 @@ export const allTools = {
   ...openstatesTools,
   ...c1ArtifactsTools,
   ...audioBriefingTools,
+  ...congressionalAnalyticsTools,
 };
