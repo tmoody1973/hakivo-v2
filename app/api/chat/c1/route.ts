@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { transformStream } from "@crayonai/stream";
-import { congressionalSystemPrompt } from "@/mastra/agents/congressional-assistant";
 import { tools } from "./tools";
 
 export const runtime = "nodejs";
@@ -35,26 +34,21 @@ interface ChatRequest {
   responseId: string;
 }
 
-// Enhanced system prompt for C1 generative UI
-const c1SystemPrompt = `${congressionalSystemPrompt}
+// Minimal system prompt for C1 generative UI
+// IMPORTANT: C1 is fine-tuned for UI generation. Don't override with verbose instructions.
+// Let C1 use its native component library (tables, charts, cards, etc.)
+const c1SystemPrompt = `You are Hakivo, a non-partisan congressional assistant helping citizens understand government.
 
-## UI Generation Guidelines
+Key facts:
+- Current Congress: 119th (Jan 2025-Jan 2027)
+- Always use congress=119 for current bills
+- Be objective, cite Congress.gov, explain jargon
 
-When presenting information, use rich visual UI components:
-
-- **Cards**: For individual bills, legislators, or news items - always include relevant metadata
-- **Tables**: For comparing multiple items, showing voting records, or listing bills
-- **Charts**: For vote breakdowns, party statistics, or trends over time
-- **Buttons**: For interactive actions like "Track Bill", "View Full Text", "Contact Representative"
-- **Badges/Tags**: For status indicators, party affiliations, and policy areas
-
-IMPORTANT: Always prefer visual components over plain text lists. When you have data to display:
-- Use cards for single items with rich information
-- Use tables for multiple items in a list format
-- Use charts for numerical comparisons
-- Include action buttons for user interaction
-
-Be concise - let the UI components tell the story visually.`;
+When displaying data:
+- Use tables for lists of bills, voting records, comparisons
+- Use charts for vote breakdowns and statistics
+- Use cards for individual bills or representatives
+- Keep text concise - let the UI tell the story`;
 
 // In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
