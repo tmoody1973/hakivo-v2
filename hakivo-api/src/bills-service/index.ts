@@ -3254,6 +3254,408 @@ app.post('/admin/sync-state-bills', async (c) => {
   }
 });
 
+// ============================================================================
+// Campaign Finance Endpoints
+// ============================================================================
+
+/**
+ * Helper function to get size bucket label
+ */
+function getSizeLabel(size: number): string {
+  switch (size) {
+    case 0: return 'Under $200';
+    case 200: return '$200-$499';
+    case 500: return '$500-$999';
+    case 1000: return '$1,000-$1,999';
+    case 2000: return '$2,000+';
+    default: return `$${size}+`;
+  }
+}
+
+/**
+ * Simple string hash function for creating IDs
+ */
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Background function to cache campaign finance data
+ */
+async function cacheCampaignFinanceInBackground(
+  db: any,
+  bioguideId: string,
+  cycle: number,
+  data: any,
+  opensecretsId?: string
+) {
+  try {
+    const summaryId = `${bioguideId}-${cycle}`;
+
+    // Insert summary
+    await db
+      .prepare(`
+        INSERT OR REPLACE INTO campaign_finance_summary (
+          id, bioguide_id, fec_candidate_id, fec_committee_id, opensecrets_id, cycle,
+          total_raised, total_spent, cash_on_hand, debts,
+          individual_contributions, individual_itemized, individual_unitemized,
+          pac_contributions, party_contributions, self_financed,
+          coverage_start, coverage_end, last_synced_at, sync_status, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'completed', datetime('now'))
+      `)
+      .bind(
+        summaryId,
+        bioguideId,
+        data.candidateId,
+        data.committeeId,
+        opensecretsId || null,
+        cycle,
+        data.totalRaised,
+        data.totalSpent,
+        data.cashOnHand,
+        data.debts,
+        data.individualContributions,
+        0, // itemized - not tracked separately
+        0, // unitemized - not tracked separately
+        data.pacContributions,
+        data.partyContributions,
+        data.selfFinanced,
+        data.coverageStart,
+        data.coverageEnd
+      )
+      .run();
+
+    // Insert employer contributions
+    for (let i = 0; i < data.topContributorsByEmployer.length; i++) {
+      const contrib = data.topContributorsByEmployer[i];
+      const contribId = `${bioguideId}-${cycle}-${hashString(contrib.employer)}`;
+      await db
+        .prepare(`
+          INSERT OR REPLACE INTO campaign_contributors_employer (
+            id, bioguide_id, cycle, employer, total_amount, contribution_count, rank, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `)
+        .bind(contribId, bioguideId, cycle, contrib.employer, contrib.total, contrib.count, i + 1)
+        .run();
+    }
+
+    // Insert occupation contributions
+    for (let i = 0; i < data.topContributorsByOccupation.length; i++) {
+      const contrib = data.topContributorsByOccupation[i];
+      const contribId = `${bioguideId}-${cycle}-${hashString(contrib.occupation)}`;
+      await db
+        .prepare(`
+          INSERT OR REPLACE INTO campaign_contributors_occupation (
+            id, bioguide_id, cycle, occupation, total_amount, contribution_count, rank, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `)
+        .bind(contribId, bioguideId, cycle, contrib.occupation, contrib.total, contrib.count, i + 1)
+        .run();
+    }
+
+    // Insert state contributions
+    for (const contrib of data.contributionsByState) {
+      const contribId = `${bioguideId}-${cycle}-${contrib.state}`;
+      await db
+        .prepare(`
+          INSERT OR REPLACE INTO campaign_contributions_state (
+            id, bioguide_id, cycle, state, state_name, total_amount, contribution_count, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `)
+        .bind(contribId, bioguideId, cycle, contrib.state, contrib.state_full, contrib.total, contrib.count)
+        .run();
+    }
+
+    // Insert size contributions
+    for (const contrib of data.contributionsBySize) {
+      const contribId = `${bioguideId}-${cycle}-${contrib.size}`;
+      await db
+        .prepare(`
+          INSERT OR REPLACE INTO campaign_contributions_size (
+            id, bioguide_id, cycle, size_bucket, size_label, total_amount, contribution_count, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `)
+        .bind(contribId, bioguideId, cycle, contrib.size, getSizeLabel(contrib.size), contrib.total, contrib.count)
+        .run();
+    }
+
+    console.log(`Cached campaign finance for ${bioguideId} (${cycle})`);
+  } catch (error) {
+    console.error('Error caching campaign finance:', error);
+    throw error;
+  }
+}
+
+/**
+ * GET /members/:bioguide_id/campaign-finance
+ * Get campaign finance data for a member from FEC
+ * Checks cache first, fetches from FEC API if stale/missing
+ */
+app.get('/members/:bioguide_id/campaign-finance', async (c) => {
+  try {
+    const bioguideId = c.req.param('bioguide_id');
+    const db = c.env.APP_DB;
+    const fecClient = c.env.FEC_CLIENT;
+
+    // Query params
+    const cycle = parseInt(c.req.query('cycle') || '2024', 10);
+    const forceRefresh = c.req.query('refresh') === 'true';
+
+    // Check if member exists
+    const member = await db
+      .prepare('SELECT bioguide_id, first_name, last_name, party, state, district, opensecrets_id FROM members WHERE bioguide_id = ?')
+      .bind(bioguideId)
+      .first() as any;
+
+    if (!member) {
+      return c.json({
+        error: 'Member not found',
+        message: `No member found with bioguide_id: ${bioguideId}`
+      }, 404);
+    }
+
+    const chamber = member.district !== null ? 'House' : 'Senate';
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      try {
+        const cached = await db
+          .prepare(`
+            SELECT * FROM campaign_finance_summary
+            WHERE bioguide_id = ? AND cycle = ?
+            AND datetime(last_synced_at) > datetime('now', '-24 hours')
+          `)
+          .bind(bioguideId, cycle)
+          .first() as any;
+
+        if (cached) {
+          console.log(`Using cached campaign finance for ${bioguideId} (${cycle})`);
+
+          // Get cached contributors
+          const [employerContribs, occupationContribs, stateContribs, sizeContribs] = await Promise.all([
+            db.prepare(`
+              SELECT employer, total_amount, contribution_count, rank
+              FROM campaign_contributors_employer
+              WHERE bioguide_id = ? AND cycle = ?
+              ORDER BY rank ASC
+              LIMIT 25
+            `).bind(bioguideId, cycle).all(),
+            db.prepare(`
+              SELECT occupation, total_amount, contribution_count, rank
+              FROM campaign_contributors_occupation
+              WHERE bioguide_id = ? AND cycle = ?
+              ORDER BY rank ASC
+              LIMIT 25
+            `).bind(bioguideId, cycle).all(),
+            db.prepare(`
+              SELECT state, state_name, total_amount, contribution_count
+              FROM campaign_contributions_state
+              WHERE bioguide_id = ? AND cycle = ?
+              ORDER BY total_amount DESC
+            `).bind(bioguideId, cycle).all(),
+            db.prepare(`
+              SELECT size_bucket, size_label, total_amount, contribution_count
+              FROM campaign_contributions_size
+              WHERE bioguide_id = ? AND cycle = ?
+              ORDER BY size_bucket ASC
+            `).bind(bioguideId, cycle).all()
+          ]);
+
+          return c.json({
+            success: true,
+            member: {
+              bioguideId: member.bioguide_id,
+              fullName: `${member.first_name} ${member.last_name}`,
+              party: member.party,
+              state: member.state,
+              chamber
+            },
+            cycle,
+            candidateId: cached.fec_candidate_id,
+            opensecretsId: cached.opensecrets_id,
+            totalRaised: cached.total_raised,
+            totalSpent: cached.total_spent,
+            cashOnHand: cached.cash_on_hand,
+            debts: cached.debts,
+            individualContributions: cached.individual_contributions,
+            pacContributions: cached.pac_contributions,
+            partyContributions: cached.party_contributions,
+            selfFinanced: cached.self_financed,
+            coverageStart: cached.coverage_start,
+            coverageEnd: cached.coverage_end,
+            topContributorsByEmployer: (employerContribs.results || []).map((r: any) => ({
+              employer: r.employer,
+              total: r.total_amount,
+              count: r.contribution_count
+            })),
+            topContributorsByOccupation: (occupationContribs.results || []).map((r: any) => ({
+              occupation: r.occupation,
+              total: r.total_amount,
+              count: r.contribution_count
+            })),
+            contributionsByState: (stateContribs.results || []).map((r: any) => ({
+              state: r.state,
+              stateName: r.state_name,
+              total: r.total_amount,
+              count: r.contribution_count
+            })),
+            contributionsBySize: (sizeContribs.results || []).map((r: any) => ({
+              size: r.size_bucket,
+              sizeLabel: r.size_label,
+              total: r.total_amount,
+              count: r.contribution_count
+            })),
+            availableCycles: [2024, 2022, 2020, 2018],
+            source: 'cache',
+            lastUpdated: cached.last_synced_at
+          });
+        }
+      } catch (e) {
+        console.log('Cache lookup failed, fetching from FEC:', e);
+      }
+    }
+
+    // Fetch from FEC API
+    console.log(`Fetching campaign finance for ${bioguideId} (${cycle}) from FEC API`);
+
+    const financeData = await fecClient.getMemberCampaignFinance(bioguideId, cycle);
+
+    if (!financeData) {
+      // Try to get OpenSecrets URL even if FEC data not available
+      const openSecretsUrl = await fecClient.getOpenSecretsUrl(bioguideId);
+
+      return c.json({
+        success: true,
+        member: {
+          bioguideId: member.bioguide_id,
+          fullName: `${member.first_name} ${member.last_name}`,
+          party: member.party,
+          state: member.state,
+          chamber
+        },
+        cycle,
+        candidateId: null,
+        opensecretsId: openSecretsUrl ? openSecretsUrl.split('cid=')[1] : null,
+        totalRaised: 0,
+        totalSpent: 0,
+        cashOnHand: 0,
+        debts: 0,
+        individualContributions: 0,
+        pacContributions: 0,
+        partyContributions: 0,
+        selfFinanced: 0,
+        coverageStart: null,
+        coverageEnd: null,
+        topContributorsByEmployer: [],
+        topContributorsByOccupation: [],
+        contributionsByState: [],
+        contributionsBySize: [],
+        availableCycles: [2024, 2022, 2020, 2018],
+        source: 'none',
+        error: {
+          message: 'No FEC campaign finance data available for this member and cycle'
+        }
+      });
+    }
+
+    // Cache the data in background
+    cacheCampaignFinanceInBackground(db, bioguideId, cycle, financeData, member.opensecrets_id).catch(e => {
+      console.error('Failed to cache campaign finance:', e);
+    });
+
+    // Get OpenSecrets URL
+    const openSecretsUrl = await fecClient.getOpenSecretsUrl(bioguideId);
+
+    return c.json({
+      success: true,
+      member: {
+        bioguideId: member.bioguide_id,
+        fullName: `${member.first_name} ${member.last_name}`,
+        party: member.party,
+        state: member.state,
+        chamber
+      },
+      cycle,
+      candidateId: financeData.candidateId,
+      opensecretsId: openSecretsUrl ? openSecretsUrl.split('cid=')[1] : null,
+      totalRaised: financeData.totalRaised,
+      totalSpent: financeData.totalSpent,
+      cashOnHand: financeData.cashOnHand,
+      debts: financeData.debts,
+      individualContributions: financeData.individualContributions,
+      pacContributions: financeData.pacContributions,
+      partyContributions: financeData.partyContributions,
+      selfFinanced: financeData.selfFinanced,
+      coverageStart: financeData.coverageStart,
+      coverageEnd: financeData.coverageEnd,
+      topContributorsByEmployer: financeData.topContributorsByEmployer.map((c: any) => ({
+        employer: c.employer,
+        total: c.total,
+        count: c.count
+      })),
+      topContributorsByOccupation: financeData.topContributorsByOccupation.map((c: any) => ({
+        occupation: c.occupation,
+        total: c.total,
+        count: c.count
+      })),
+      contributionsByState: financeData.contributionsByState.map((c: any) => ({
+        state: c.state,
+        stateName: c.state_full,
+        total: c.total,
+        count: c.count
+      })),
+      contributionsBySize: financeData.contributionsBySize.map((c: any) => ({
+        size: c.size,
+        sizeLabel: getSizeLabel(c.size),
+        total: c.total,
+        count: c.count
+      })),
+      availableCycles: [2024, 2022, 2020, 2018],
+      source: 'fec_api',
+      lastUpdated: new Date().toISOString()
+    });
+
+  } catch (error: any) {
+    console.error('Failed to get campaign finance:', error);
+    return c.json({
+      error: 'Failed to get campaign finance data',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * GET /members/:bioguide_id/campaign-finance/cycles
+ * Get available election cycles for a member
+ */
+app.get('/members/:bioguide_id/campaign-finance/cycles', async (c) => {
+  try {
+    const bioguideId = c.req.param('bioguide_id');
+    const fecClient = c.env.FEC_CLIENT;
+
+    const cycles = await fecClient.getMemberElectionCycles(bioguideId);
+
+    return c.json({
+      success: true,
+      bioguideId,
+      cycles: cycles.sort((a: number, b: number) => b - a) // Sort descending (newest first)
+    });
+
+  } catch (error: any) {
+    console.error('Failed to get election cycles:', error);
+    return c.json({
+      error: 'Failed to get election cycles',
+      message: error.message
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);
