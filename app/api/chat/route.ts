@@ -50,7 +50,9 @@ export async function POST(request: Request) {
 
     // Stream the response
     console.log("[API] Starting stream for query:", promptWithContext.substring(0, 100));
+    console.log("[API] CEREBRAS_API_KEY set:", !!process.env.CEREBRAS_API_KEY);
     console.log("[API] OPENAI_API_KEY set:", !!process.env.OPENAI_API_KEY);
+    console.log("[API] ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
 
     let stream;
     let streamError: Error | null = null;
