@@ -57,7 +57,10 @@ export async function POST(request: Request) {
     let stream;
     let streamError: Error | null = null;
 
+    console.log("[API] Agent model info:", agent.model);
+
     try {
+      console.log("[API] Calling agent.stream()...");
       stream = await agent.stream(promptWithContext, {
         onError: ({ error }) => {
           console.error("[API] Stream onError callback:", error);
@@ -67,9 +70,10 @@ export async function POST(request: Request) {
           console.log("[API] Stream onFinish callback, text length:", result?.text?.length || 0);
         },
       });
-      console.log("[API] Stream created successfully");
+      console.log("[API] Stream created successfully, type:", typeof stream);
     } catch (err) {
       console.error("[API] Failed to create stream:", err);
+      console.error("[API] Error details:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
       streamError = err instanceof Error ? err : new Error(String(err));
     }
 
