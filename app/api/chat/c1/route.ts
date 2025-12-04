@@ -89,47 +89,12 @@ export async function POST(request: NextRequest) {
 
         let fullContent = "";
 
-        // Process the stream
-        for await (const chunk of stream.fullStream) {
-          // Cast to unknown first for flexible type handling
-          const chunkAny = chunk as unknown as { type: string; payload?: { textDelta?: string; toolName?: string } };
-
-          if (chunkAny.type === "text-delta") {
-            const textDelta = chunkAny.payload?.textDelta || "";
-            if (textDelta) {
-              fullContent += textDelta;
-              // Stream content incrementally
-              await c1Response.writeContent(textDelta);
-            }
-          } else if (chunkAny.type === "tool-call") {
-            // Progress indicator for tool execution
-            const toolName = chunkAny.payload?.toolName;
-            if (toolName) {
-              const progressMessages: Record<string, { title: string; description: string }> = {
-                smartSql: { title: "Searching Database", description: "Querying congressional data..." },
-                getBillDetail: { title: "Fetching Bill", description: "Getting bill details..." },
-                getMemberDetail: { title: "Member Lookup", description: "Finding member information..." },
-                semanticSearch: { title: "Semantic Search", description: "Searching bill text..." },
-                billTextRag: { title: "Analyzing", description: "Reading bill content..." },
-                compareBills: { title: "Comparing", description: "Analyzing differences..." },
-                searchNews: { title: "Searching News", description: "Finding current coverage..." },
-                searchCongressionalNews: { title: "Congressional News", description: "Getting latest updates..." },
-                webSearch: { title: "Web Search", description: "Searching the web..." },
-                searchStateBills: { title: "State Bills", description: "Searching state legislation..." },
-                getStateBillDetails: { title: "State Bill Details", description: "Getting state bill info..." },
-                getStateLegislatorsByLocation: { title: "State Legislators", description: "Finding your representatives..." },
-                trackBill: { title: "Tracking", description: "Setting up bill tracking..." },
-                getUserContext: { title: "Context", description: "Loading your preferences..." },
-                getTrackedBills: { title: "Your Bills", description: "Getting your tracked bills..." },
-              };
-              if (progressMessages[toolName]) {
-                await c1Response.writeThinkItem({
-                  title: progressMessages[toolName].title,
-                  description: progressMessages[toolName].description,
-                  ephemeral: true,
-                });
-              }
-            }
+        // Process the text stream - Mastra's textStream yields string chunks directly
+        for await (const chunk of stream.textStream) {
+          if (chunk) {
+            fullContent += chunk;
+            // Stream content incrementally to C1
+            await c1Response.writeContent(chunk);
           }
         }
 
