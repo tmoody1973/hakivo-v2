@@ -49,27 +49,99 @@ export async function POST(request: Request) {
       : lastMessage.content;
 
     // Stream the response
-    const stream = await agent.stream(promptWithContext);
+    console.log("[API] Starting stream for query:", promptWithContext.substring(0, 100));
+
+    let stream;
+    try {
+      stream = await agent.stream(promptWithContext);
+      console.log("[API] Stream created, keys:", Object.keys(stream));
+    } catch (streamError) {
+      console.error("[API] Failed to create stream:", streamError);
+      // Return error as SSE
+      const encoder = new TextEncoder();
+      const errorStream = new ReadableStream({
+        start(controller) {
+          const errorMsg = streamError instanceof Error ? streamError.message : "Failed to create stream";
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`));
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
+        }
+      });
+      return new Response(errorStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
 
     // Create a ReadableStream for SSE
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of stream.textStream) {
-            // Send as SSE data event
-            const data = JSON.stringify({ content: chunk });
-            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          let chunkCount = 0;
+          let totalContent = "";
+
+          // Try fullStream first for more detailed events
+          if (stream.fullStream) {
+            console.log("[API] Using fullStream");
+            for await (const part of stream.fullStream) {
+              console.log("[API] Part type:", part.type, "payload:", JSON.stringify((part as unknown as { payload?: unknown }).payload)?.substring(0, 100));
+              if (part.type === "text-delta") {
+                // Mastra payload may be string or object - extract the text
+                const payload = (part as unknown as { payload: unknown }).payload;
+                const textContent = typeof payload === "string" ? payload :
+                  (payload && typeof payload === "object" && "textDelta" in payload)
+                    ? String((payload as { textDelta: string }).textDelta)
+                    : String(payload);
+                if (textContent) {
+                  chunkCount++;
+                  totalContent += textContent;
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: textContent })}\n\n`));
+                }
+              } else if (part.type === "error") {
+                console.error("[API] Stream error part:", part);
+                const errorPayload = (part as unknown as { payload: unknown }).payload;
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(errorPayload) })}\n\n`));
+              }
+            }
+          } else if (stream.textStream) {
+            console.log("[API] Using textStream");
+            for await (const chunk of stream.textStream) {
+              chunkCount++;
+              totalContent += chunk;
+              console.log("[API] Chunk", chunkCount, ":", chunk?.substring(0, 50));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
+            }
+          } else {
+            // Fallback to getting full text
+            console.log("[API] No stream available, trying text property");
+            const text = await stream.text;
+            if (text) {
+              console.log("[API] Got text:", text.substring(0, 100));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
+              totalContent = text;
+            }
           }
-          // Send done event
+
+          console.log("[API] Stream complete, chunks:", chunkCount, "total length:", totalContent.length);
+
+          if (totalContent.length === 0) {
+            console.error("[API] WARNING: No content was generated!");
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "No response generated. Check API key configuration." })}\n\n`));
+          }
+
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         } catch (error) {
-          console.error("Streaming error:", error);
+          console.error("[API] Streaming error:", error);
           const errorData = JSON.stringify({
             error: error instanceof Error ? error.message : "Streaming failed",
           });
           controller.enqueue(encoder.encode(`data: ${errorData}\n\n`));
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         }
       },
