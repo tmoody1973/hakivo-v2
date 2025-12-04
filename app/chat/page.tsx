@@ -5,6 +5,7 @@ import { Send, Sparkles, Volume2, RotateCcw, FileText, Users, BookOpen, Loader2,
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import {
   componentRegistry,
   type ComponentName,
@@ -194,6 +195,7 @@ function MessageContent({ content }: { content: string }) {
           return (
             <div key={index} className="prose prose-sm prose-invert max-w-none">
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   // Style headings
                   h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2">{children}</h1>,
@@ -216,6 +218,17 @@ function MessageContent({ content }: { content: string }) {
                       {children}
                     </a>
                   ),
+                  // Style tables
+                  table: ({ children }) => (
+                    <div className="overflow-x-auto my-3 rounded-lg border border-border">
+                      <table className="w-full text-sm">{children}</table>
+                    </div>
+                  ),
+                  thead: ({ children }) => <thead className="bg-muted/50 border-b border-border">{children}</thead>,
+                  tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
+                  tr: ({ children }) => <tr className="hover:bg-muted/30 transition-colors">{children}</tr>,
+                  th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-foreground whitespace-nowrap">{children}</th>,
+                  td: ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
                 }}
               >
                 {segment.content || ""}

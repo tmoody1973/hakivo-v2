@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { FileText, Users, Calendar, ChevronDown, ChevronUp, Bookmark, BookmarkCheck, ExternalLink } from "lucide-react"
+import Link from "next/link"
+import { FileText, Users, Calendar, ChevronDown, ChevronUp, Bookmark, BookmarkCheck, ExternalLink, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -25,6 +26,10 @@ interface BillCardProps {
   cosponsorsCount?: number
   summary?: string
   congressGovUrl?: string
+  /** Internal bill ID for linking to /bills/[id] page (e.g., "119-hr-5133") */
+  billId?: string
+  /** Congress number for constructing bill ID if not provided */
+  congress?: number
   isTracked?: boolean
   onTrack?: () => void
   onUntrack?: () => void
@@ -68,6 +73,20 @@ const partyColors: Record<string, string> = {
   "I": "bg-purple-500",
 }
 
+/** Helper to construct bill ID from bill number */
+function constructBillId(billNumber: string, congress?: number): string | null {
+  // billNumber format: "H.R. 5133" or "S. 1234" or "H.Res. 100"
+  const congressNum = congress || 119 // Default to current congress
+  const match = billNumber.match(/^([A-Z][A-Z.]*\.?)\s*(\d+)$/i)
+  if (!match) return null
+
+  // Convert type: "H.R." -> "hr", "S." -> "s", "H.Res." -> "hres"
+  const typeStr = match[1].toLowerCase().replace(/\./g, "").replace(/\s/g, "")
+  const num = match[2]
+
+  return `${congressNum}-${typeStr}-${num}`
+}
+
 export function BillCard({
   billNumber,
   title,
@@ -79,6 +98,8 @@ export function BillCard({
   cosponsorsCount = 0,
   summary,
   congressGovUrl,
+  billId,
+  congress,
   isTracked = false,
   onTrack,
   onUntrack,
@@ -87,6 +108,9 @@ export function BillCard({
 }: BillCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [tracking, setTracking] = useState(isTracked)
+
+  // Construct internal bill link URL
+  const internalBillId = billId || constructBillId(billNumber, congress)
 
   // Parse sponsor - handles both string and object formats
   const sponsor = parseSponsor(sponsorProp)
@@ -248,12 +272,26 @@ export function BillCard({
 
       {/* Actions */}
       <div className="px-4 py-3 flex items-center gap-2 border-t border-[var(--chat-border-subtle)] bg-[var(--chat-surface-elevated)]">
+        {/* View Bill Details - Primary action */}
+        {internalBillId && (
+          <Button
+            variant="default"
+            size="sm"
+            asChild
+            className="flex-1"
+          >
+            <Link href={`/bills/${internalBillId}`}>
+              <Eye className="h-4 w-4 mr-1.5" />
+              View Details
+            </Link>
+          </Button>
+        )}
         <Button
-          variant={tracking ? "secondary" : "default"}
+          variant={tracking ? "secondary" : "outline"}
           size="sm"
           onClick={handleTrackClick}
           className={cn(
-            "flex-1",
+            !internalBillId && "flex-1",
             tracking && "bg-primary/10 text-primary hover:bg-primary/20"
           )}
         >
@@ -265,7 +303,7 @@ export function BillCard({
           ) : (
             <>
               <Bookmark className="h-4 w-4 mr-1.5" />
-              Track Bill
+              Track
             </>
           )}
         </Button>
@@ -274,13 +312,14 @@ export function BillCard({
             variant="outline"
             size="sm"
             asChild
+            title="View on Congress.gov"
           >
             <a href={congressGovUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
         )}
-        {onViewDetails && (
+        {onViewDetails && !internalBillId && (
           <Button variant="outline" size="sm" onClick={onViewDetails}>
             Details
           </Button>
