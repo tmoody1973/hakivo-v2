@@ -374,6 +374,7 @@ export default function ChatPage() {
 
     try {
       // Call streaming API
+      console.log("[Chat] Sending request...")
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -381,6 +382,8 @@ export default function ChatPage() {
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       })
+
+      console.log("[Chat] Response status:", response.status)
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`)
@@ -398,13 +401,20 @@ export default function ChatPage() {
       const decoder = new TextDecoder()
       let streamedContent = ""
       let buffer = "" // Buffer for incomplete lines
+      let chunkCount = 0
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          console.log("[Chat] Stream done, total chunks:", chunkCount)
+          break
+        }
 
+        chunkCount++
         // Append new chunk to buffer
-        buffer += decoder.decode(value, { stream: true })
+        const decoded = decoder.decode(value, { stream: true })
+        buffer += decoded
+        console.log("[Chat] Chunk", chunkCount, "raw:", decoded.substring(0, 100))
 
         // Split buffer by newlines, keeping incomplete last line in buffer
         const lines = buffer.split("\n")
@@ -414,12 +424,16 @@ export default function ChatPage() {
           const trimmedLine = line.trim()
           if (trimmedLine.startsWith("data: ")) {
             const data = trimmedLine.slice(6)
-            if (data === "[DONE]") continue
+            if (data === "[DONE]") {
+              console.log("[Chat] Received [DONE]")
+              continue
+            }
 
             try {
               const parsed = JSON.parse(data)
               if (parsed.content) {
                 streamedContent += parsed.content
+                console.log("[Chat] Content so far:", streamedContent.substring(0, 50))
                 // Update the assistant message with streamed content
                 setMessages(prev =>
                   prev.map(m =>
@@ -430,10 +444,10 @@ export default function ChatPage() {
                 )
               }
               if (parsed.error) {
-                console.error("Stream error:", parsed.error)
+                console.error("[Chat] Stream error:", parsed.error)
               }
-            } catch {
-              // Ignore parse errors for incomplete chunks
+            } catch (e) {
+              console.warn("[Chat] Parse error:", e, "data:", data)
             }
           }
         }
@@ -460,8 +474,10 @@ export default function ChatPage() {
           }
         }
       }
+
+      console.log("[Chat] Final content length:", streamedContent.length)
     } catch (error) {
-      console.error("Chat error:", error)
+      console.error("[Chat] Error:", error)
       // Show error message
       setMessages(prev => [
         ...prev.filter(m => m.id !== assistantMessageId),
