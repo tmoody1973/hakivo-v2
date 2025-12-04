@@ -34,21 +34,9 @@ interface ChatRequest {
   responseId: string;
 }
 
-// Minimal system prompt for C1 generative UI
-// IMPORTANT: C1 is fine-tuned for UI generation. Don't override with verbose instructions.
-// Let C1 use its native component library (tables, charts, cards, etc.)
-const c1SystemPrompt = `You are Hakivo, a non-partisan congressional assistant helping citizens understand government.
-
-Key facts:
-- Current Congress: 119th (Jan 2025-Jan 2027)
-- Always use congress=119 for current bills
-- Be objective, cite Congress.gov, explain jargon
-
-When displaying data:
-- Use tables for lists of bills, voting records, comparisons
-- Use charts for vote breakdowns and statistics
-- Use cards for individual bills or representatives
-- Keep text concise - let the UI tell the story`;
+// MINIMAL system prompt - let C1 handle UI generation natively
+// The template uses just "You are a helpful assistant" and C1 generates UI
+const c1SystemPrompt = `You are a helpful assistant.`;
 
 // In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
@@ -181,13 +169,15 @@ export async function POST(req: NextRequest) {
 
     messageStore.addMessage(prompt);
 
+    // TEMPORARY: Disable tools to test if C1 generates UI without them
+    // Tools might be interfering with C1's UI generation
     const llmStream = await client.beta.chat.completions.runTools({
       model: "c1/anthropic/claude-sonnet-4/v-20250930",
       temperature: 0.5 as unknown as number,
       messages: messageStore.getOpenAICompatibleMessageList(),
       stream: true,
-      tool_choice: tools.length > 0 ? "auto" : "none",
-      tools,
+      tool_choice: "none",
+      tools: [],
     });
 
     const responseStream = transformStream(
