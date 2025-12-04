@@ -5,6 +5,7 @@ import { ConditionalNav } from "@/components/conditional-nav"
 import { ConditionalPlayer } from "@/components/conditional-player"
 import { AuthProvider } from "@/lib/auth/auth-context"
 import { AudioPlayerProvider } from "@/lib/audio/audio-player-context"
+import { C1Provider } from "@/components/c1"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -49,19 +50,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`} suppressHydrationWarning>
-        <AuthProvider>
-          <AudioPlayerProvider>
-            <div className="flex h-screen flex-col">
-              <ConditionalNav />
+        <C1Provider>
+          <AuthProvider>
+            <AudioPlayerProvider>
+              <div className="flex h-screen flex-col">
+                <ConditionalNav />
 
-              <main className="flex-1 overflow-auto pb-24">
-                {children}
-              </main>
+                <main className="flex-1 overflow-auto pb-24">
+                  {children}
+                </main>
 
-              <ConditionalPlayer />
-            </div>
-          </AudioPlayerProvider>
-        </AuthProvider>
+                <ConditionalPlayer />
+              </div>
+            </AudioPlayerProvider>
+          </AuthProvider>
+        </C1Provider>
         {/* Analytics component removed */}
       </body>
     </html>
