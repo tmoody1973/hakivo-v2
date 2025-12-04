@@ -9,8 +9,8 @@
 
 [build.environment]
   NODE_ENV = "production"
-  # Omit local .env files from secrets scanning
-  SECRETS_SCAN_OMIT_PATHS = ".env.local,hakivo-api/.env.local,hakivo-api/hakivo-api/.env.local"
+  # Omit local .env files and Netlify internal build output from secrets scanning
+  SECRETS_SCAN_OMIT_PATHS = ".env.local,hakivo-api/.env.local,hakivo-api/hakivo-api/.env.local,.netlify"
   # Production Raindrop Cloud backend URLs
   # API_BASE_URL is used for auth endpoints (signin, callback)
   NEXT_PUBLIC_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
