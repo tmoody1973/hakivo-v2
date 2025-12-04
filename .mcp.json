@@ -6,6 +6,9 @@
         "shadcn@latest",
         "mcp"
       ]
+    },
+    "Thesys": {
+      "url": "https://thesys-kd1f.mcp.tadata.com"
     }
   }
 }

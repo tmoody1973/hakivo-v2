@@ -278,10 +278,17 @@ app.post('/bills/semantic-search', async (c) => {
  * GET /bills/:id
  * Get bill by database ID (simpler endpoint than congress/type/number)
  */
-app.get('/bills/:id', async (c) => {
+app.get('/bills/:id', async (c, next) => {
+  const billId = c.req.param('id');
+
+  // Skip reserved paths that should be handled by later routes
+  const reservedPaths = ['search', 'interests', 'tracked', 'by-interests', 'semantic-search'];
+  if (reservedPaths.includes(billId.toLowerCase())) {
+    return next();
+  }
+
   try {
     const db = c.env.APP_DB;
-    const billId = c.req.param('id');
 
     // Get bill with sponsor details
     const bill = await db
@@ -3026,6 +3033,222 @@ app.get('/members/:bioguide_id/voting-record', async (c) => {
     console.error('Failed to get voting record:', error);
     return c.json({
       error: 'Failed to get voting record',
+      message: error.message
+    }, 500);
+  }
+});
+
+/**
+ * ADMIN ENDPOINTS
+ */
+
+/**
+ * POST /admin/sync-state-bills
+ * Manually trigger sync for state bills from OpenStates
+ * This is an admin endpoint for when bills need to be synced immediately
+ *
+ * Body: { state: string } - 2-letter state code (e.g., 'TX', 'CA')
+ */
+app.post('/admin/sync-state-bills', async (c) => {
+  try {
+    const body = await c.req.json();
+    const state = body.state?.toUpperCase();
+
+    if (!state || state.length !== 2) {
+      return c.json({
+        error: 'Invalid state',
+        message: 'state must be a 2-letter state code (e.g., TX, CA)'
+      }, 400);
+    }
+
+    console.log(`[AdminSync] Starting manual sync for state: ${state}`);
+
+    const db = c.env.APP_DB;
+    const apiKey = c.env.OPENSTATES_API_KEY;
+
+    if (!apiKey) {
+      return c.json({
+        error: 'Configuration error',
+        message: 'OpenStates API key not configured'
+      }, 500);
+    }
+
+    let totalSynced = 0;
+    let totalLegislators = 0;
+
+    // Sync legislators for the state using CSV bulk data
+    try {
+      console.log(`[AdminSync] Fetching legislators for ${state}...`);
+      const csvUrl = `https://data.openstates.org/people/current/${state.toLowerCase()}.csv`;
+      const csvResponse = await fetch(csvUrl);
+
+      if (csvResponse.ok) {
+        const csvText = await csvResponse.text();
+        const lines = csvText.split('\n');
+        const headerLine = lines[0];
+        if (headerLine) {
+        const headers = headerLine.split(',');
+
+        // Find column indices
+        const idIdx = headers.indexOf('id');
+        const nameIdx = headers.indexOf('name');
+        const partyIdx = headers.indexOf('current_party');
+        const roleIdx = headers.indexOf('current_role');
+        const districtIdx = headers.indexOf('current_district');
+        const chamberIdx = headers.indexOf('current_chamber');
+        const imageIdx = headers.indexOf('image');
+        const emailIdx = headers.indexOf('email');
+
+        for (let i = 1; i < lines.length; i++) {
+          const rawLine = lines[i];
+          if (!rawLine) continue;
+          const line = rawLine.trim();
+          if (!line) continue;
+
+          // Simple CSV parsing (handles basic cases)
+          const values = line.split(',');
+          if (values.length < headers.length) continue;
+
+          const legislator = {
+            id: values[idIdx] || '',
+            name: values[nameIdx] || '',
+            party: values[partyIdx] || '',
+            currentRoleTitle: values[roleIdx] || '',
+            currentRoleDistrict: values[districtIdx] || '',
+            currentRoleChamber: values[chamberIdx] || '',
+            imageUrl: values[imageIdx] || '',
+            email: values[emailIdx] || ''
+          };
+
+          if (!legislator.id || !legislator.name) continue;
+
+          try {
+            await db
+              .prepare(`
+                INSERT INTO state_legislators (
+                  id, name, party, state, current_role_title, current_role_district,
+                  current_role_chamber, jurisdiction_id, image_url, email, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  name = excluded.name,
+                  party = excluded.party,
+                  current_role_title = excluded.current_role_title,
+                  current_role_district = excluded.current_role_district,
+                  current_role_chamber = excluded.current_role_chamber,
+                  image_url = excluded.image_url,
+                  email = excluded.email,
+                  updated_at = excluded.updated_at
+              `)
+              .bind(
+                legislator.id,
+                legislator.name,
+                legislator.party,
+                state,
+                legislator.currentRoleTitle,
+                legislator.currentRoleDistrict,
+                legislator.currentRoleChamber,
+                null,
+                legislator.imageUrl || null,
+                legislator.email || null,
+                Date.now(),
+                Date.now()
+              )
+              .run();
+            totalLegislators++;
+          } catch (legError) {
+            console.error(`[AdminSync] Failed to insert legislator:`, legError);
+          }
+        }
+        console.log(`[AdminSync] Synced ${totalLegislators} legislators for ${state}`);
+        } // end if (headerLine)
+      }
+    } catch (legError) {
+      console.error(`[AdminSync] Failed to sync legislators for ${state}:`, legError);
+    }
+
+    // Sync bills for the state using direct API call
+    console.log(`[AdminSync] Fetching bills for ${state}...`);
+    const billsUrl = `https://v3.openstates.org/bills?apikey=${apiKey}&jurisdiction=${state.toLowerCase()}&per_page=20&sort=updated_desc&include=actions`;
+    const billsResponse = await fetch(billsUrl);
+
+    if (!billsResponse.ok) {
+      const errorText = await billsResponse.text();
+      console.error(`[AdminSync] OpenStates API error: ${billsResponse.status} - ${errorText}`);
+      return c.json({
+        success: false,
+        error: 'OpenStates API error',
+        message: `${billsResponse.status}: ${errorText}`,
+        legislators: totalLegislators
+      }, 500);
+    }
+
+    const billsData = await billsResponse.json() as { results: any[] };
+    const bills = billsData.results || [];
+
+    if (bills.length === 0) {
+      return c.json({
+        success: true,
+        message: `No bills found for ${state}`,
+        synced: 0,
+        legislators: totalLegislators
+      });
+    }
+
+    console.log(`[AdminSync] Found ${bills.length} bills for ${state}`);
+
+    for (const bill of bills) {
+      try {
+        // Get the latest action from the actions array
+        const actions = bill.actions || [];
+        const latestAction = actions.length > 0 ? actions[actions.length - 1] : null;
+
+        await db
+          .prepare(`
+            INSERT INTO state_bills (
+              id, state, session_identifier, identifier, title,
+              subjects, chamber, latest_action_date, latest_action_description,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              title = excluded.title,
+              subjects = excluded.subjects,
+              latest_action_date = excluded.latest_action_date,
+              latest_action_description = excluded.latest_action_description,
+              updated_at = excluded.updated_at
+          `)
+          .bind(
+            bill.id,
+            state,
+            bill.session || '',
+            bill.identifier,
+            bill.title,
+            JSON.stringify(bill.subject || []),
+            bill.from_organization?.classification || '',
+            latestAction?.date || null,
+            latestAction?.description || null,
+            Date.now(),
+            Date.now()
+          )
+          .run();
+        totalSynced++;
+      } catch (insertError) {
+        console.error(`[AdminSync] Failed to insert bill ${bill.id}:`, insertError);
+      }
+    }
+
+    console.log(`[AdminSync] Completed: synced ${totalSynced} bills and ${totalLegislators} legislators for ${state}`);
+
+    return c.json({
+      success: true,
+      message: `Synced ${totalSynced} bills and ${totalLegislators} legislators for ${state}`,
+      synced: totalSynced,
+      legislators: totalLegislators
+    });
+
+  } catch (error: any) {
+    console.error('[AdminSync] Manual sync failed:', error);
+    return c.json({
+      error: 'Sync failed',
       message: error.message
     }, 500);
   }
