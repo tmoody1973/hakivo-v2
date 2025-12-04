@@ -24,14 +24,38 @@ const getC1Client = () => {
   });
 };
 
-// System prompt for congressional assistant with C1 generative UI - Optimized for Journalists
-const systemPrompt = `You are Hakivo, a powerful AI assistant for civic journalists and researchers investigating congressional legislation, voting patterns, and money in politics.
+// System prompt for congressional assistant with C1 generative UI - Multi-persona
+const systemPrompt = `You are Hakivo, a powerful AI assistant that makes civic engagement accessible and impactful for everyone.
 
 ## Your Identity
 - Name: Hakivo
-- Role: Congressional Research AI with Generative UI capabilities
-- Tone: Professional, precise, fact-based, investigative
-- Primary Users: Journalists, researchers, civic watchdogs
+- Role: Congressional Intelligence AI with Generative UI capabilities
+- Tone: Adapt to user - professional for journalists, engaging for teachers, friendly for citizens
+- Mission: Empower democracy through information access
+
+## Your Three Primary Audiences
+
+### 🎤 Journalists & Researchers
+- Need: Investigation support, data analysis, source verification
+- Approach: Data-first, citations required, highlight anomalies and story angles
+- Output: Charts, tables, source cards, exportable data
+
+### 📚 Civics Teachers & Educators
+- Need: Lesson planning, real-world examples, student engagement
+- Approach: Educational, step-by-step explanations, make abstract concepts concrete
+- Output: Steps diagrams, comparison tables, vocabulary cards, quiz suggestions
+
+### 🗳️ Engaged Citizens
+- Need: Personal relevance, action paths, understanding representatives
+- Approach: Plain language, focus on "how does this affect me?", empower action
+- Output: Action buttons, representative contacts, personalized alerts, simple summaries
+
+## Persona Detection
+Detect user type from their questions:
+- "investigation", "voting patterns", "compare", "sources" → Journalist mode
+- "explain to students", "lesson", "teach", "how does X work" → Teacher mode
+- "my representative", "what can I do", "affects me", "how do I" → Citizen mode
+- Default to friendly citizen mode if unclear
 
 ## Current Congressional Session
 The current Congress is the **119th Congress** (January 2025 - January 2027).
@@ -111,32 +135,51 @@ You MUST use these specific C1 components based on data type:
 - Always end with suggested follow-up queries
 - Keep text concise; let components tell the story
 
-## Response Guidelines for Journalists
+## Response Guidelines By Persona
 
-1. **Lead with Data**: Start with the most newsworthy facts
-2. **Cite Everything**: Every claim needs a source link
-3. **Visual First**: Use UI components over paragraphs when data is involved
-4. **Highlight Anomalies**: Flag party-line breaks, unusual coalitions, funding connections
-5. **Suggest Story Angles**: Offer follow-up investigation directions
-6. **Enable Export**: Always offer downloadable data when showing tables
-7. **Time Context**: Note recency of data, upcoming deadlines, expiring legislation
+### For Journalists:
+1. **Lead with Data**: Most newsworthy facts first
+2. **Cite Everything**: Every claim needs Congress.gov, OpenStates, or news source
+3. **Visual First**: Charts and tables over paragraphs
+4. **Highlight Anomalies**: Party-line breaks, unusual votes, funding connections
+5. **Story Angles**: End with "Potential story angles:" suggestions
+6. **Enable Export**: Always offer CSV/data download
 
-## Sample Interaction Patterns
+### For Teachers:
+1. **Start with Context**: "Here's how this connects to civics..."
+2. **Use Steps**: Show processes like "How a Bill Becomes Law" with real examples
+3. **Define Terms**: Explain jargon in parentheses (e.g., "cloture (a vote to end debate)")
+4. **Real Examples**: Use current bills to illustrate abstract concepts
+5. **Discussion Questions**: Suggest "Questions for class discussion:"
+6. **Activity Ideas**: Offer "Student activity:" suggestions
 
-**User asks about a bill:**
-→ Show Bill Card + Status Timeline + Sponsor Info + Related Bills + News Context
+### For Citizens:
+1. **Personal Relevance**: Start with "Here's how this affects you..."
+2. **Plain Language**: No jargon, simple explanations
+3. **Action Buttons**: "Track This Bill", "Contact Your Rep", "Get Alerts"
+4. **Your Representatives**: Include their stance if relevant
+5. **Simple Next Steps**: Clear actions they can take
+6. **Timeline**: When things will happen and deadlines
 
-**User asks about voting patterns:**
-→ Show Vote Breakdown Chart + Party Analysis + Notable Deviations Table + Historical Comparison
+## Interaction Patterns
 
-**User asks for comparison:**
-→ Show Side-by-Side Comparison Table + Key Differences Highlighted + Both Bill Timelines
+**"What's happening with [topic]?"** (Citizen)
+→ News summary + Top 3 current bills + "How it affects you" + Action buttons
 
-**User asks about a legislator:**
-→ Show Profile Card + Voting Record Chart + Key Bills Sponsored + Committee Assignments + Funding Sources
+**"Explain how [process] works"** (Teacher)
+→ Steps diagram + Real bill example + Vocabulary + Discussion questions
 
-**User asks for investigation help:**
-→ Show Connection Map + Source Cards + Data Export Button + Suggested Follow-up Queries`;
+**"Compare [bill A] to [bill B]"** (Journalist)
+→ Comparison table + Key differences + Sponsor analysis + Vote predictions
+
+**"How did my representative vote?"** (Citizen)
+→ Vote card + Comparison to party + Their statement + Contact button
+
+**"I need to teach about [topic]"** (Teacher)
+→ Concept explanation + Real examples + Lesson plan outline + Resources
+
+**"Investigate [topic]"** (Journalist)
+→ Data visualization + Source cards + Anomaly flags + Export options`;
 
 // Tool definitions for C1
 const BILLS_API = process.env.NEXT_PUBLIC_BILLS_API_URL ||
@@ -231,6 +274,37 @@ const tools: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "explain_civics_concept",
+      description: "Explain a civics concept (like 'how a bill becomes law', 'filibuster', 'veto override') using a real current bill as an example. Great for teachers.",
+      parameters: {
+        type: "object",
+        properties: {
+          concept: { type: "string", description: "The civics concept to explain (e.g., 'filibuster', 'committee markup', 'reconciliation')" },
+          exampleBillQuery: { type: "string", description: "Optional search query to find a relevant bill example" },
+        },
+        required: ["concept"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_civic_action_guide",
+      description: "Get a guide for citizens on how to take action on a bill or issue - contact info, talking points, timeline.",
+      parameters: {
+        type: "object",
+        properties: {
+          issue: { type: "string", description: "The issue or bill the citizen wants to act on" },
+          action_type: { type: "string", enum: ["support", "oppose", "learn_more"], description: "What action they want to take" },
+          state: { type: "string", description: "Optional: User's state for representative lookup" },
+        },
+        required: ["issue"],
+      },
+    },
+  },
 ];
 
 // Execute tool calls
@@ -308,6 +382,104 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         );
         return JSON.stringify({ comparison: billDetails });
       }
+      case "explain_civics_concept": {
+        const { concept, exampleBillQuery } = args as { concept: string; exampleBillQuery?: string };
+        // Build educational content about the concept
+        const civicsDefinitions: Record<string, string> = {
+          "filibuster": "A filibuster is a tactic used in the Senate to delay or block a vote by extending debate. It requires 60 votes (cloture) to end.",
+          "veto": "A veto is the President's power to reject a bill passed by Congress. Congress can override with a 2/3 vote in both chambers.",
+          "committee markup": "A markup session is when a congressional committee reviews, amends, and votes on a bill before sending it to the full chamber.",
+          "reconciliation": "Budget reconciliation is a special process that allows certain tax and spending bills to pass the Senate with only 51 votes instead of 60.",
+          "cloture": "Cloture is a procedure to end debate in the Senate. It requires 60 votes and is used to overcome filibusters.",
+          "conference committee": "A conference committee reconciles differences between House and Senate versions of a bill before final passage.",
+          "how a bill becomes law": "1. Introduction → 2. Committee Review → 3. Floor Debate → 4. Vote in Both Chambers → 5. Conference (if needed) → 6. President Signs or Vetoes",
+        };
+
+        let result: { concept: string; definition: string; exampleBill?: unknown } = {
+          concept,
+          definition: civicsDefinitions[concept.toLowerCase()] || `The concept "${concept}" refers to an important part of the legislative process. Ask for more details!`,
+        };
+
+        // Find example bill if requested
+        if (exampleBillQuery) {
+          try {
+            const billResponse = await fetch(`${BILLS_API}/bills/search`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ query: exampleBillQuery, congress: 119, limit: 1 }),
+            });
+            if (billResponse.ok) {
+              const billData = await billResponse.json();
+              if (billData.bills?.length > 0) {
+                result.exampleBill = billData.bills[0];
+              }
+            }
+          } catch {
+            // Ignore errors, example is optional
+          }
+        }
+
+        return JSON.stringify(result);
+      }
+      case "get_civic_action_guide": {
+        const { issue, action_type = "learn_more" } = args as { issue: string; action_type?: string; state?: string };
+
+        // Search for relevant bills
+        let relevantBills: unknown[] = [];
+        try {
+          const billResponse = await fetch(`${BILLS_API}/bills/search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: issue, congress: 119, limit: 3 }),
+          });
+          if (billResponse.ok) {
+            const billData = await billResponse.json();
+            relevantBills = billData.bills || [];
+          }
+        } catch {
+          // Continue without bills
+        }
+
+        // Build action guide
+        const actionGuide = {
+          issue,
+          action_type,
+          relevantBills,
+          actions: {
+            contact_representatives: {
+              description: "Contact your senators and representative",
+              tips: [
+                "Be specific about the bill number if known",
+                "Share a personal story about how this affects you",
+                "Be respectful and concise",
+                "Ask for a response",
+              ],
+            },
+            track_legislation: {
+              description: "Stay informed about legislative progress",
+              tips: [
+                "Sign up for bill alerts",
+                "Follow committee hearings",
+                "Check for upcoming votes",
+              ],
+            },
+            spread_awareness: {
+              description: "Help others understand the issue",
+              tips: [
+                "Share factual information with sources",
+                "Discuss with neighbors and community",
+                "Write letters to local newspapers",
+              ],
+            },
+          },
+          resources: [
+            { name: "Congress.gov", url: "https://congress.gov", description: "Official source for bill text and status" },
+            { name: "GovTrack", url: "https://govtrack.us", description: "Track bills and representatives" },
+          ],
+        };
+
+        return JSON.stringify(actionGuide);
+      }
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -326,6 +498,8 @@ interface ChatRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const encoder = new TextEncoder();
+
   try {
     const body: ChatRequest = await request.json();
     const { messages } = body;
@@ -345,64 +519,97 @@ export async function POST(request: NextRequest) {
       ...messages.map(m => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
     ];
 
-    // Initial request with tools
-    let response = await client.chat.completions.create({
-      model: "c1/anthropic/claude-sonnet-4/v-20250617",
-      messages: conversationMessages,
-      tools,
-      stream: false, // Need non-streaming for tool calling loop
-    });
-
-    // Handle tool calls in a loop
-    while (response.choices[0]?.message?.tool_calls?.length) {
-      const toolCalls = response.choices[0].message.tool_calls;
-
-      // Add assistant message with tool calls
-      conversationMessages.push({
-        role: "assistant",
-        content: response.choices[0].message.content || "",
-        tool_calls: toolCalls,
-      });
-
-      // Execute each tool call and add results
-      for (const toolCall of toolCalls) {
-        if (toolCall.type !== "function") continue;
-        const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-        const result = await executeTool(toolCall.function.name, args);
-
-        conversationMessages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          content: result,
-        });
-      }
-
-      // Continue conversation with tool results
-      response = await client.chat.completions.create({
-        model: "c1/anthropic/claude-sonnet-4/v-20250617",
-        messages: conversationMessages,
-        tools,
-        stream: false,
-      });
-    }
-
-    // Get final response and stream it
-    const finalContent = response.choices[0]?.message?.content || "";
-
-    // Stream the final response as SSE
-    const encoder = new TextEncoder();
+    // Create streaming response
     const readable = new ReadableStream({
-      start(controller) {
-        // Send the content in chunks for a streaming feel
-        const chunkSize = 50;
-        for (let i = 0; i < finalContent.length; i += chunkSize) {
-          const chunk = finalContent.slice(i, i + chunkSize);
+      async start(controller) {
+        try {
+          // Helper to send SSE messages
+          const send = (content: string) => {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+          };
+
+          // Initial request with tools
+          let response = await client.chat.completions.create({
+            model: "c1/anthropic/claude-sonnet-4/v-20250617",
+            messages: conversationMessages,
+            tools,
+            stream: false,
+          });
+
+          // Handle tool calls with progress feedback
+          let toolCallCount = 0;
+          while (response.choices[0]?.message?.tool_calls?.length) {
+            const toolCalls = response.choices[0].message.tool_calls;
+            toolCallCount++;
+
+            // Add assistant message with tool calls
+            conversationMessages.push({
+              role: "assistant",
+              content: response.choices[0].message.content || "",
+              tool_calls: toolCalls,
+            });
+
+            // Execute each tool call with progress updates
+            for (const toolCall of toolCalls) {
+              if (toolCall.type !== "function") continue;
+
+              // Send progress update to user
+              const toolName = toolCall.function.name;
+              const progressMessages: Record<string, string> = {
+                search_bills: "🔍 Searching congressional bills...\n\n",
+                get_bill_details: "📜 Fetching bill details...\n\n",
+                search_news: "📰 Searching recent news coverage...\n\n",
+                get_bill_statistics: "📊 Analyzing bill statistics...\n\n",
+                compare_bills: "⚖️ Comparing legislation...\n\n",
+                explain_civics_concept: "📚 Preparing educational content...\n\n",
+                get_civic_action_guide: "🗳️ Building your action guide...\n\n",
+              };
+              if (toolCallCount === 1 && progressMessages[toolName]) {
+                send(progressMessages[toolName]);
+              }
+
+              const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+              const result = await executeTool(toolName, args);
+
+              conversationMessages.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: result,
+              });
+            }
+
+            // Continue conversation with tool results
+            response = await client.chat.completions.create({
+              model: "c1/anthropic/claude-sonnet-4/v-20250617",
+              messages: conversationMessages,
+              tools,
+              stream: false,
+            });
+          }
+
+          // Stream the final response
+          const finalContent = response.choices[0]?.message?.content || "";
+          if (finalContent) {
+            // Stream in larger chunks for better C1 component rendering
+            const chunkSize = 100;
+            for (let i = 0; i < finalContent.length; i += chunkSize) {
+              const chunk = finalContent.slice(i, i + chunkSize);
+              send(chunk);
+              // Small delay for smoother streaming effect
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+          }
+
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
+        } catch (error) {
+          console.error("[C1 API] Stream error:", error);
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`)
+            encoder.encode(`data: ${JSON.stringify({ error: "Stream failed" })}\n\n`)
           );
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
         }
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-        controller.close();
       },
     });
 
