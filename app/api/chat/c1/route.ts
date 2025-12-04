@@ -1,137 +1,123 @@
 import { NextRequest, NextResponse } from "next/server";
-import { makeC1Response } from "@thesysai/genui-sdk/server";
-import { mastra } from "@/mastra";
+import OpenAI from "openai";
+import { transformStream } from "@crayonai/stream";
+import { congressionalSystemPrompt } from "@/mastra/agents/congressional-assistant";
+import { tools } from "./tools";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /**
- * C1 Chat API Route - Mastra Agent Pattern
+ * C1 Chat API Route - Direct OpenAI SDK Integration
  *
- * Uses the Mastra C1 Congressional Assistant agent for:
- * - Tool orchestration (bills, news, members)
- * - Streaming responses with generative UI
- * - Conversation context management
+ * Uses OpenAI SDK with runTools for proper C1 generative UI.
+ * Based on thesys template-c1-next pattern.
  */
 
-interface ChatMessage {
+interface DBMessage {
+  id: string;
   role: "user" | "assistant" | "system";
   content: string;
 }
 
 interface ChatRequest {
-  messages: ChatMessage[];
-  threadId?: string;
+  prompt: DBMessage;
+  threadId: string;
+  responseId: string;
 }
 
-// Simple in-memory message store (for conversation history)
-const messageStore = new Map<string, Array<{ id: string; role: string; content: string; createdAt: Date }>>();
+// Enhanced system prompt for C1 generative UI
+const c1SystemPrompt = `${congressionalSystemPrompt}
+
+## UI Generation Guidelines
+
+When presenting information, use rich visual UI components:
+
+- **Cards**: For individual bills, legislators, or news items - always include relevant metadata
+- **Tables**: For comparing multiple items, showing voting records, or listing bills
+- **Charts**: For vote breakdowns, party statistics, or trends over time
+- **Buttons**: For interactive actions like "Track Bill", "View Full Text", "Contact Representative"
+- **Badges/Tags**: For status indicators, party affiliations, and policy areas
+
+IMPORTANT: Always prefer visual components over plain text lists. When you have data to display:
+- Use cards for single items with rich information
+- Use tables for multiple items in a list format
+- Use charts for numerical comparisons
+- Include action buttons for user interaction
+
+Be concise - let the UI components tell the story visually.`;
+
+// In-memory message store per thread
+const messageStores = new Map<string, DBMessage[]>();
 
 function getMessageStore(threadId: string) {
-  if (!messageStore.has(threadId)) {
-    messageStore.set(threadId, []);
+  if (!messageStores.has(threadId)) {
+    messageStores.set(threadId, [
+      { id: "system", role: "system", content: c1SystemPrompt }
+    ]);
   }
-  return messageStore.get(threadId)!;
+  return {
+    addMessage: (msg: DBMessage) => {
+      const store = messageStores.get(threadId)!;
+      store.push(msg);
+    },
+    getOpenAICompatibleMessageList: () => {
+      return messageStores.get(threadId)!.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+    }
+  };
 }
 
-export async function POST(request: NextRequest) {
-  // Create C1 response helper for proper generative UI streaming
-  const c1Response = makeC1Response();
-
+export async function POST(req: NextRequest) {
   try {
-    const body: ChatRequest = await request.json();
-    const { messages, threadId = crypto.randomUUID() } = body;
+    const { prompt, threadId, responseId } = (await req.json()) as ChatRequest;
 
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Messages array is required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Get or create message store for this thread
-    const store = getMessageStore(threadId);
-
-    // Get the C1 congressional assistant from Mastra
-    const agent = mastra.getAgent("c1CongressionalAssistant");
-
-    if (!agent) {
-      throw new Error("C1 Congressional Assistant agent not found");
-    }
-
-    // Get the latest user message
-    const latestUserMessage = messages[messages.length - 1];
-
-    // Build message history for the agent as CoreMessage array
-    const messageHistory: Array<{ role: "user" | "assistant" | "system"; content: string }> = store.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
-
-    // Add current user message
-    messageHistory.push({
-      role: "user",
-      content: latestUserMessage.content,
+    const client = new OpenAI({
+      baseURL: "https://api.thesys.dev/v1/embed/",
+      apiKey: process.env.THESYS_API_KEY,
     });
 
-    // Process with Mastra agent in background
-    (async () => {
-      try {
-        // Send initial progress indicator
-        await c1Response.writeThinkItem({
-          title: "Processing",
-          description: "Analyzing your request...",
-          ephemeral: true,
-        });
+    const messageStore = getMessageStore(threadId);
+    messageStore.addMessage(prompt);
 
-        // Use agent.stream() with messages - Mastra accepts string or CoreMessage[]
-        const stream = await agent.stream(messageHistory as Parameters<typeof agent.stream>[0]);
+    const llmStream = await client.beta.chat.completions.runTools({
+      model: "c1/anthropic/claude-sonnet-4/v-20250930",
+      temperature: 0.5 as unknown as number,
+      messages: messageStore.getOpenAICompatibleMessageList(),
+      stream: true,
+      tool_choice: tools.length > 0 ? "auto" : "none",
+      tools,
+    });
 
-        let fullContent = "";
-
-        // Process the text stream - Mastra's textStream yields string chunks directly
-        for await (const chunk of stream.textStream) {
-          if (chunk) {
-            fullContent += chunk;
-            // Stream content incrementally to C1
-            await c1Response.writeContent(chunk);
-          }
-        }
-
-        // Store messages for conversation history
-        store.push({
-          id: crypto.randomUUID(),
-          role: "user",
-          content: latestUserMessage.content,
-          createdAt: new Date(),
-        });
-        store.push({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: fullContent,
-          createdAt: new Date(),
-        });
-
-        await c1Response.end();
-      } catch (error) {
-        console.error("[C1 API] Stream error:", error);
-        await c1Response.writeContent(`Error: ${error instanceof Error ? error.message : "Request failed"}`);
-        await c1Response.end();
+    const responseStream = transformStream(
+      llmStream,
+      (chunk) => {
+        return chunk.choices?.[0]?.delta?.content ?? "";
+      },
+      {
+        onEnd: ({ accumulated }) => {
+          const message = accumulated.filter((m) => m).join("");
+          messageStore.addMessage({
+            role: "assistant",
+            content: message,
+            id: responseId,
+          });
+        },
       }
-    })();
+    ) as ReadableStream<string>;
 
-    // Return the C1 response stream
-    return new NextResponse(c1Response.responseStream as ReadableStream, {
+    return new NextResponse(responseStream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-        "X-Thread-Id": threadId,
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
     console.error("[C1 API] Error:", error);
-    await c1Response.end();
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Internal server error",
