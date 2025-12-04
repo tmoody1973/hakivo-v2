@@ -91,6 +91,26 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 );
 
+-- C1 Chat threads table (general AI assistant, not bill-specific)
+CREATE TABLE IF NOT EXISTS c1_chat_threads (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- C1 Chat messages table
+CREATE TABLE IF NOT EXISTS c1_chat_messages (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (thread_id) REFERENCES c1_chat_threads(id) ON DELETE CASCADE
+);
+
 -- Bill cache table
 CREATE TABLE IF NOT EXISTS bill_cache (
   bill_id TEXT PRIMARY KEY,
@@ -169,6 +189,9 @@ CREATE INDEX IF NOT EXISTS idx_briefs_status ON briefs(status);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_bill_id ON chat_sessions(bill_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_c1_chat_threads_user_id ON c1_chat_threads(user_id);
+CREATE INDEX IF NOT EXISTS idx_c1_chat_threads_updated_at ON c1_chat_threads(updated_at);
+CREATE INDEX IF NOT EXISTS idx_c1_chat_messages_thread_id ON c1_chat_messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_bill_cache_expires_at ON bill_cache(expires_at);
 CREATE INDEX IF NOT EXISTS idx_api_usage_logs_service ON api_usage_logs(service);
 CREATE INDEX IF NOT EXISTS idx_api_usage_logs_created_at ON api_usage_logs(created_at);
@@ -185,6 +208,8 @@ export const tables = [
   'briefs',
   'chat_sessions',
   'chat_messages',
+  'c1_chat_threads',
+  'c1_chat_messages',
   'bill_cache',
   'api_usage_logs',
   'refresh_tokens',

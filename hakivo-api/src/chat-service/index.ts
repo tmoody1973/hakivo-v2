@@ -14,6 +14,17 @@ const SendMessageSchema = z.object({
   message: z.string().min(1).max(1000)
 });
 
+// C1 Chat schemas
+const CreateC1ThreadSchema = z.object({
+  title: z.string().optional()
+});
+
+const SaveC1MessageSchema = z.object({
+  role: z.enum(['user', 'assistant', 'system']),
+  content: z.string().min(1),
+  messageId: z.string().optional()
+});
+
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
@@ -411,6 +422,298 @@ app.delete('/chat/sessions/:sessionId', async (c) => {
     console.error('Delete session error:', error);
     return c.json({
       error: 'Failed to delete session',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// ============================================================================
+// C1 Chat Endpoints (General AI Assistant)
+// ============================================================================
+
+/**
+ * POST /chat/c1/threads
+ * Create a new C1 chat thread (requires auth)
+ */
+app.post('/chat/c1/threads', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Validate input
+    const body = await c.req.json().catch(() => ({}));
+    const validation = CreateC1ThreadSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { title } = validation.data;
+
+    // Create thread
+    const threadId = crypto.randomUUID();
+    const now = Date.now();
+
+    await db
+      .prepare(`
+        INSERT INTO c1_chat_threads (id, user_id, title, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `)
+      .bind(threadId, auth.userId, title || null, now, now)
+      .run();
+
+    console.log(`✓ C1 chat thread created: ${threadId}`);
+
+    return c.json({
+      success: true,
+      threadId,
+      title,
+      createdAt: now
+    }, 201);
+  } catch (error) {
+    console.error('Create C1 thread error:', error);
+    return c.json({
+      error: 'Failed to create chat thread',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /chat/c1/threads
+ * List user's C1 chat threads (requires auth)
+ */
+app.get('/chat/c1/threads', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Get threads ordered by most recent
+    const result = await db
+      .prepare(`
+        SELECT id, title, created_at, updated_at
+        FROM c1_chat_threads
+        WHERE user_id = ?
+        ORDER BY updated_at DESC
+        LIMIT 50
+      `)
+      .bind(auth.userId)
+      .all();
+
+    const threads = result.results?.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    })) || [];
+
+    return c.json({
+      success: true,
+      threads,
+      count: threads.length
+    });
+  } catch (error) {
+    console.error('Get C1 threads error:', error);
+    return c.json({
+      error: 'Failed to get chat threads',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /chat/c1/threads/:threadId/messages
+ * Get messages for a C1 thread (requires auth)
+ */
+app.get('/chat/c1/threads/:threadId/messages', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const threadId = c.req.param('threadId');
+
+    // Verify thread ownership
+    const thread = await db
+      .prepare('SELECT user_id FROM c1_chat_threads WHERE id = ?')
+      .bind(threadId)
+      .first();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+
+    if (thread.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Get messages
+    const result = await db
+      .prepare(`
+        SELECT id, role, content, created_at
+        FROM c1_chat_messages
+        WHERE thread_id = ?
+        ORDER BY created_at ASC
+      `)
+      .bind(threadId)
+      .all();
+
+    const messages = result.results?.map((row: any) => ({
+      id: row.id,
+      role: row.role,
+      content: row.content,
+      createdAt: row.created_at
+    })) || [];
+
+    return c.json({
+      success: true,
+      messages,
+      count: messages.length
+    });
+  } catch (error) {
+    console.error('Get C1 messages error:', error);
+    return c.json({
+      error: 'Failed to get messages',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /chat/c1/threads/:threadId/messages
+ * Save a message to a C1 thread (requires auth)
+ */
+app.post('/chat/c1/threads/:threadId/messages', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const threadId = c.req.param('threadId');
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = SaveC1MessageSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { role, content, messageId } = validation.data;
+
+    // Verify thread ownership
+    const thread = await db
+      .prepare('SELECT user_id FROM c1_chat_threads WHERE id = ?')
+      .bind(threadId)
+      .first();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+
+    if (thread.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Save message
+    const id = messageId || crypto.randomUUID();
+    const now = Date.now();
+
+    await db
+      .prepare(`
+        INSERT INTO c1_chat_messages (id, thread_id, role, content, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `)
+      .bind(id, threadId, role, content, now)
+      .run();
+
+    // Update thread timestamp and title (use first user message as title if not set)
+    if (role === 'user') {
+      await db
+        .prepare(`
+          UPDATE c1_chat_threads
+          SET updated_at = ?,
+              title = COALESCE(title, ?)
+          WHERE id = ?
+        `)
+        .bind(now, content.substring(0, 100), threadId)
+        .run();
+    } else {
+      await db
+        .prepare('UPDATE c1_chat_threads SET updated_at = ? WHERE id = ?')
+        .bind(now, threadId)
+        .run();
+    }
+
+    return c.json({
+      success: true,
+      message: {
+        id,
+        role,
+        content,
+        createdAt: now
+      }
+    }, 201);
+  } catch (error) {
+    console.error('Save C1 message error:', error);
+    return c.json({
+      error: 'Failed to save message',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /chat/c1/threads/:threadId
+ * Delete a C1 chat thread (requires auth)
+ */
+app.delete('/chat/c1/threads/:threadId', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const threadId = c.req.param('threadId');
+
+    // Verify ownership
+    const thread = await db
+      .prepare('SELECT user_id FROM c1_chat_threads WHERE id = ?')
+      .bind(threadId)
+      .first();
+
+    if (!thread) {
+      return c.json({ error: 'Thread not found' }, 404);
+    }
+
+    if (thread.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Delete messages first, then thread
+    await db
+      .prepare('DELETE FROM c1_chat_messages WHERE thread_id = ?')
+      .bind(threadId)
+      .run();
+
+    await db
+      .prepare('DELETE FROM c1_chat_threads WHERE id = ?')
+      .bind(threadId)
+      .run();
+
+    console.log(`✓ C1 chat thread deleted: ${threadId}`);
+
+    return c.json({
+      success: true,
+      message: 'Chat thread deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete C1 thread error:', error);
+    return c.json({
+      error: 'Failed to delete thread',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

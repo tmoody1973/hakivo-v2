@@ -13,7 +13,15 @@ export const maxDuration = 60;
  *
  * Uses OpenAI SDK with runTools for proper C1 generative UI.
  * Based on thesys template-c1-next pattern.
+ *
+ * Features:
+ * - Persists messages to backend database when authenticated
+ * - Falls back to in-memory storage for anonymous users
+ * - User-isolated chat history
  */
+
+const CHAT_SERVICE_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
+  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 interface DBMessage {
   id: string;
@@ -48,7 +56,7 @@ IMPORTANT: Always prefer visual components over plain text lists. When you have 
 
 Be concise - let the UI components tell the story visually.`;
 
-// In-memory message store per thread
+// In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
 
 function getMessageStore(threadId: string) {
@@ -71,16 +79,112 @@ function getMessageStore(threadId: string) {
   };
 }
 
+/**
+ * Persist message to backend database
+ */
+async function persistMessage(
+  threadId: string,
+  message: DBMessage,
+  accessToken: string
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${CHAT_SERVICE_URL}/chat/c1/threads/${threadId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          role: message.role,
+          content: message.content,
+          messageId: message.id,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.warn("[C1 API] Failed to persist message:", response.status);
+    }
+  } catch (error) {
+    console.warn("[C1 API] Error persisting message:", error);
+    // Non-blocking - continue even if persistence fails
+  }
+}
+
+/**
+ * Load messages from backend database
+ */
+async function loadMessagesFromBackend(
+  threadId: string,
+  accessToken: string
+): Promise<DBMessage[] | null> {
+  try {
+    const response = await fetch(
+      `${CHAT_SERVICE_URL}/chat/c1/threads/${threadId}/messages`,
+      {
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        // Thread doesn't exist in backend yet - that's ok
+        return null;
+      }
+      console.warn("[C1 API] Failed to load messages:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.messages?.map((m: { id: string; role: string; content: string }) => ({
+      id: m.id,
+      role: m.role as "user" | "assistant" | "system",
+      content: m.content,
+    })) || null;
+  } catch (error) {
+    console.warn("[C1 API] Error loading messages:", error);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { prompt, threadId, responseId } = (await req.json()) as ChatRequest;
+
+    // Check for auth token
+    const authHeader = req.headers.get("Authorization");
+    const accessToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : null;
 
     const client = new OpenAI({
       baseURL: "https://api.thesys.dev/v1/embed/",
       apiKey: process.env.THESYS_API_KEY,
     });
 
+    // Get or create message store
     const messageStore = getMessageStore(threadId);
+
+    // If authenticated, try to load history from backend and persist new message
+    if (accessToken) {
+      // Ensure thread exists and load previous messages if this is a new session
+      const backendMessages = await loadMessagesFromBackend(threadId, accessToken);
+      if (backendMessages && backendMessages.length > 0) {
+        // Replace in-memory store with backend messages
+        messageStores.set(threadId, [
+          { id: "system", role: "system", content: c1SystemPrompt },
+          ...backendMessages.filter(m => m.role !== "system"),
+        ]);
+      }
+
+      // Persist the user message
+      persistMessage(threadId, prompt, accessToken);
+    }
+
     messageStore.addMessage(prompt);
 
     const llmStream = await client.beta.chat.completions.runTools({
@@ -100,11 +204,18 @@ export async function POST(req: NextRequest) {
       {
         onEnd: ({ accumulated }) => {
           const message = accumulated.filter((m) => m).join("");
-          messageStore.addMessage({
+          const assistantMessage: DBMessage = {
             role: "assistant",
             content: message,
             id: responseId,
-          });
+          };
+
+          messageStore.addMessage(assistantMessage);
+
+          // Persist assistant response if authenticated
+          if (accessToken) {
+            persistMessage(threadId, assistantMessage, accessToken);
+          }
         },
       }
     ) as ReadableStream<string>;
