@@ -50,18 +50,33 @@ export async function POST(request: Request) {
 
     // Stream the response
     console.log("[API] Starting stream for query:", promptWithContext.substring(0, 100));
+    console.log("[API] OPENAI_API_KEY set:", !!process.env.OPENAI_API_KEY);
 
     let stream;
+    let streamError: Error | null = null;
+
     try {
-      stream = await agent.stream(promptWithContext);
-      console.log("[API] Stream created, keys:", Object.keys(stream));
-    } catch (streamError) {
-      console.error("[API] Failed to create stream:", streamError);
+      stream = await agent.stream(promptWithContext, {
+        onError: ({ error }) => {
+          console.error("[API] Stream onError callback:", error);
+          streamError = error instanceof Error ? error : new Error(String(error));
+        },
+        onFinish: (result) => {
+          console.log("[API] Stream onFinish callback, text length:", result?.text?.length || 0);
+        },
+      });
+      console.log("[API] Stream created successfully");
+    } catch (err) {
+      console.error("[API] Failed to create stream:", err);
+      streamError = err instanceof Error ? err : new Error(String(err));
+    }
+
+    if (streamError || !stream) {
       // Return error as SSE
       const encoder = new TextEncoder();
       const errorStream = new ReadableStream({
         start(controller) {
-          const errorMsg = streamError instanceof Error ? streamError.message : "Failed to create stream";
+          const errorMsg = streamError?.message || "Failed to create stream";
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`));
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
@@ -76,7 +91,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // Create a ReadableStream for SSE
+    // Create a ReadableStream for SSE using textStream directly
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
@@ -84,53 +99,37 @@ export async function POST(request: Request) {
           let chunkCount = 0;
           let totalContent = "";
 
-          // Try fullStream first for more detailed events
-          if (stream.fullStream) {
-            console.log("[API] Using fullStream");
-            for await (const part of stream.fullStream) {
-              console.log("[API] Part type:", part.type, "payload:", JSON.stringify((part as unknown as { payload?: unknown }).payload)?.substring(0, 100));
-              if (part.type === "text-delta") {
-                // Mastra payload may be string or object - extract the text
-                const payload = (part as unknown as { payload: unknown }).payload;
-                const textContent = typeof payload === "string" ? payload :
-                  (payload && typeof payload === "object" && "textDelta" in payload)
-                    ? String((payload as { textDelta: string }).textDelta)
-                    : String(payload);
-                if (textContent) {
-                  chunkCount++;
-                  totalContent += textContent;
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: textContent })}\n\n`));
-                }
-              } else if (part.type === "error") {
-                console.error("[API] Stream error part:", part);
-                const errorPayload = (part as unknown as { payload: unknown }).payload;
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: String(errorPayload) })}\n\n`));
-              }
-            }
-          } else if (stream.textStream) {
-            console.log("[API] Using textStream");
-            for await (const chunk of stream.textStream) {
-              chunkCount++;
-              totalContent += chunk;
+          console.log("[API] Starting to consume textStream");
+
+          // Use textStream directly - the recommended approach
+          for await (const chunk of stream.textStream) {
+            chunkCount++;
+            totalContent += chunk;
+            if (chunkCount <= 5 || chunkCount % 10 === 0) {
               console.log("[API] Chunk", chunkCount, ":", chunk?.substring(0, 50));
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
             }
-          } else {
-            // Fallback to getting full text
-            console.log("[API] No stream available, trying text property");
-            const text = await stream.text;
-            if (text) {
-              console.log("[API] Got text:", text.substring(0, 100));
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
-              totalContent = text;
-            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`));
           }
 
           console.log("[API] Stream complete, chunks:", chunkCount, "total length:", totalContent.length);
 
           if (totalContent.length === 0) {
-            console.error("[API] WARNING: No content was generated!");
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "No response generated. Check API key configuration." })}\n\n`));
+            console.error("[API] WARNING: No content was generated! Checking stream.text...");
+            // Try getting full text as fallback
+            try {
+              const fullText = await stream.text;
+              console.log("[API] stream.text result:", fullText?.substring(0, 100) || "empty");
+              if (fullText) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: fullText })}\n\n`));
+                totalContent = fullText;
+              }
+            } catch (textError) {
+              console.error("[API] stream.text failed:", textError);
+            }
+
+            if (totalContent.length === 0) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "No response generated. Check API key and model configuration." })}\n\n`));
+            }
           }
 
           controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
