@@ -2,46 +2,31 @@
  * SmartInference Configuration for Hakivo Congressional Assistant
  *
  * Provides intelligent model routing based on task complexity and type.
- * Uses Cerebras for ultra-fast inference with Llama 3.3 70B model.
+ * Uses Cerebras via Mastra for ultra-fast inference.
  *
  * Model Tiers:
- * - Fast: Quick responses for simple queries (Cerebras Llama 3.1 8B)
- * - Standard: Balanced performance (Cerebras Llama 3.3 70B)
- * - Complex: Deep analysis and reasoning (Cerebras Llama 3.3 70B)
- * - Creative: UI generation and creative content (thesys C1)
+ * - Fast: Quick responses for simple queries (Cerebras GPT-OSS 120B)
+ * - Standard: Balanced performance (Cerebras GPT-OSS 120B)
+ * - Complex: Deep analysis and reasoning (Cerebras ZAI GLM 4.6)
+ * - Creative: Creative content (Cerebras Qwen 3 235B)
  *
  * CEREBRAS BENEFITS:
  * - 10x faster inference than typical cloud providers
- * - OpenAI-compatible API
- * - High-quality Llama models at incredible speed
+ * - High-quality models at incredible speed
  * - Competitive pricing
+ * - Mastra native integration via model router
  */
 
-import { openai, createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-
-// Create anthropic provider instance (fallback)
-const anthropic = createAnthropic({});
-
 /**
- * Cerebras Provider - Ultra-fast inference with gpt-oss-120b
+ * Mastra Model Router Strings
  *
- * Cerebras offers blazing fast inference speeds (10x faster than typical)
- * with OpenAI-compatible API. Perfect for real-time chat applications.
+ * Mastra's built-in model router uses format: "provider/model-id"
+ * - Cerebras models: "cerebras/llama-3.3-70b", "cerebras/gpt-oss-120b"
+ * - OpenAI models: "openai/gpt-4o", "openai/gpt-4o-mini"
+ *
+ * These are returned as strings and used directly in Agent config.
+ * Authentication is automatic via CEREBRAS_API_KEY env var.
  */
-const cerebrasAI = createOpenAI({
-  apiKey: process.env.CEREBRAS_API_KEY,
-  baseURL: "https://api.cerebras.ai/v1",
-});
-
-/**
- * Thesys C1 Provider - Uses OpenAI-compatible API with thesys baseURL
- * Requires THESYS_API_KEY environment variable
- */
-const thesysC1 = createOpenAI({
-  apiKey: process.env.THESYS_API_KEY,
-  baseURL: "https://api.thesys.dev/v1/embed",
-});
 
 // Model configuration types
 export type ModelTier = "fast" | "standard" | "complex" | "creative";
@@ -58,7 +43,7 @@ export type TaskType =
   | "conversation";
 
 interface ModelConfig {
-  provider: "openai" | "anthropic" | "thesys" | "cerebras";
+  provider: "openai" | "anthropic" | "cerebras";
   modelId: string;
   maxTokens: number;
   temperature: number;
@@ -72,36 +57,36 @@ interface TaskClassification {
 }
 
 // Available models by tier
-// Note: Using Cerebras for ultra-fast inference (10x faster than typical)
-// Using llama-3.3-70b which is compatible with standard OpenAI SDK streaming
+// Note: Using Mastra's built-in Cerebras model router
+// Available Cerebras models: gpt-oss-120b, qwen-3-235b-a22b-instruct-2507, zai-glm-4.6
 export const MODEL_CONFIGS: Record<ModelTier, ModelConfig> = {
   fast: {
     provider: "cerebras",
-    modelId: "llama3.1-8b", // Ultra-fast inference via Cerebras
+    modelId: "cerebras/gpt-oss-120b", // Mastra model router format
     maxTokens: 1000,
     temperature: 0.7,
-    description: "Ultra-fast responses via Cerebras Llama 3.1 8B",
+    description: "Ultra-fast responses via Cerebras GPT-OSS 120B",
   },
   standard: {
     provider: "cerebras",
-    modelId: "llama-3.3-70b", // High-quality model with blazing speed
+    modelId: "cerebras/gpt-oss-120b", // High-quality model with blazing speed
     maxTokens: 4000,
     temperature: 0.7,
-    description: "Balanced performance via Cerebras Llama 3.3 70B",
+    description: "Balanced performance via Cerebras GPT-OSS 120B",
   },
   complex: {
     provider: "cerebras",
-    modelId: "llama-3.3-70b", // Use Llama 3.3 for complex tasks
+    modelId: "cerebras/zai-glm-4.6", // Advanced reasoning model
     maxTokens: 8000,
     temperature: 0.5,
-    description: "Deep reasoning via Cerebras Llama 3.3 70B",
+    description: "Deep reasoning via Cerebras ZAI GLM 4.6",
   },
   creative: {
-    provider: "thesys",
-    modelId: "c1/anthropic/claude-sonnet-4/v-20250815",
+    provider: "cerebras",
+    modelId: "cerebras/qwen-3-235b-a22b-instruct-2507", // Creative/advanced model
     maxTokens: 4000,
     temperature: 0.8,
-    description: "Generative UI powered by thesys C1",
+    description: "Creative content via Cerebras Qwen 3 235B",
   },
 };
 
@@ -226,28 +211,31 @@ export function getModelForQuery(query: string): ModelConfig & { tier: ModelTier
 }
 
 /**
- * Get Mastra-compatible model instance for a tier
+ * Get Mastra-compatible model for a tier
  *
- * Uses Cerebras for ultra-fast inference (10x faster than typical).
- * Falls back to Anthropic for complex reasoning and Thesys for generative UI.
+ * Returns model string for Mastra's built-in model router OR
+ * provider instance for external APIs (thesys).
+ *
+ * Mastra model router format: "provider/model-id"
+ * - Uses CEREBRAS_API_KEY automatically for cerebras/ models
+ * - Uses OPENAI_API_KEY automatically for openai/ models
  */
-export function getMastraModel(tier: ModelTier = "standard") {
+export function getMastraModel(tier: ModelTier = "standard"): string {
   const config = MODEL_CONFIGS[tier];
 
   switch (config.provider) {
     case "cerebras":
-      // Cerebras gpt-oss-120b - ultra-fast inference
-      return cerebrasAI(config.modelId);
+      // Return Mastra model router string (e.g., "cerebras/gpt-oss-120b")
+      return config.modelId;
     case "openai":
-      return openai(config.modelId);
+      // Return OpenAI model via Mastra router
+      return `openai/${config.modelId}`;
     case "anthropic":
-      return anthropic(config.modelId);
-    case "thesys":
-      // Use thesys C1 provider for generative UI
-      return thesysC1.chat(config.modelId);
+      // Return Anthropic model via Mastra router
+      return `anthropic/${config.modelId}`;
     default:
-      // Default to Cerebras Llama 3.3 70B
-      return cerebrasAI("llama-3.3-70b");
+      // Default to Cerebras GPT-OSS
+      return "cerebras/gpt-oss-120b";
   }
 }
 
@@ -304,7 +292,7 @@ export const modelSelector = createModelSelector();
  */
 export interface SmartInferenceContext {
   tier: ModelTier;
-  model: ReturnType<typeof openai>;
+  model: string; // Mastra model router string (e.g., "cerebras/gpt-oss-120b")
   maxTokens: number;
   temperature: number;
 }
@@ -340,13 +328,13 @@ export function getSmartInferenceContext(
  * Cost estimation for model usage
  */
 export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
-  "llama-3.3-70b": { input: 0.00085, output: 0.00085 }, // Cerebras - ultra competitive
-  "llama3.1-8b": { input: 0.0001, output: 0.0001 }, // Cerebras - cheapest option
-  "gpt-oss-120b": { input: 0.0006, output: 0.0006 }, // Cerebras reasoning model
+  // Cerebras models via Mastra
+  "cerebras/gpt-oss-120b": { input: 0.00025, output: 0.00069 }, // $0.25/$0.69 per 1M tokens
+  "cerebras/qwen-3-235b-a22b-instruct-2507": { input: 0.0006, output: 0.001 }, // $0.60/$1 per 1M tokens
+  "cerebras/zai-glm-4.6": { input: 0.0006, output: 0.001 }, // Estimated similar to qwen
+  // OpenAI fallbacks
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 }, // per 1K tokens
   "gpt-4o": { input: 0.0025, output: 0.01 },
-  "claude-sonnet-4-5-20250929": { input: 0.003, output: 0.015 },
-  "c1/anthropic/claude-sonnet-4/v-20250815": { input: 0.003, output: 0.015 }, // thesys C1
 };
 
 /**
