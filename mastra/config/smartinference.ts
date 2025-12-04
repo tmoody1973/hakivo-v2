@@ -2,19 +2,19 @@
  * SmartInference Configuration for Hakivo Congressional Assistant
  *
  * Provides intelligent model routing based on task complexity and type.
- * Routes requests through Raindrop SmartInference for unified AI access.
+ * Uses Cerebras for ultra-fast inference with gpt-oss-120b model.
  *
  * Model Tiers:
- * - Fast: Quick responses for simple queries (llama-3.1-8b-instant via Raindrop)
- * - Standard: Balanced performance (llama-3.3-70b via Raindrop)
- * - Complex: Deep analysis and reasoning (deepseek-r1 via Raindrop)
+ * - Fast: Quick responses for simple queries (Cerebras gpt-oss-120b)
+ * - Standard: Balanced performance (Cerebras gpt-oss-120b)
+ * - Complex: Deep analysis and reasoning (Cerebras gpt-oss-120b)
  * - Creative: UI generation and creative content (thesys C1)
  *
- * RAINDROP SMARTINFERENCE BENEFITS:
- * - 50+ AI models through one endpoint
- * - No vendor lock-in (switch models without code changes)
- * - Unified billing and observability
- * - Built-in caching and rate limiting
+ * CEREBRAS BENEFITS:
+ * - 10x faster inference than typical cloud providers
+ * - OpenAI-compatible API
+ * - High-quality 120B parameter model
+ * - Competitive pricing
  */
 
 import { openai, createOpenAI } from "@ai-sdk/openai";
@@ -24,18 +24,14 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 const anthropic = createAnthropic({});
 
 /**
- * Raindrop SmartInference Provider
+ * Cerebras Provider - Ultra-fast inference with gpt-oss-120b
  *
- * Routes AI requests through Raindrop's unified AI gateway.
- * Access to Llama, DeepSeek, Mistral, and 50+ other models.
+ * Cerebras offers blazing fast inference speeds (10x faster than typical)
+ * with OpenAI-compatible API. Perfect for real-time chat applications.
  */
-const RAINDROP_CHAT_SERVICE =
-  process.env.RAINDROP_CHAT_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
-
-const raindropAI = createOpenAI({
-  apiKey: process.env.RAINDROP_API_KEY || "raindrop-internal",
-  baseURL: `${RAINDROP_CHAT_SERVICE}/v1`,
+const cerebrasAI = createOpenAI({
+  apiKey: process.env.CEREBRAS_API_KEY,
+  baseURL: "https://api.cerebras.ai/v1",
 });
 
 /**
@@ -62,7 +58,7 @@ export type TaskType =
   | "conversation";
 
 interface ModelConfig {
-  provider: "openai" | "anthropic" | "thesys" | "raindrop";
+  provider: "openai" | "anthropic" | "thesys" | "cerebras";
   modelId: string;
   maxTokens: number;
   temperature: number;
@@ -76,29 +72,29 @@ interface TaskClassification {
 }
 
 // Available models by tier
-// Note: Raindrop SmartInference is for internal handlers only (env.AI)
-// External services use OpenAI/Anthropic directly
+// Note: Using Cerebras for ultra-fast inference (10x faster than typical)
+// Cerebras gpt-oss-120b provides high-quality responses at incredible speed
 export const MODEL_CONFIGS: Record<ModelTier, ModelConfig> = {
   fast: {
-    provider: "openai",
-    modelId: "gpt-4o-mini", // Fast, efficient model
+    provider: "cerebras",
+    modelId: "gpt-oss-120b", // Ultra-fast inference via Cerebras
     maxTokens: 1000,
     temperature: 0.7,
-    description: "Fast responses via OpenAI GPT-4o-mini",
+    description: "Ultra-fast responses via Cerebras gpt-oss-120b",
   },
   standard: {
-    provider: "openai",
-    modelId: "gpt-4o", // High-quality model for conversational AI
-    maxTokens: 2000,
+    provider: "cerebras",
+    modelId: "gpt-oss-120b", // High-quality model with blazing speed
+    maxTokens: 4000,
     temperature: 0.7,
-    description: "Balanced performance via OpenAI GPT-4o",
+    description: "Balanced performance via Cerebras gpt-oss-120b",
   },
   complex: {
-    provider: "anthropic",
-    modelId: "claude-sonnet-4-20250514", // Advanced reasoning
-    maxTokens: 4000,
+    provider: "cerebras",
+    modelId: "gpt-oss-120b", // Use same model for complex tasks
+    maxTokens: 8000,
     temperature: 0.5,
-    description: "Deep reasoning via Claude Sonnet 4",
+    description: "Deep reasoning via Cerebras gpt-oss-120b",
   },
   creative: {
     provider: "thesys",
@@ -232,13 +228,16 @@ export function getModelForQuery(query: string): ModelConfig & { tier: ModelTier
 /**
  * Get Mastra-compatible model instance for a tier
  *
- * Uses OpenAI/Anthropic for external API access.
- * Raindrop SmartInference is only available inside Raindrop handlers (env.AI).
+ * Uses Cerebras for ultra-fast inference (10x faster than typical).
+ * Falls back to Anthropic for complex reasoning and Thesys for generative UI.
  */
 export function getMastraModel(tier: ModelTier = "standard") {
   const config = MODEL_CONFIGS[tier];
 
   switch (config.provider) {
+    case "cerebras":
+      // Cerebras gpt-oss-120b - ultra-fast inference
+      return cerebrasAI(config.modelId);
     case "openai":
       return openai(config.modelId);
     case "anthropic":
@@ -246,13 +245,9 @@ export function getMastraModel(tier: ModelTier = "standard") {
     case "thesys":
       // Use thesys C1 provider for generative UI
       return thesysC1.chat(config.modelId);
-    case "raindrop":
-      // Raindrop SmartInference - only works inside Raindrop handlers
-      // Falls back to OpenAI for external use
-      return openai("gpt-4o");
     default:
-      // Default to OpenAI GPT-4o
-      return openai("gpt-4o");
+      // Default to Cerebras gpt-oss-120b
+      return cerebrasAI("gpt-oss-120b");
   }
 }
 
@@ -345,6 +340,7 @@ export function getSmartInferenceContext(
  * Cost estimation for model usage
  */
 export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+  "gpt-oss-120b": { input: 0.0006, output: 0.0006 }, // Cerebras - very competitive pricing
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 }, // per 1K tokens
   "gpt-4o": { input: 0.0025, output: 0.01 },
   "claude-sonnet-4-5-20250929": { input: 0.003, output: 0.015 },
