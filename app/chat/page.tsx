@@ -393,21 +393,27 @@ export default function ChatPage() {
       // Add empty assistant message for streaming
       setMessages(prev => [...prev, assistantMessage])
 
-      // Read the SSE stream
+      // Read the SSE stream with proper line buffering
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let streamedContent = ""
+      let buffer = "" // Buffer for incomplete lines
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split("\n")
+        // Append new chunk to buffer
+        buffer += decoder.decode(value, { stream: true })
+
+        // Split buffer by newlines, keeping incomplete last line in buffer
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || "" // Keep last incomplete line in buffer
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6)
+          const trimmedLine = line.trim()
+          if (trimmedLine.startsWith("data: ")) {
+            const data = trimmedLine.slice(6)
             if (data === "[DONE]") continue
 
             try {
@@ -429,6 +435,28 @@ export default function ChatPage() {
             } catch {
               // Ignore parse errors for incomplete chunks
             }
+          }
+        }
+      }
+
+      // Process any remaining data in buffer
+      if (buffer.trim().startsWith("data: ")) {
+        const data = buffer.trim().slice(6)
+        if (data !== "[DONE]") {
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.content) {
+              streamedContent += parsed.content
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantMessageId
+                    ? { ...m, content: streamedContent }
+                    : m
+                )
+              )
+            }
+          } catch {
+            // Ignore
           }
         }
       }
