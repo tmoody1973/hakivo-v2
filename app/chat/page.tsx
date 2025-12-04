@@ -576,22 +576,27 @@ export default function ChatPage() {
 
   return (
     <div
-      className="flex flex-col h-[calc(100vh-4rem)] bg-[var(--chat-background)]"
+      className="flex flex-col h-[calc(100vh-4rem)] pb-20 bg-[var(--chat-background)]"
       style={{ "--chat-background": "oklch(0.14 0.015 240)" } as React.CSSProperties}
     >
       {/* Header - always show with history button */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--chat-border)] bg-[var(--chat-surface)]">
         <div className="flex items-center gap-3">
-          {sessions.length > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowSidebar(!showSidebar)}
-              className="h-9 w-9 text-muted-foreground hover:text-foreground transition-fast"
-            >
-              <History className="h-4 w-4" />
-            </Button>
-          )}
+          {/* History button - always visible */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowSidebar(!showSidebar)}
+            className="h-9 px-2.5 text-muted-foreground hover:text-foreground transition-fast relative"
+          >
+            <History className="h-4 w-4" />
+            <span className="ml-1.5 text-xs hidden sm:inline">History</span>
+            {sessions.length > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] font-medium flex items-center justify-center text-primary-foreground">
+                {sessions.length > 9 ? "9+" : sessions.length}
+              </span>
+            )}
+          </Button>
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
             <Sparkles className="h-4 w-4 text-white" />
           </div>
