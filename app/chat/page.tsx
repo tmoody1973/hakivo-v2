@@ -1,7 +1,12 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { Send, Sparkles, Volume2, RotateCcw, FileText, Users, BookOpen, Loader2, ArrowDown, History, X, MessageSquare, Trash2 } from 'lucide-react'
+import {
+  Send, Sparkles, RotateCcw, Loader2, ArrowDown,
+  PanelLeftClose, PanelLeft, Search, Paperclip,
+  MessageSquare, Trash2, Plus, ChevronDown, Copy, Check,
+  User
+} from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from "react-markdown"
@@ -10,6 +15,12 @@ import {
   componentRegistry,
   type ComponentName,
 } from "@/components/generative-ui"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // Message types
 interface Message {
@@ -31,6 +42,7 @@ interface ChatSession {
 // Storage keys
 const STORAGE_KEY = "hakivo_chat_sessions"
 const CURRENT_SESSION_KEY = "hakivo_current_session"
+const SIDEBAR_KEY = "hakivo_sidebar_open"
 
 // Load sessions from localStorage
 const loadSessions = (): ChatSession[] => {
@@ -59,51 +71,44 @@ const saveSessions = (sessions: ChatSession[]) => {
 // Generate session title from first message
 const generateTitle = (content: string): string => {
   const cleaned = content.replace(/\n/g, " ").trim()
-  return cleaned.length > 40 ? cleaned.substring(0, 40) + "..." : cleaned
+  return cleaned.length > 50 ? cleaned.substring(0, 50) + "..." : cleaned
 }
-
-// Suggested topics with icons
-const suggestedTopics = [
-  {
-    icon: FileText,
-    label: "Current Legislation",
-    query: "What are the most important bills being discussed right now?",
-    gradient: "from-violet-500/20 to-purple-500/20"
-  },
-  {
-    icon: Users,
-    label: "My Representatives",
-    query: "Tell me about my representatives' recent voting records",
-    gradient: "from-cyan-500/20 to-teal-500/20"
-  },
-  {
-    icon: BookOpen,
-    label: "How Congress Works",
-    query: "Explain how a bill becomes a law",
-    gradient: "from-amber-500/20 to-orange-500/20"
-  },
-  {
-    icon: Sparkles,
-    label: "Bill Analysis",
-    query: "Can you analyze the infrastructure bill for me?",
-    gradient: "from-pink-500/20 to-rose-500/20"
-  },
-]
-
-// Quick action chips
-const quickActions = [
-  "What bills are being voted on this week?",
-  "Summarize the healthcare reform bill",
-  "How has my senator voted on climate issues?",
-  "What's the latest on immigration policy?",
-]
 
 // Generate unique ID
 const generateId = () => `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 
+// Group sessions by date
+const groupSessionsByDate = (sessions: ChatSession[]) => {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+  const groups: { label: string; sessions: ChatSession[] }[] = [
+    { label: "Today", sessions: [] },
+    { label: "Yesterday", sessions: [] },
+    { label: "Previous 7 Days", sessions: [] },
+    { label: "Older", sessions: [] },
+  ]
+
+  sessions.forEach(session => {
+    const sessionDate = new Date(session.updatedAt)
+    if (sessionDate >= today) {
+      groups[0].sessions.push(session)
+    } else if (sessionDate >= yesterday) {
+      groups[1].sessions.push(session)
+    } else if (sessionDate >= weekAgo) {
+      groups[2].sessions.push(session)
+    } else {
+      groups[3].sessions.push(session)
+    }
+  })
+
+  return groups.filter(g => g.sessions.length > 0)
+}
+
 /**
  * Parse message content to extract text and component segments
- * Supports both self-closing <Component /> and full <Component>...</Component> formats
  */
 interface ContentSegment {
   type: "text" | "component"
@@ -114,15 +119,12 @@ interface ContentSegment {
 
 function parseMessageContent(content: string): ContentSegment[] {
   const segments: ContentSegment[] = []
-
-  // Pattern to match component markup: <ComponentName prop="value" /> or <ComponentName {...} />
   const componentPattern = /<(BillCard|RepresentativeProfile|VotingChart|BillTimeline|NewsCard|NewsCardGrid)\s+([^>]*?)\/>/g
 
   let lastIndex = 0
   let match
 
   while ((match = componentPattern.exec(content)) !== null) {
-    // Add text before this component
     if (match.index > lastIndex) {
       const text = content.slice(lastIndex, match.index).trim()
       if (text) {
@@ -131,11 +133,7 @@ function parseMessageContent(content: string): ContentSegment[] {
     }
 
     const [, componentName, propsStr] = match
-
-    // Parse props from the string
     const props: Record<string, unknown> = {}
-
-    // Match prop="value" or prop={json}
     const propPattern = /(\w+)=\{([^}]+)\}|(\w+)="([^"]*)"/g
     let propMatch
 
@@ -144,7 +142,6 @@ function parseMessageContent(content: string): ContentSegment[] {
       const value = propMatch[2] || propMatch[4]
 
       if (propMatch[2]) {
-        // Try to parse JSON for {value} format
         try {
           props[key] = JSON.parse(propMatch[2])
         } catch {
@@ -166,7 +163,6 @@ function parseMessageContent(content: string): ContentSegment[] {
     lastIndex = match.index + match[0].length
   }
 
-  // Add remaining text after last component
   if (lastIndex < content.length) {
     const text = content.slice(lastIndex).trim()
     if (text) {
@@ -174,7 +170,6 @@ function parseMessageContent(content: string): ContentSegment[] {
     }
   }
 
-  // If no components found, return the whole content as text
   if (segments.length === 0) {
     segments.push({ type: "text", content })
   }
@@ -183,52 +178,45 @@ function parseMessageContent(content: string): ContentSegment[] {
 }
 
 /**
- * Render message content with generative UI components
+ * Render message content with generative UI components - T3 style typography
  */
 function MessageContent({ content }: { content: string }) {
   const segments = useMemo(() => parseMessageContent(content), [content])
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {segments.map((segment, index) => {
         if (segment.type === "text") {
           return (
-            <div key={index} className="prose prose-sm prose-invert max-w-none">
+            <div key={index} className="prose prose-invert prose-lg max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  // Style headings
-                  h1: ({ children }) => <h1 className="text-lg font-bold mt-4 mb-2">{children}</h1>,
-                  h2: ({ children }) => <h2 className="text-base font-bold mt-3 mb-2">{children}</h2>,
-                  h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
-                  // Style paragraphs
-                  p: ({ children }) => <p className="text-sm leading-relaxed mb-2">{children}</p>,
-                  // Style lists
-                  ul: ({ children }) => <ul className="text-sm list-disc list-inside mb-2 space-y-1">{children}</ul>,
-                  ol: ({ children }) => <ol className="text-sm list-decimal list-inside mb-2 space-y-1">{children}</ol>,
-                  li: ({ children }) => <li className="text-sm">{children}</li>,
-                  // Style bold/italic
+                  h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-3 text-foreground">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-xl font-bold mt-5 mb-3 text-foreground">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2 text-foreground">{children}</h3>,
+                  p: ({ children }) => <p className="text-base leading-7 mb-4 text-foreground/90">{children}</p>,
+                  ul: ({ children }) => <ul className="text-base list-disc ml-6 mb-4 space-y-2">{children}</ul>,
+                  ol: ({ children }) => <ol className="text-base list-decimal ml-6 mb-4 space-y-2">{children}</ol>,
+                  li: ({ children }) => <li className="text-foreground/90 leading-7">{children}</li>,
                   strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
                   em: ({ children }) => <em className="italic">{children}</em>,
-                  // Style code
-                  code: ({ children }) => <code className="px-1 py-0.5 bg-muted rounded text-xs font-mono">{children}</code>,
-                  // Style links
+                  code: ({ children }) => <code className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono text-foreground">{children}</code>,
                   a: ({ href, children }) => (
                     <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
                       {children}
                     </a>
                   ),
-                  // Style tables
                   table: ({ children }) => (
-                    <div className="overflow-x-auto my-3 rounded-lg border border-border">
-                      <table className="w-full text-sm">{children}</table>
+                    <div className="overflow-x-auto my-4 rounded-lg border border-border">
+                      <table className="w-full text-base">{children}</table>
                     </div>
                   ),
                   thead: ({ children }) => <thead className="bg-muted/50 border-b border-border">{children}</thead>,
                   tbody: ({ children }) => <tbody className="divide-y divide-border">{children}</tbody>,
                   tr: ({ children }) => <tr className="hover:bg-muted/30 transition-colors">{children}</tr>,
-                  th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-foreground whitespace-nowrap">{children}</th>,
-                  td: ({ children }) => <td className="px-3 py-2 text-muted-foreground">{children}</td>,
+                  th: ({ children }) => <th className="px-4 py-3 text-left font-semibold text-foreground whitespace-nowrap">{children}</th>,
+                  td: ({ children }) => <td className="px-4 py-3 text-foreground/80">{children}</td>,
                 }}
               >
                 {segment.content || ""}
@@ -242,7 +230,7 @@ function MessageContent({ content }: { content: string }) {
           if (!Component) return null
 
           return (
-            <div key={index} className="my-2">
+            <div key={index} className="my-4">
               {/* @ts-expect-error - Dynamic props based on component type */}
               <Component {...segment.props} />
             </div>
@@ -255,6 +243,30 @@ function MessageContent({ content }: { content: string }) {
   )
 }
 
+/**
+ * Copy button component
+ */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={handleCopy}
+      className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+    >
+      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+    </Button>
+  )
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -264,16 +276,25 @@ export default function ChatPage() {
   // Session state
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [showSidebar, setShowSidebar] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load sessions on mount
+  // Load sessions and sidebar state on mount
   useEffect(() => {
     const loaded = loadSessions()
     setSessions(loaded)
+
+    // Restore sidebar state
+    const savedSidebar = typeof window !== "undefined"
+      ? localStorage.getItem(SIDEBAR_KEY)
+      : null
+    if (savedSidebar !== null) {
+      setSidebarOpen(savedSidebar === "true")
+    }
 
     // Restore current session if exists
     const savedSessionId = typeof window !== "undefined"
@@ -302,6 +323,13 @@ export default function ChatPage() {
       localStorage.setItem(CURRENT_SESSION_KEY, currentSessionId)
     }
   }, [currentSessionId])
+
+  // Save sidebar state
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(SIDEBAR_KEY, String(sidebarOpen))
+    }
+  }, [sidebarOpen])
 
   // Update current session when messages change
   useEffect(() => {
@@ -334,7 +362,6 @@ export default function ChatPage() {
     if (session) {
       setCurrentSessionId(sessionId)
       setMessages(session.messages)
-      setShowSidebar(false)
     }
   }, [sessions])
 
@@ -413,8 +440,6 @@ export default function ChatPage() {
     }
 
     try {
-      // Call streaming API
-      console.log("[Chat] Sending request...")
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -422,8 +447,6 @@ export default function ChatPage() {
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       })
-
-      console.log("[Chat] Response status:", response.status)
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`)
@@ -436,45 +459,32 @@ export default function ChatPage() {
       // Add empty assistant message for streaming
       setMessages(prev => [...prev, assistantMessage])
 
-      // Read the SSE stream with proper line buffering
+      // Read the SSE stream
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let streamedContent = ""
-      let buffer = "" // Buffer for incomplete lines
-      let chunkCount = 0
+      let buffer = ""
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) {
-          console.log("[Chat] Stream done, total chunks:", chunkCount)
-          break
-        }
+        if (done) break
 
-        chunkCount++
-        // Append new chunk to buffer
         const decoded = decoder.decode(value, { stream: true })
         buffer += decoded
-        console.log("[Chat] Chunk", chunkCount, "raw:", decoded.substring(0, 100))
 
-        // Split buffer by newlines, keeping incomplete last line in buffer
         const lines = buffer.split("\n")
-        buffer = lines.pop() || "" // Keep last incomplete line in buffer
+        buffer = lines.pop() || ""
 
         for (const line of lines) {
           const trimmedLine = line.trim()
           if (trimmedLine.startsWith("data: ")) {
             const data = trimmedLine.slice(6)
-            if (data === "[DONE]") {
-              console.log("[Chat] Received [DONE]")
-              continue
-            }
+            if (data === "[DONE]") continue
 
             try {
               const parsed = JSON.parse(data)
               if (parsed.content) {
                 streamedContent += parsed.content
-                console.log("[Chat] Content so far:", streamedContent.substring(0, 50))
-                // Update the assistant message with streamed content
                 setMessages(prev =>
                   prev.map(m =>
                     m.id === assistantMessageId
@@ -483,11 +493,8 @@ export default function ChatPage() {
                   )
                 )
               }
-              if (parsed.error) {
-                console.error("[Chat] Stream error:", parsed.error)
-              }
-            } catch (e) {
-              console.warn("[Chat] Parse error:", e, "data:", data)
+            } catch {
+              // Ignore parse errors
             }
           }
         }
@@ -514,11 +521,8 @@ export default function ChatPage() {
           }
         }
       }
-
-      console.log("[Chat] Final content length:", streamedContent.length)
     } catch (error) {
       console.error("[Chat] Error:", error)
-      // Show error message
       setMessages(prev => [
         ...prev.filter(m => m.id !== assistantMessageId),
         {
@@ -541,13 +545,7 @@ export default function ChatPage() {
     }
   }
 
-  // Handle topic click
-  const handleTopicClick = (query: string) => {
-    setInput(query)
-    inputRef.current?.focus()
-  }
-
-  // Start new chat (keeps history)
+  // Start new chat
   const startNewChat = () => {
     setCurrentSessionId(null)
     setMessages([])
@@ -557,345 +555,414 @@ export default function ChatPage() {
     }
   }
 
-  // Format relative time
-  const formatRelativeTime = (date: Date): string => {
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMins / 60)
-    const diffDays = Math.floor(diffHours / 24)
+  // Regenerate last response
+  const regenerateLastResponse = async () => {
+    if (messages.length < 2 || isLoading) return
 
-    if (diffMins < 1) return "Just now"
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    if (diffDays < 7) return `${diffDays}d ago`
-    return date.toLocaleDateString()
+    // Find the last user message
+    const lastUserMessageIndex = messages.map(m => m.role).lastIndexOf("user")
+    if (lastUserMessageIndex === -1) return
+
+    // Keep messages up to and including the last user message
+    const messagesUntilLastUser = messages.slice(0, lastUserMessageIndex + 1)
+    setMessages(messagesUntilLastUser)
+
+    // Simulate sending the last user message again
+    const lastUserMessage = messages[lastUserMessageIndex]
+    setIsLoading(true)
+
+    const assistantMessageId = generateId()
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    }
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: messagesUntilLastUser.map(m => ({ role: m.role, content: m.content })),
+        }),
+      })
+
+      if (!response.ok || !response.body) {
+        throw new Error("Failed to regenerate")
+      }
+
+      setMessages(prev => [...prev, assistantMessage])
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let streamedContent = ""
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const decoded = decoder.decode(value, { stream: true })
+        buffer += decoded
+
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (trimmedLine.startsWith("data: ")) {
+            const data = trimmedLine.slice(6)
+            if (data === "[DONE]") continue
+
+            try {
+              const parsed = JSON.parse(data)
+              if (parsed.content) {
+                streamedContent += parsed.content
+                setMessages(prev =>
+                  prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: streamedContent }
+                      : m
+                  )
+                )
+              }
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[Chat] Regenerate error:", error)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
+  // Filter sessions based on search
+  const filteredSessions = searchQuery
+    ? sessions.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : sessions
+
+  const groupedSessions = groupSessionsByDate(filteredSessions)
   const isEmpty = messages.length === 0
 
   return (
-    <div
-      className="flex flex-col h-[calc(100vh-4rem)] pb-20 bg-[var(--chat-background)]"
-      style={{ "--chat-background": "oklch(0.14 0.015 240)" } as React.CSSProperties}
-    >
-      {/* Header - always show with history button */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-[var(--chat-border)] bg-[var(--chat-surface)]">
-        <div className="flex items-center gap-3">
-          {/* History button - always visible */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowSidebar(!showSidebar)}
-            className="h-9 px-2.5 text-muted-foreground hover:text-foreground transition-fast relative"
-          >
-            <History className="h-4 w-4" />
-            <span className="ml-1.5 text-xs hidden sm:inline">History</span>
-            {sessions.length > 0 && (
-              <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-[10px] font-medium flex items-center justify-center text-primary-foreground">
-                {sessions.length > 9 ? "9+" : sessions.length}
-              </span>
-            )}
-          </Button>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
-            <Sparkles className="h-4 w-4 text-white" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold">Congressional Assistant</h1>
-            <p className="text-xs text-muted-foreground">AI-powered legislative guide</p>
+    <div className="flex h-[calc(100vh-4rem)] bg-background">
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "flex flex-col bg-card border-r border-border transition-all duration-300 ease-in-out",
+          sidebarOpen ? "w-72" : "w-0 overflow-hidden"
+        )}
+      >
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between p-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(false)}
+              className="h-8 w-8"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
+            <span className="font-semibold text-sm">Hakivo</span>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={startNewChat}
-          className="text-muted-foreground hover:text-foreground transition-fast"
-        >
-          <RotateCcw className="h-4 w-4 mr-2" />
-          New Chat
-        </Button>
-      </header>
 
-      {/* Session History Sidebar */}
-      {showSidebar && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/50 z-40 animate-fade-in"
-            onClick={() => setShowSidebar(false)}
-          />
-          {/* Sidebar */}
-          <div className="fixed left-0 top-0 h-full w-80 max-w-[85vw] bg-[var(--chat-surface)] border-r border-[var(--chat-border)] z-50 animate-slide-up flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-[var(--chat-border)]">
-              <h2 className="font-semibold flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Chat History
-              </h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowSidebar(false)}
-                className="h-8 w-8"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 chat-scrollbar">
-              {sessions.map(session => (
+        {/* New Chat Button */}
+        <div className="p-3">
+          <Button
+            onClick={startNewChat}
+            className="w-full justify-start gap-2 bg-primary hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            New Chat
+          </Button>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 pb-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search your threads..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-9 pl-9 pr-3 rounded-md bg-muted/50 border border-border text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+        </div>
+
+        {/* Sessions List */}
+        <div className="flex-1 overflow-y-auto px-2">
+          {groupedSessions.map((group) => (
+            <div key={group.label} className="mb-4">
+              <p className="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {group.label}
+              </p>
+              {group.sessions.map((session) => (
                 <div
                   key={session.id}
                   className={cn(
-                    "group flex items-center gap-2 p-3 rounded-lg cursor-pointer",
-                    "hover:bg-[var(--chat-surface-elevated)] transition-colors",
-                    currentSessionId === session.id && "bg-[var(--chat-surface-elevated)] border border-primary/20"
+                    "group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer mb-1",
+                    "hover:bg-muted/50 transition-colors",
+                    currentSessionId === session.id && "bg-muted"
                   )}
                   onClick={() => switchSession(session.id)}
                 >
                   <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{session.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatRelativeTime(session.updatedAt)} · {session.messages.length} messages
-                    </p>
-                  </div>
+                  <span className="flex-1 text-sm truncate">{session.title}</span>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation()
                       deleteSession(session.id)
                     }}
                   >
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                   </Button>
                 </div>
               ))}
-              {sessions.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No chat history yet
-                </p>
-              )}
+            </div>
+          ))}
+          {filteredSessions.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              {searchQuery ? "No matching threads" : "No chat history yet"}
+            </p>
+          )}
+        </div>
+
+        {/* User Profile */}
+        <div className="p-3 border-t border-border">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+              <User className="h-4 w-4 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">User</p>
+              <p className="text-xs text-muted-foreground">Free Plan</p>
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </aside>
 
-      {/* Messages area */}
-      <div
-        ref={messagesContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto chat-scrollbar"
-      >
-        {isEmpty ? (
-          /* Empty state with welcome UI */
-          <div className="flex flex-col items-center justify-center min-h-full px-4 py-12 animate-fade-in">
-            <div className="chat-container w-full space-y-8">
-              {/* Hero section */}
-              <div className="text-center space-y-4">
+      {/* Main Chat Area */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Top Bar */}
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-3">
+            {!sidebarOpen && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+                className="h-8 w-8"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                <Sparkles className="h-4 w-4 text-white" />
+              </div>
+              <span className="font-medium">Congressional Assistant</span>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={startNewChat}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            New Chat
+          </Button>
+        </header>
+
+        {/* Messages Area */}
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto pb-20"
+        >
+          {isEmpty ? (
+            /* Empty state */
+            <div className="flex flex-col items-center justify-center min-h-full px-4 py-12">
+              <div className="max-w-2xl w-full space-y-8 text-center">
                 <div className="inline-flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/25">
                   <Sparkles className="h-10 w-10 text-white" />
                 </div>
                 <div className="space-y-2">
-                  <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+                  <h1 className="text-3xl font-bold tracking-tight">
                     Congressional Assistant
                   </h1>
-                  <p className="text-muted-foreground text-lg max-w-md mx-auto">
+                  <p className="text-muted-foreground text-lg">
                     Your AI-powered guide to understanding legislation and Congress
                   </p>
                 </div>
               </div>
-
-              {/* Topic cards */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {suggestedTopics.map((topic) => (
-                  <button
-                    key={topic.label}
-                    onClick={() => handleTopicClick(topic.query)}
-                    className={cn(
-                      "group relative flex items-start gap-4 p-4 rounded-xl",
-                      "bg-[var(--chat-surface)] border border-[var(--chat-border)]",
-                      "hover:border-primary/50 hover:bg-[var(--chat-surface-elevated)]",
-                      "transition-all duration-200 text-left",
-                      "focus-ring"
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-                      "bg-gradient-to-br",
-                      topic.gradient
-                    )}>
-                      <topic.icon className="h-5 w-5 text-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-sm mb-1 group-hover:text-primary transition-colors">
-                        {topic.label}
-                      </h3>
-                      <p className="text-xs text-muted-foreground line-clamp-2">
-                        {topic.query}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Quick action chips */}
-              <div className="space-y-3">
-                <p className="text-xs font-medium text-muted-foreground text-center">
-                  Or try asking:
-                </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {quickActions.map((action) => (
-                    <button
-                      key={action}
-                      onClick={() => handleTopicClick(action)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full text-xs",
-                        "bg-[var(--chat-surface)] border border-[var(--chat-border)]",
-                        "hover:border-primary/50 hover:bg-[var(--chat-surface-elevated)]",
-                        "transition-all duration-150",
-                        "focus-ring"
-                      )}
-                    >
-                      {action}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
-          </div>
-        ) : (
-          /* Message list */
-          <div className="chat-container py-6 space-y-4">
-            {messages.map((message, index) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "flex gap-3",
-                  message.role === "user" ? "justify-end" : "justify-start",
-                  "animate-message-in"
-                )}
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                {message.role === "assistant" && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
+          ) : (
+            /* Messages */
+            <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+              {messages.map((message) => (
+                <div key={message.id} className="group">
+                  {message.role === "user" ? (
+                    /* User message - compact pill style */
+                    <div className="flex justify-end mb-6">
+                      <div className="bg-primary text-primary-foreground px-4 py-2 rounded-2xl max-w-[80%]">
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Assistant message - clean typography, no bubble */
+                    <div className="relative">
+                      <div className="flex items-start gap-4">
+                        <div className="shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                          <Sparkles className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0 pt-1">
+                          <MessageContent content={message.content} />
+                        </div>
+                      </div>
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1 mt-2 ml-12">
+                        <CopyButton text={message.content} />
+                        {message === messages[messages.length - 1] && !isLoading && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={regenerateLastResponse}
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Regenerate response"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Loading indicator */}
+              {isLoading && messages[messages.length - 1]?.role === "user" && (
+                <div className="flex items-start gap-4">
+                  <div className="shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
                     <Sparkles className="h-4 w-4 text-white" />
                   </div>
-                )}
-                <div
-                  className={cn(
-                    "rounded-2xl px-4 py-3",
-                    message.role === "user"
-                      ? "bg-[var(--chat-user-bg)] text-[var(--chat-user-text)] rounded-br-md max-w-[85%] sm:max-w-[75%]"
-                      : "bg-[var(--chat-assistant-bg)] text-[var(--chat-assistant-text)] rounded-bl-md max-w-[95%] sm:max-w-[85%]"
-                  )}
-                >
-                  {message.role === "user" ? (
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {message.content}
-                    </p>
-                  ) : (
-                    <MessageContent content={message.content} />
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* Loading indicator */}
-            {isLoading && (
-              <div className="flex gap-3 animate-message-in">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-600">
-                  <Sparkles className="h-4 w-4 text-white" />
-                </div>
-                <div className="rounded-2xl rounded-bl-md px-4 py-3 bg-[var(--chat-assistant-bg)]">
-                  <div className="flex gap-1.5">
-                    <div className="h-2 w-2 rounded-full bg-foreground/40 typing-dot" />
-                    <div className="h-2 w-2 rounded-full bg-foreground/40 typing-dot" />
-                    <div className="h-2 w-2 rounded-full bg-foreground/40 typing-dot" />
+                  <div className="pt-2">
+                    <div className="flex gap-1.5">
+                      <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Scroll to bottom button */}
+        {showScrollButton && (
+          <div className="absolute bottom-28 left-1/2 -translate-x-1/2">
+            <Button
+              onClick={() => scrollToBottom()}
+              variant="secondary"
+              size="sm"
+              className="shadow-lg gap-2"
+            >
+              <ArrowDown className="h-4 w-4" />
+              Scroll to bottom
+            </Button>
           </div>
         )}
-      </div>
 
-      {/* Scroll to bottom button */}
-      {showScrollButton && (
-        <button
-          onClick={() => scrollToBottom()}
-          className={cn(
-            "absolute bottom-24 right-6 p-2 rounded-full",
-            "bg-[var(--chat-surface-elevated)] border border-[var(--chat-border)]",
-            "shadow-lg hover:bg-[var(--chat-surface)]",
-            "transition-all duration-200 animate-fade-in",
-            "focus-ring"
-          )}
-        >
-          <ArrowDown className="h-4 w-4" />
-        </button>
-      )}
-
-      {/* Input area */}
-      <div className="border-t border-[var(--chat-border)] bg-[var(--chat-surface)] p-4">
-        <div className="chat-container">
-          <div className={cn(
-            "flex items-end gap-2 p-2 rounded-2xl",
-            "bg-[var(--chat-surface-elevated)] border border-[var(--chat-border)]",
-            "gradient-border transition-all duration-200",
-            "focus-within:border-primary/50"
-          )}>
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about legislation, bills, representatives, or how Congress works..."
-              rows={1}
-              disabled={isLoading}
-              className={cn(
-                "flex-1 resize-none bg-transparent px-2 py-2",
-                "text-sm placeholder:text-muted-foreground/60",
-                "focus:outline-none disabled:opacity-50",
-                "max-h-[200px]"
-              )}
-            />
-            <div className="flex gap-1 pb-1">
-              <Button
-                size="icon"
-                variant="ghost"
+        {/* Input Area - T3 Style */}
+        <div className="border-t border-border bg-background p-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="relative rounded-2xl border border-border bg-card shadow-sm">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Type your message here..."
+                rows={1}
                 disabled={isLoading}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground transition-fast"
-              >
-                <Volume2 className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon"
-                onClick={handleSend}
-                disabled={isLoading || !input.trim()}
                 className={cn(
-                  "h-8 w-8 rounded-xl",
-                  "bg-gradient-to-br from-violet-500 to-purple-600",
-                  "hover:from-violet-600 hover:to-purple-700",
-                  "disabled:opacity-40 disabled:cursor-not-allowed",
-                  "transition-all duration-200"
+                  "w-full resize-none bg-transparent px-4 py-3 pr-32",
+                  "text-base placeholder:text-muted-foreground",
+                  "focus:outline-none disabled:opacity-50",
+                  "max-h-[200px]"
                 )}
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
+              />
+              {/* Bottom bar with model selector and buttons */}
+              <div className="flex items-center justify-between px-3 py-2 border-t border-border/50">
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 gap-1 text-muted-foreground hover:text-foreground">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span className="text-xs">Cerebras GPT</span>
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem>
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Cerebras GPT (Fast)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Search"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Attach"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    onClick={handleSend}
+                    disabled={isLoading || !input.trim()}
+                    className="h-8 w-8 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40"
+                  >
+                    {isLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Congressional Assistant can make mistakes. Verify important information.
+            </p>
           </div>
-          <p className="text-[10px] text-muted-foreground/60 text-center mt-2">
-            Congressional Assistant can make mistakes. Verify important information.
-          </p>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
