@@ -2,18 +2,18 @@
  * SmartInference Configuration for Hakivo Congressional Assistant
  *
  * Provides intelligent model routing based on task complexity and type.
- * Uses Cerebras for ultra-fast inference with gpt-oss-120b model.
+ * Uses Cerebras for ultra-fast inference with Llama 3.3 70B model.
  *
  * Model Tiers:
- * - Fast: Quick responses for simple queries (Cerebras gpt-oss-120b)
- * - Standard: Balanced performance (Cerebras gpt-oss-120b)
- * - Complex: Deep analysis and reasoning (Cerebras gpt-oss-120b)
+ * - Fast: Quick responses for simple queries (Cerebras Llama 3.1 8B)
+ * - Standard: Balanced performance (Cerebras Llama 3.3 70B)
+ * - Complex: Deep analysis and reasoning (Cerebras Llama 3.3 70B)
  * - Creative: UI generation and creative content (thesys C1)
  *
  * CEREBRAS BENEFITS:
  * - 10x faster inference than typical cloud providers
  * - OpenAI-compatible API
- * - High-quality 120B parameter model
+ * - High-quality Llama models at incredible speed
  * - Competitive pricing
  */
 
@@ -73,28 +73,28 @@ interface TaskClassification {
 
 // Available models by tier
 // Note: Using Cerebras for ultra-fast inference (10x faster than typical)
-// Cerebras gpt-oss-120b provides high-quality responses at incredible speed
+// Using llama-3.3-70b which is compatible with standard OpenAI SDK streaming
 export const MODEL_CONFIGS: Record<ModelTier, ModelConfig> = {
   fast: {
     provider: "cerebras",
-    modelId: "gpt-oss-120b", // Ultra-fast inference via Cerebras
+    modelId: "llama3.1-8b", // Ultra-fast inference via Cerebras
     maxTokens: 1000,
     temperature: 0.7,
-    description: "Ultra-fast responses via Cerebras gpt-oss-120b",
+    description: "Ultra-fast responses via Cerebras Llama 3.1 8B",
   },
   standard: {
     provider: "cerebras",
-    modelId: "gpt-oss-120b", // High-quality model with blazing speed
+    modelId: "llama-3.3-70b", // High-quality model with blazing speed
     maxTokens: 4000,
     temperature: 0.7,
-    description: "Balanced performance via Cerebras gpt-oss-120b",
+    description: "Balanced performance via Cerebras Llama 3.3 70B",
   },
   complex: {
     provider: "cerebras",
-    modelId: "gpt-oss-120b", // Use same model for complex tasks
+    modelId: "llama-3.3-70b", // Use Llama 3.3 for complex tasks
     maxTokens: 8000,
     temperature: 0.5,
-    description: "Deep reasoning via Cerebras gpt-oss-120b",
+    description: "Deep reasoning via Cerebras Llama 3.3 70B",
   },
   creative: {
     provider: "thesys",
@@ -246,8 +246,8 @@ export function getMastraModel(tier: ModelTier = "standard") {
       // Use thesys C1 provider for generative UI
       return thesysC1.chat(config.modelId);
     default:
-      // Default to Cerebras gpt-oss-120b
-      return cerebrasAI("gpt-oss-120b");
+      // Default to Cerebras Llama 3.3 70B
+      return cerebrasAI("llama-3.3-70b");
   }
 }
 
@@ -340,7 +340,9 @@ export function getSmartInferenceContext(
  * Cost estimation for model usage
  */
 export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
-  "gpt-oss-120b": { input: 0.0006, output: 0.0006 }, // Cerebras - very competitive pricing
+  "llama-3.3-70b": { input: 0.00085, output: 0.00085 }, // Cerebras - ultra competitive
+  "llama3.1-8b": { input: 0.0001, output: 0.0001 }, // Cerebras - cheapest option
+  "gpt-oss-120b": { input: 0.0006, output: 0.0006 }, // Cerebras reasoning model
   "gpt-4o-mini": { input: 0.00015, output: 0.0006 }, // per 1K tokens
   "gpt-4o": { input: 0.0025, output: 0.01 },
   "claude-sonnet-4-5-20250929": { input: 0.003, output: 0.015 },
