@@ -153,11 +153,11 @@ export function PersistentAudioPlayer() {
 
   return (
     <Card className="fixed bottom-0 left-0 right-0 z-50 border-t rounded-none bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-      <div className="container flex items-center gap-4 px-4 md:px-6 py-3">
+      <div className="container flex items-center gap-3 px-4 md:px-6 py-2">
         {/* Now Playing Info */}
-        <div className="flex items-center gap-3 min-w-0 flex-1 md:flex-[0_0_280px]">
+        <div className="flex items-center gap-2 min-w-0 flex-1 md:flex-[0_0_220px]">
           {imageUrl ? (
-            <div className="h-12 w-12 rounded overflow-hidden flex-shrink-0">
+            <div className="h-9 w-9 rounded overflow-hidden flex-shrink-0">
               <img
                 src={imageUrl}
                 alt={title}
@@ -165,95 +165,92 @@ export function PersistentAudioPlayer() {
               />
             </div>
           ) : (
-            <div className="h-12 w-12 rounded bg-accent flex items-center justify-center flex-shrink-0">
+            <div className="h-9 w-9 rounded bg-accent flex items-center justify-center flex-shrink-0">
               {type === 'brief' ? (
-                <Radio className="h-6 w-6 text-accent-foreground" />
+                <Radio className="h-4 w-4 text-accent-foreground" />
               ) : (
-                <Mic className="h-6 w-6 text-accent-foreground" />
+                <Mic className="h-4 w-4 text-accent-foreground" />
               )}
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">{title}</p>
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="text-xs font-medium truncate">{title}</p>
+            <p className="text-[10px] text-muted-foreground truncate">
               {type === 'brief' ? 'Daily Brief' : type}
-              {createdAt && ` • ${formatDate(createdAt)}`}
               {displayDuration > 0 && ` • ${formatTime(displayDuration)}`}
             </p>
           </div>
         </div>
 
-        {/* Player Controls */}
-        <div className="flex-1 flex flex-col items-center gap-2">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={skipBack}
-              title="Back 15s"
-              disabled={!currentTrack}
-            >
-              <SkipBack className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="default"
-              size="icon"
-              className="h-10 w-10"
-              onClick={handlePlayClick}
-              disabled={isLoading || !hasAudio}
-            >
-              {isLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : isPlaying ? (
-                <Pause className="h-5 w-5" />
-              ) : (
-                <Play className="h-5 w-5 ml-0.5" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={skipForward}
-              title="Forward 15s"
-              disabled={!currentTrack}
-            >
-              <SkipForward className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="hidden md:flex items-center gap-2 w-full max-w-md">
-            <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
-              {formatTime(currentTime)}
-            </span>
-            <Slider
-              value={[progressPercent]}
-              onValueChange={handleProgressChange}
-              max={100}
-              step={0.1}
-              className="flex-1"
-              disabled={!currentTrack}
-            />
-            <span className="text-xs text-muted-foreground tabular-nums w-10">
-              {formatTime(displayDuration)}
-            </span>
-          </div>
-        </div>
-
-        {/* Volume Control */}
-        <div className="hidden lg:flex items-center gap-2 flex-[0_0_140px]">
+        {/* Player Controls - Single Row */}
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
+            className="h-7 w-7"
+            onClick={skipBack}
+            title="Back 15s"
+            disabled={!currentTrack}
+          >
+            <SkipBack className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="default"
+            size="icon"
             className="h-8 w-8"
+            onClick={handlePlayClick}
+            disabled={isLoading || !hasAudio}
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4 ml-0.5" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={skipForward}
+            title="Forward 15s"
+            disabled={!currentTrack}
+          >
+            <SkipForward className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        {/* Progress Bar - Inline */}
+        <div className="hidden md:flex items-center gap-2 flex-1 max-w-xs">
+          <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">
+            {formatTime(currentTime)}
+          </span>
+          <Slider
+            value={[progressPercent]}
+            onValueChange={handleProgressChange}
+            max={100}
+            step={0.1}
+            className="flex-1"
+            disabled={!currentTrack}
+          />
+          <span className="text-[10px] text-muted-foreground tabular-nums w-8">
+            {formatTime(displayDuration)}
+          </span>
+        </div>
+
+        {/* Volume Control */}
+        <div className="hidden lg:flex items-center gap-1 flex-[0_0_100px]">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             onClick={() => setVolume(volume > 0 ? 0 : 0.75)}
           >
             {volume === 0 ? (
-              <VolumeX className="h-4 w-4 text-muted-foreground" />
+              <VolumeX className="h-3.5 w-3.5 text-muted-foreground" />
             ) : (
-              <Volume2 className="h-4 w-4 text-muted-foreground" />
+              <Volume2 className="h-3.5 w-3.5 text-muted-foreground" />
             )}
           </Button>
           <Slider
@@ -261,7 +258,7 @@ export function PersistentAudioPlayer() {
             onValueChange={handleVolumeChange}
             max={100}
             step={1}
-            className="w-20"
+            className="w-16"
           />
         </div>
       </div>
