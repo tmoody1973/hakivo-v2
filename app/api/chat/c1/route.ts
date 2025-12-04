@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { transformStream } from "@crayonai/stream";
-import { tools } from "./tools";
+// Tools disabled for now - testing pure C1 UI generation
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,18 +34,16 @@ interface ChatRequest {
   responseId: string;
 }
 
-// MINIMAL system prompt - let C1 handle UI generation natively
-// The template uses just "You are a helpful assistant" and C1 generates UI
-const c1SystemPrompt = `You are a helpful assistant.`;
+// NO system prompt - template uses empty message store
+// C1 model is fine-tuned for UI generation, system prompts can interfere
 
 // In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
 
 function getMessageStore(threadId: string) {
   if (!messageStores.has(threadId)) {
-    messageStores.set(threadId, [
-      { id: "system", role: "system", content: c1SystemPrompt }
-    ]);
+    // Start with EMPTY array - no system message (matches template exactly)
+    messageStores.set(threadId, []);
   }
   return {
     addMessage: (msg: DBMessage) => {
@@ -156,11 +154,8 @@ export async function POST(req: NextRequest) {
       // Ensure thread exists and load previous messages if this is a new session
       const backendMessages = await loadMessagesFromBackend(threadId, accessToken);
       if (backendMessages && backendMessages.length > 0) {
-        // Replace in-memory store with backend messages
-        messageStores.set(threadId, [
-          { id: "system", role: "system", content: c1SystemPrompt },
-          ...backendMessages.filter(m => m.role !== "system"),
-        ]);
+        // Replace in-memory store with backend messages (NO system message)
+        messageStores.set(threadId, backendMessages.filter(m => m.role !== "system"));
       }
 
       // Persist the user message
@@ -169,15 +164,13 @@ export async function POST(req: NextRequest) {
 
     messageStore.addMessage(prompt);
 
-    // TEMPORARY: Disable tools to test if C1 generates UI without them
-    // Tools might be interfering with C1's UI generation
-    const llmStream = await client.beta.chat.completions.runTools({
+    // Use standard chat.completions.create - NOT runTools
+    // This matches C1's expected API format for UI generation
+    const llmStream = await client.chat.completions.create({
       model: "c1/anthropic/claude-sonnet-4/v-20250930",
-      temperature: 0.5 as unknown as number,
+      temperature: 0.5,
       messages: messageStore.getOpenAICompatibleMessageList(),
       stream: true,
-      tool_choice: "none",
-      tools: [],
     });
 
     const responseStream = transformStream(
