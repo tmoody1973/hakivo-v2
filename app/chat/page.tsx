@@ -22,6 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useAuth } from "@/lib/auth/auth-context"
 
 // Message types
 interface Message {
@@ -40,16 +41,23 @@ interface ChatSession {
   updatedAt: Date
 }
 
-// Storage keys
-const STORAGE_KEY = "hakivo_chat_sessions"
-const CURRENT_SESSION_KEY = "hakivo_current_session"
+// Base storage keys (user ID will be appended)
+const STORAGE_KEY_BASE = "hakivo_chat_sessions"
+const CURRENT_SESSION_KEY_BASE = "hakivo_current_session"
 const SIDEBAR_KEY = "hakivo_sidebar_open"
 
-// Load sessions from localStorage
-const loadSessions = (): ChatSession[] => {
+// Get user-specific storage keys
+const getStorageKey = (userId: string | null) =>
+  userId ? `${STORAGE_KEY_BASE}_${userId}` : STORAGE_KEY_BASE
+const getCurrentSessionKey = (userId: string | null) =>
+  userId ? `${CURRENT_SESSION_KEY_BASE}_${userId}` : CURRENT_SESSION_KEY_BASE
+
+// Load sessions from localStorage (per-user)
+const loadSessions = (userId: string | null): ChatSession[] => {
   if (typeof window === "undefined") return []
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    const storageKey = getStorageKey(userId)
+    const stored = localStorage.getItem(storageKey)
     if (!stored) return []
     const sessions = JSON.parse(stored)
     return sessions.map((s: ChatSession) => ({
@@ -63,10 +71,11 @@ const loadSessions = (): ChatSession[] => {
   }
 }
 
-// Save sessions to localStorage
-const saveSessions = (sessions: ChatSession[]) => {
+// Save sessions to localStorage (per-user)
+const saveSessions = (sessions: ChatSession[], userId: string | null) => {
   if (typeof window === "undefined") return
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+  const storageKey = getStorageKey(userId)
+  localStorage.setItem(storageKey, JSON.stringify(sessions))
 }
 
 // Generate session title from first message
@@ -269,6 +278,9 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export default function ChatPage() {
+  const { user } = useAuth()
+  const userId = user?.id || null
+
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -284,12 +296,12 @@ export default function ChatPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load sessions and sidebar state on mount
+  // Load sessions and sidebar state on mount (per-user)
   useEffect(() => {
-    const loaded = loadSessions()
+    const loaded = loadSessions(userId)
     setSessions(loaded)
 
-    // Restore sidebar state
+    // Restore sidebar state (shared across users)
     const savedSidebar = typeof window !== "undefined"
       ? localStorage.getItem(SIDEBAR_KEY)
       : null
@@ -297,9 +309,10 @@ export default function ChatPage() {
       setSidebarOpen(savedSidebar === "true")
     }
 
-    // Restore current session if exists
+    // Restore current session if exists (per-user)
+    const currentSessionKey = getCurrentSessionKey(userId)
     const savedSessionId = typeof window !== "undefined"
-      ? localStorage.getItem(CURRENT_SESSION_KEY)
+      ? localStorage.getItem(currentSessionKey)
       : null
 
     if (savedSessionId && loaded.find(s => s.id === savedSessionId)) {
@@ -309,21 +322,22 @@ export default function ChatPage() {
         setMessages(session.messages)
       }
     }
-  }, [])
+  }, [userId])
 
-  // Save sessions when they change
+  // Save sessions when they change (per-user)
   useEffect(() => {
     if (sessions.length > 0) {
-      saveSessions(sessions)
+      saveSessions(sessions, userId)
     }
-  }, [sessions])
+  }, [sessions, userId])
 
-  // Save current session ID
+  // Save current session ID (per-user)
   useEffect(() => {
     if (currentSessionId && typeof window !== "undefined") {
-      localStorage.setItem(CURRENT_SESSION_KEY, currentSessionId)
+      const currentSessionKey = getCurrentSessionKey(userId)
+      localStorage.setItem(currentSessionKey, currentSessionId)
     }
-  }, [currentSessionId])
+  }, [currentSessionId, userId])
 
   // Save sidebar state
   useEffect(() => {
@@ -373,10 +387,11 @@ export default function ChatPage() {
       setCurrentSessionId(null)
       setMessages([])
       if (typeof window !== "undefined") {
-        localStorage.removeItem(CURRENT_SESSION_KEY)
+        const currentSessionKey = getCurrentSessionKey(userId)
+        localStorage.removeItem(currentSessionKey)
       }
     }
-  }, [currentSessionId])
+  }, [currentSessionId, userId])
 
   // Auto-scroll to bottom on new messages
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -552,7 +567,8 @@ export default function ChatPage() {
     setMessages([])
     setInput("")
     if (typeof window !== "undefined") {
-      localStorage.removeItem(CURRENT_SESSION_KEY)
+      const currentSessionKey = getCurrentSessionKey(userId)
+      localStorage.removeItem(currentSessionKey)
     }
   }
 
