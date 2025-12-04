@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { C1Chat } from "@thesysai/genui-sdk";
+import { C1Chat, ThemeProvider } from "@thesysai/genui-sdk";
 import "@crayonai/react-ui/styles/index.css";
 import { useAuth } from "@/lib/auth/auth-context";
+
 
 const C1_USER_KEY = "hakivo_c1_user_id";
 
@@ -67,13 +68,14 @@ export const ChatPageClient = () => {
   const chatKey = user?.id || "anonymous";
 
   return (
-    <div className="min-h-[calc(100vh-4rem)]">
-      <C1Chat
-        key={chatKey}
-        apiUrl="/api/chat/c1"
-        agentName="Congressional Assistant"
-        formFactor="full-page"
-      />
+    <div className="min-h-[calc(100vh-4rem)] w-full h-full">
+      <ThemeProvider>
+        <C1Chat
+          key={chatKey}
+          apiUrl="/api/chat/c1"
+          disableThemeProvider
+        />
+      </ThemeProvider>
     </div>
   );
 };
