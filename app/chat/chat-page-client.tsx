@@ -95,26 +95,51 @@ export const ChatPageClient: FC = () => {
 
       const decoder = new TextDecoder();
       let assistantContent = "";
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        // Keep the last incomplete line in buffer
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
+          if (!line.trim()) continue;
+
+          // C1 SDK sends events in SSE format
+          if (line.startsWith('event:')) {
+            // Event type line - skip for now
+            continue;
+          }
+
+          if (line.startsWith('data:')) {
+            const data = line.slice(5).trim();
             if (data === '[DONE]') {
               setIsStreaming(false);
               continue;
             }
             try {
               const parsed = JSON.parse(data);
-              if (parsed.content) {
+              // C1 SDK format: { type: "content" | "think", content: string }
+              if (parsed.type === "content" && parsed.content) {
                 assistantContent += parsed.content;
-                // Update the last message with new content
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    role: "assistant",
+                    content: assistantContent,
+                  };
+                  return updated;
+                });
+              } else if (parsed.type === "think") {
+                // Think items are progress indicators - could show in UI
+                console.log('[Chat] Think:', parsed.title, parsed.description);
+              } else if (parsed.content) {
+                // Fallback for legacy format
+                assistantContent += parsed.content;
                 setMessages(prev => {
                   const updated = [...prev];
                   updated[updated.length - 1] = {

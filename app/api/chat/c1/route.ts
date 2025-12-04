@@ -1,6 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
+import { makeC1Response } from "@thesysai/genui-sdk/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -708,7 +709,8 @@ interface ChatRequest {
 }
 
 export async function POST(request: NextRequest) {
-  const encoder = new TextEncoder();
+  // Create C1 response helper for proper generative UI streaming
+  const c1Response = makeC1Response();
 
   try {
     const body: ChatRequest = await request.json();
@@ -729,112 +731,100 @@ export async function POST(request: NextRequest) {
       ...messages.map(m => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam),
     ];
 
-    // Create streaming response
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          // Helper to send SSE messages
-          const send = (content: string) => {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
-          };
+    // Process in background to allow streaming
+    (async () => {
+      try {
+        // Initial request with tools
+        let response = await client.chat.completions.create({
+          model: "c1/anthropic/claude-sonnet-4/v-20250617",
+          messages: conversationMessages,
+          tools,
+          stream: false,
+        });
 
-          // Initial request with tools
-          let response = await client.chat.completions.create({
+        // Handle tool calls with progress feedback
+        let toolCallCount = 0;
+        while (response.choices[0]?.message?.tool_calls?.length) {
+          const toolCalls = response.choices[0].message.tool_calls;
+          toolCallCount++;
+
+          // Add assistant message with tool calls
+          conversationMessages.push({
+            role: "assistant",
+            content: response.choices[0].message.content || "",
+            tool_calls: toolCalls,
+          });
+
+          // Execute each tool call with progress updates
+          for (const toolCall of toolCalls) {
+            if (toolCall.type !== "function") continue;
+
+            // Send progress update using C1's think items
+            const toolName = toolCall.function.name;
+            const progressMessages: Record<string, { title: string; description: string }> = {
+              search_bills: { title: "Searching Bills", description: "Searching congressional bills..." },
+              get_bill_details: { title: "Fetching Details", description: "Getting bill information..." },
+              search_news: { title: "Searching News", description: "Finding recent news coverage..." },
+              get_bill_statistics: { title: "Analyzing", description: "Calculating bill statistics..." },
+              compare_bills: { title: "Comparing", description: "Comparing legislation..." },
+              explain_civics_concept: { title: "Preparing", description: "Building educational content..." },
+              get_civic_action_guide: { title: "Building Guide", description: "Creating your action guide..." },
+              semantic_search: { title: "Semantic Search", description: "Searching bill text..." },
+              search_state_bills: { title: "State Bills", description: "Searching state legislation..." },
+              search_members: { title: "Finding Members", description: "Looking up congressional members..." },
+            };
+            if (toolCallCount === 1 && progressMessages[toolName]) {
+              await c1Response.writeThinkItem({
+                title: progressMessages[toolName].title,
+                description: progressMessages[toolName].description,
+                ephemeral: true,
+              });
+            }
+
+            const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+            const result = await executeTool(toolName, args);
+
+            conversationMessages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: result,
+            });
+          }
+
+          // Continue conversation with tool results
+          response = await client.chat.completions.create({
             model: "c1/anthropic/claude-sonnet-4/v-20250617",
             messages: conversationMessages,
             tools,
             stream: false,
           });
-
-          // Handle tool calls with progress feedback
-          let toolCallCount = 0;
-          while (response.choices[0]?.message?.tool_calls?.length) {
-            const toolCalls = response.choices[0].message.tool_calls;
-            toolCallCount++;
-
-            // Add assistant message with tool calls
-            conversationMessages.push({
-              role: "assistant",
-              content: response.choices[0].message.content || "",
-              tool_calls: toolCalls,
-            });
-
-            // Execute each tool call with progress updates
-            for (const toolCall of toolCalls) {
-              if (toolCall.type !== "function") continue;
-
-              // Send progress update to user
-              const toolName = toolCall.function.name;
-              const progressMessages: Record<string, string> = {
-                search_bills: "🔍 Searching congressional bills...\n\n",
-                get_bill_details: "📜 Fetching bill details...\n\n",
-                search_news: "📰 Searching recent news coverage...\n\n",
-                get_bill_statistics: "📊 Analyzing bill statistics...\n\n",
-                compare_bills: "⚖️ Comparing legislation...\n\n",
-                explain_civics_concept: "📚 Preparing educational content...\n\n",
-                get_civic_action_guide: "🗳️ Building your action guide...\n\n",
-                semantic_search: "🧠 Searching bill text semantically...\n\n",
-                search_state_bills: "🏛️ Searching state legislation...\n\n",
-                search_members: "👤 Looking up congressional members...\n\n",
-              };
-              if (toolCallCount === 1 && progressMessages[toolName]) {
-                send(progressMessages[toolName]);
-              }
-
-              const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-              const result = await executeTool(toolName, args);
-
-              conversationMessages.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: result,
-              });
-            }
-
-            // Continue conversation with tool results
-            response = await client.chat.completions.create({
-              model: "c1/anthropic/claude-sonnet-4/v-20250617",
-              messages: conversationMessages,
-              tools,
-              stream: false,
-            });
-          }
-
-          // Stream the final response
-          const finalContent = response.choices[0]?.message?.content || "";
-          if (finalContent) {
-            // Stream in larger chunks for better C1 component rendering
-            const chunkSize = 100;
-            for (let i = 0; i < finalContent.length; i += chunkSize) {
-              const chunk = finalContent.slice(i, i + chunkSize);
-              send(chunk);
-              // Small delay for smoother streaming effect
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
-          }
-
-          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-          controller.close();
-        } catch (error) {
-          console.error("[C1 API] Stream error:", error);
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ error: "Stream failed" })}\n\n`)
-          );
-          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-          controller.close();
         }
-      },
-    });
 
-    return new Response(readable, {
+        // Stream the final response using C1's writeContent
+        const finalContent = response.choices[0]?.message?.content || "";
+        if (finalContent) {
+          await c1Response.writeContent(finalContent);
+        }
+
+        await c1Response.end();
+      } catch (error) {
+        console.error("[C1 API] Stream error:", error);
+        await c1Response.writeContent(`Error: ${error instanceof Error ? error.message : "Request failed"}`);
+        await c1Response.end();
+      }
+    })();
+
+    // Return the C1 response stream
+    return new NextResponse(c1Response.responseStream as ReadableStream, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
       },
     });
   } catch (error) {
     console.error("[C1 API] Error:", error);
+    await c1Response.end();
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Internal server error",
