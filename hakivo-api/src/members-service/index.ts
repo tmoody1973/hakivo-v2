@@ -1124,7 +1124,13 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
             `).bind(bioguideId, cycle).all()
           ]);
 
-          return c.json({
+          // If contributor data is empty, skip cache and fetch fresh data from FEC
+          // This handles cases where summary was cached but contributor caching failed
+          if ((employerContribs.results || []).length === 0 && (occupationContribs.results || []).length === 0) {
+            console.log(`Cached contributor data empty for ${bioguideId}, fetching fresh from FEC`);
+            // Fall through to FEC API fetch below
+          } else {
+            return c.json({
             success: true,
             member: {
               bioguideId: member.bioguide_id,
@@ -1194,6 +1200,7 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
               lastSynced: cached.last_synced_at
             }
           });
+          }
         }
       } catch (e) {
         console.log('Cache lookup failed, fetching from FEC:', e);
