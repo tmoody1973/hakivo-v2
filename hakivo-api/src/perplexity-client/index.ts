@@ -277,8 +277,22 @@ Prioritize articles with clear policy implications and citizen impact.`;
 
       const parsed = JSON.parse(content) as PerplexityNewsResponse;
 
-      console.log(`[PERPLEXITY] Found ${parsed.articles?.length || 0} articles`);
-      console.log(`[PERPLEXITY] Search results: ${result.search_results?.length || 0}, Images: ${result.images?.length || 0}`);
+      console.log(`[PERPLEXITY] Found ${parsed.articles?.length || 0} AI-generated articles`);
+      console.log(`[PERPLEXITY] Search results: ${result.search_results?.length || 0}, Citations: ${result.citations?.length || 0}, Images: ${result.images?.length || 0}`);
+
+      // PRIORITY: Use search_results from Perplexity as source of truth for URLs
+      // These are REAL search results, not AI-generated content
+      const searchResultsMap = new Map<string, { title: string; url: string; date?: string; snippet?: string }>();
+      if (result.search_results && result.search_results.length > 0) {
+        for (const sr of result.search_results) {
+          if (sr.url) {
+            // Normalize URL for matching
+            const normalizedUrl = sr.url.replace(/\/$/, '').toLowerCase();
+            searchResultsMap.set(normalizedUrl, sr);
+          }
+        }
+        console.log(`[PERPLEXITY] Built search results map with ${searchResultsMap.size} entries`);
+      }
 
       // Build a map of origin URLs to images for matching
       const imagesByOrigin = new Map<string, { url: string; width?: number; height?: number }>();
@@ -319,21 +333,141 @@ Prioritize articles with clear policy implications and citizen impact.`;
         return undefined;
       };
 
-      // Validate and return articles with images
-      const articles = (parsed.articles || []).slice(0, limit).map(article => {
-        const image = findImageForUrl(article.url);
-        return {
-          title: article.title || 'Untitled',
-          summary: article.summary || 'No summary available',
-          url: article.url || '',
-          publishedAt: article.publishedAt || new Date().toISOString(),
-          source: article.source || 'Unknown',
-          category: article.category || 'Other',
-          ...(image && { image })
-        };
+      // Helper to extract source domain from URL
+      const extractSource = (url: string): string => {
+        try {
+          const domain = new URL(url).hostname.replace('www.', '');
+          // Map common domains to readable names
+          const sourceMap: Record<string, string> = {
+            'nytimes.com': 'New York Times',
+            'washingtonpost.com': 'Washington Post',
+            'politico.com': 'Politico',
+            'thehill.com': 'The Hill',
+            'apnews.com': 'AP News',
+            'reuters.com': 'Reuters',
+            'npr.org': 'NPR',
+            'axios.com': 'Axios',
+            'rollcall.com': 'Roll Call',
+            'wsj.com': 'Wall Street Journal',
+            'cnn.com': 'CNN',
+            'nbcnews.com': 'NBC News',
+            'abcnews.go.com': 'ABC News',
+            'cbsnews.com': 'CBS News',
+            'foxnews.com': 'Fox News',
+            'pbs.org': 'PBS',
+            'bbc.com': 'BBC',
+            'theguardian.com': 'The Guardian',
+            'usatoday.com': 'USA Today'
+          };
+          return sourceMap[domain] || domain;
+        } catch {
+          return 'Unknown';
+        }
+      };
+
+      // STRATEGY: Build articles from search_results when available, enhanced with AI summaries
+      // This ensures we have REAL URLs from Perplexity's actual search, not AI hallucinations
+      let articles: NewsArticle[] = [];
+
+      if (searchResultsMap.size > 0) {
+        console.log(`[PERPLEXITY] Using search_results as primary source for article URLs`);
+
+        // Build articles from search_results, matching with AI summaries where possible
+        const aiArticlesByUrl = new Map<string, any>();
+        for (const aiArticle of (parsed.articles || [])) {
+          if (aiArticle.url) {
+            const normalizedUrl = aiArticle.url.replace(/\/$/, '').toLowerCase();
+            aiArticlesByUrl.set(normalizedUrl, aiArticle);
+          }
+        }
+
+        // Iterate through REAL search results
+        for (const [normalizedUrl, sr] of searchResultsMap) {
+          // Try to find matching AI article for richer summary
+          const aiArticle = aiArticlesByUrl.get(normalizedUrl);
+
+          const image = findImageForUrl(sr.url);
+          articles.push({
+            title: sr.title || aiArticle?.title || 'Untitled',
+            summary: aiArticle?.summary || sr.snippet || 'No summary available',
+            url: sr.url, // Use REAL URL from search_results
+            publishedAt: sr.date || aiArticle?.publishedAt || new Date().toISOString(),
+            source: extractSource(sr.url),
+            category: aiArticle?.category || 'Other',
+            ...(image && { image })
+          });
+        }
+
+        articles = articles.slice(0, limit);
+        console.log(`[PERPLEXITY] Built ${articles.length} articles from search_results`);
+      } else {
+        // Fallback: use AI-generated articles (original behavior)
+        console.log(`[PERPLEXITY] No search_results available, using AI-generated articles`);
+        articles = (parsed.articles || []).slice(0, limit).map(article => {
+          const image = findImageForUrl(article.url);
+          return {
+            title: article.title || 'Untitled',
+            summary: article.summary || 'No summary available',
+            url: article.url || '',
+            publishedAt: article.publishedAt || new Date().toISOString(),
+            source: article.source || 'Unknown',
+            category: article.category || 'Other',
+            ...(image && { image })
+          };
+        });
+      }
+
+      // Filter out fake/error articles that Perplexity returns when it can't find real news
+      // This happens because strict JSON schema forces it to return SOMETHING even if no news found
+      const validArticles = articles.filter(article => {
+        const titleLower = article.title.toLowerCase();
+        const summaryLower = article.summary.toLowerCase();
+
+        // Check for error-like patterns in title or summary
+        const looksLikeError =
+          titleLower.includes('unable to retrieve') ||
+          titleLower.includes('cannot be provided') ||
+          titleLower.includes('no articles found') ||
+          titleLower.includes('not currently possible') ||
+          titleLower.includes('unable to find') ||
+          titleLower.includes('could not find') ||
+          summaryLower.includes('unable to retrieve') ||
+          summaryLower.includes('cannot be provided') ||
+          summaryLower.includes('it is not currently possible') ||
+          summaryLower.includes('no recent articles');
+
+        // Check for invalid URLs
+        const hasValidUrl =
+          article.url &&
+          article.url !== '' &&
+          article.url !== 'Unknown' &&
+          article.url.startsWith('http');
+
+        // Check for placeholder sources
+        const hasValidSource =
+          article.source !== 'Unknown' &&
+          article.source !== '';
+
+        if (looksLikeError) {
+          console.log(`[PERPLEXITY] Filtered out error article: "${article.title.substring(0, 50)}..."`);
+          return false;
+        }
+
+        if (!hasValidUrl) {
+          console.log(`[PERPLEXITY] Filtered out article with invalid URL: "${article.title.substring(0, 50)}..."`);
+          return false;
+        }
+
+        if (!hasValidSource) {
+          console.log(`[PERPLEXITY] Filtered out article with invalid source: "${article.title.substring(0, 50)}..."`);
+          return false;
+        }
+
+        return true;
       });
 
-      return articles;
+      console.log(`[PERPLEXITY] Returning ${validArticles.length} valid articles (filtered ${articles.length - validArticles.length} invalid)`);
+      return validArticles;
 
     } catch (error) {
       console.error('[PERPLEXITY] Search error:', error);
