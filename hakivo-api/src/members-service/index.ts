@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
+import { aggregateByIndustry } from '../fec-client/industry-classifier';
 
 // Validation schemas
 const SearchMembersSchema = z.object({
@@ -1145,11 +1146,27 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
               coverageStart: cached.coverage_start,
               coverageEnd: cached.coverage_end
             },
-            topContributorsByEmployer: (employerContribs.results || []).map((r: any) => ({
-              employer: r.employer,
-              total: r.total_amount,
-              count: r.contribution_count
-            })),
+            topContributorsByEmployer: (() => {
+              const employers = (employerContribs.results || []).map((r: any) => ({
+                employer: r.employer,
+                total: r.total_amount,
+                count: r.contribution_count
+              }));
+              return employers;
+            })(),
+            topContributorsByIndustry: (() => {
+              const employers = (employerContribs.results || []).map((r: any) => ({
+                employer: r.employer,
+                total: r.total_amount,
+                count: r.contribution_count
+              }));
+              return aggregateByIndustry(employers).map(ind => ({
+                industry: ind.industry,
+                total: ind.total,
+                count: ind.count,
+                topEmployers: ind.employers.slice(0, 5)
+              }));
+            })(),
             topContributorsByOccupation: (occupationContribs.results || []).map((r: any) => ({
               occupation: r.occupation,
               total: r.total_amount,
@@ -1204,6 +1221,7 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
         cycle,
         summary: null,
         topContributorsByEmployer: [],
+        topContributorsByIndustry: [],
         topContributorsByOccupation: [],
         contributionsByState: [],
         contributionsBySize: [],
@@ -1253,6 +1271,18 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
         employer: c.employer,
         total: c.total,
         count: c.count
+      })),
+      topContributorsByIndustry: aggregateByIndustry(
+        financeData.topContributorsByEmployer.map(c => ({
+          employer: c.employer,
+          total: c.total,
+          count: c.count
+        }))
+      ).map(ind => ({
+        industry: ind.industry,
+        total: ind.total,
+        count: ind.count,
+        topEmployers: ind.employers.slice(0, 5)
       })),
       topContributorsByOccupation: financeData.topContributorsByOccupation.map(c => ({
         occupation: c.occupation,
