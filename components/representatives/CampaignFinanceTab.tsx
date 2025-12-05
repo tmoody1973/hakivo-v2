@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getMemberCampaignFinance } from '@/lib/api/backend'
-import type { CampaignFinanceData, ContributionByEmployer, ContributionByOccupation } from '@/lib/api/backend'
+import type { CampaignFinanceData, ContributionByEmployer, ContributionByOccupation, ContributionByIndustry } from '@/lib/api/backend'
 import {
   AlertCircle,
   DollarSign,
@@ -346,74 +346,123 @@ export function CampaignFinanceTab({ memberId, memberName }: CampaignFinanceTabP
         />
       </div>
 
-      {/* Top Contributors Tables */}
+      {/* Top Industry & Individual Contributors - Main Feature */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* By Employer/Organization */}
-        <Card>
-          <CardHeader>
+        {/* Top Industry Contributors */}
+        <Card className="border-amber-200 dark:border-amber-900">
+          <CardHeader className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900">
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Building2 className="h-5 w-5" />
-              Top Contributing Organizations
+              <Building2 className="h-5 w-5 text-amber-600" />
+              Top Industry Contributors
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Contributions from employees of these organizations
-            </p>
           </CardHeader>
           <CardContent className="p-0">
-            {data.topContributorsByEmployer?.length > 0 ? (
+            {data.topContributorsByIndustry?.length > 0 ? (
               <div className="divide-y">
-                {data.topContributorsByEmployer.slice(0, 10).map((contrib: ContributionByEmployer, idx: number) => (
-                  <ContributorRow
-                    key={`${contrib.employer}-${idx}`}
-                    rank={idx + 1}
-                    name={contrib.employer || 'Unknown'}
-                    amount={contrib.total}
-                    count={contrib.count}
-                  />
+                {data.topContributorsByIndustry
+                  .filter((c: ContributionByIndustry) => c.industry !== 'Unknown/Other' && c.industry !== 'Misc Business')
+                  .slice(0, 12)
+                  .map((contrib: ContributionByIndustry, idx: number) => (
+                  <div key={`industry-${idx}`} className="flex items-center justify-between py-3 px-4 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-amber-500" />
+                      <span className="font-medium truncate max-w-[200px] sm:max-w-none">
+                        {contrib.industry}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold text-green-600 dark:text-green-400">
+                        {formatFullCurrency(contrib.total)}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No employer contribution data available</p>
+                <p>No industry contribution data available</p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* By Occupation */}
-        <Card>
-          <CardHeader>
+        {/* Top Individual Contributors (Companies) */}
+        <Card className="border-amber-200 dark:border-amber-900">
+          <CardHeader className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900">
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Briefcase className="h-5 w-5" />
-              Top Contributing Occupations
+              <Users className="h-5 w-5 text-amber-600" />
+              Top Individual Contributors
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Contributors grouped by occupation/profession
-            </p>
           </CardHeader>
           <CardContent className="p-0">
-            {data.topContributorsByOccupation?.length > 0 ? (
+            {data.topContributorsByEmployer?.length > 0 ? (
               <div className="divide-y">
-                {data.topContributorsByOccupation.slice(0, 10).map((contrib: ContributionByOccupation, idx: number) => (
-                  <ContributorRow
-                    key={`${contrib.occupation}-${idx}`}
-                    rank={idx + 1}
-                    name={contrib.occupation || 'Unknown'}
-                    amount={contrib.total}
-                    count={contrib.count}
-                  />
+                {data.topContributorsByEmployer
+                  .filter((c: ContributionByEmployer) => {
+                    const name = (c.employer || '').toUpperCase();
+                    // Filter out generic entries
+                    return !['RETIRED', 'SELF-EMPLOYED', 'SELF EMPLOYED', 'NOT EMPLOYED', 'HOMEMAKER', 'NONE', 'N/A', 'INFORMATION REQUESTED'].includes(name);
+                  })
+                  .slice(0, 12)
+                  .map((contrib: ContributionByEmployer, idx: number) => (
+                  <div key={`employer-${idx}`} className="flex items-center justify-between py-3 px-4 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-amber-500" />
+                      <span className="font-medium truncate max-w-[200px] sm:max-w-none">
+                        {contrib.employer || 'Unknown'}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold text-green-600 dark:text-green-400">
+                        {formatFullCurrency(contrib.total)}
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
-                <Briefcase className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No occupation contribution data available</p>
+                <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No individual contribution data available</p>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Secondary Contributors - Occupation breakdown */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Briefcase className="h-5 w-5" />
+            Top Contributing Occupations
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Contributors grouped by occupation/profession
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          {data.topContributorsByOccupation?.length > 0 ? (
+            <div className="divide-y">
+              {data.topContributorsByOccupation.slice(0, 10).map((contrib: ContributionByOccupation, idx: number) => (
+                <ContributorRow
+                  key={`${contrib.occupation}-${idx}`}
+                  rank={idx + 1}
+                  name={contrib.occupation || 'Unknown'}
+                  amount={contrib.total}
+                  count={contrib.count}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Briefcase className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No occupation contribution data available</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Contribution by Size Breakdown */}
       {data.contributionsBySize?.length > 0 && (

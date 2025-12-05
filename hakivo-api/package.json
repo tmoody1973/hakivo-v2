@@ -5,9 +5,10 @@
   "description": "LiquidMetal AI app",
   "scripts": {
     "build": "shx rm -rf dist && tsc -b",
-    "start": "raindrop build deploy --start",
+    "start": "raindrop build deploy --amend --start",
     "stop": "raindrop build stop",
-    "restart": "raindrop build deploy --start",
+    "restart": "raindrop build deploy --amend --start",
+    "deploy:new": "raindrop build deploy --start",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",

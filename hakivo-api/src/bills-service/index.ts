@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import { z } from 'zod';
 import { buildBillFilterQuery, getInterestNames } from '../config/user-interests';
+import { aggregateByIndustry, type IndustryContribution } from '../fec-client/industry-classifier';
 
 // Validation schemas
 const SearchBillsSchema = z.object({
@@ -3467,6 +3468,14 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
             `).bind(bioguideId, cycle).all()
           ]);
 
+          // Map employer data and aggregate by industry
+          const employerData = (employerContribs.results || []).map((r: any) => ({
+            employer: r.employer,
+            total: r.total_amount,
+            count: r.contribution_count
+          }));
+          const industryContributions = aggregateByIndustry(employerData);
+
           return c.json({
             success: true,
             member: {
@@ -3489,10 +3498,12 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
             selfFinanced: cached.self_financed,
             coverageStart: cached.coverage_start,
             coverageEnd: cached.coverage_end,
-            topContributorsByEmployer: (employerContribs.results || []).map((r: any) => ({
-              employer: r.employer,
-              total: r.total_amount,
-              count: r.contribution_count
+            topContributorsByEmployer: employerData,
+            topContributorsByIndustry: industryContributions.map((ic: IndustryContribution) => ({
+              industry: ic.industry,
+              total: ic.total,
+              count: ic.count,
+              topEmployers: ic.employers.slice(0, 5)
             })),
             topContributorsByOccupation: (occupationContribs.results || []).map((r: any) => ({
               occupation: r.occupation,
@@ -3553,6 +3564,7 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
         coverageStart: null,
         coverageEnd: null,
         topContributorsByEmployer: [],
+        topContributorsByIndustry: [],
         topContributorsByOccupation: [],
         contributionsByState: [],
         contributionsBySize: [],
@@ -3571,6 +3583,14 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
 
     // Get OpenSecrets URL
     const openSecretsUrl = await fecClient.getOpenSecretsUrl(bioguideId);
+
+    // Map employer data and aggregate by industry
+    const employerData = financeData.topContributorsByEmployer.map((c: any) => ({
+      employer: c.employer,
+      total: c.total,
+      count: c.count
+    }));
+    const industryContributions = aggregateByIndustry(employerData);
 
     return c.json({
       success: true,
@@ -3594,10 +3614,12 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
       selfFinanced: financeData.selfFinanced,
       coverageStart: financeData.coverageStart,
       coverageEnd: financeData.coverageEnd,
-      topContributorsByEmployer: financeData.topContributorsByEmployer.map((c: any) => ({
-        employer: c.employer,
-        total: c.total,
-        count: c.count
+      topContributorsByEmployer: employerData,
+      topContributorsByIndustry: industryContributions.map((ic: IndustryContribution) => ({
+        industry: ic.industry,
+        total: ic.total,
+        count: ic.count,
+        topEmployers: ic.employers.slice(0, 5)
       })),
       topContributorsByOccupation: financeData.topContributorsByOccupation.map((c: any) => ({
         occupation: c.occupation,

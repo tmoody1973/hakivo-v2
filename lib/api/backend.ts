@@ -2354,6 +2354,16 @@ export interface ContributionBySize {
 }
 
 /**
+ * Campaign finance contribution by industry
+ */
+export interface ContributionByIndustry {
+  industry: string;
+  total: number;
+  count: number;
+  topEmployers: string[];
+}
+
+/**
  * Campaign finance summary response
  */
 export interface CampaignFinanceData {
@@ -2376,11 +2386,12 @@ export interface CampaignFinanceData {
   coverageStart: string;
   coverageEnd: string;
   topContributorsByEmployer: ContributionByEmployer[];
+  topContributorsByIndustry: ContributionByIndustry[];
   topContributorsByOccupation: ContributionByOccupation[];
   contributionsByState: ContributionByState[];
   contributionsBySize: ContributionBySize[];
   lastUpdated: string;
-  source: 'fec_api' | 'cache';
+  source: 'fec_api' | 'cache' | 'none';
 }
 
 /**
