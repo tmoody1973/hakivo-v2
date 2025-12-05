@@ -2435,9 +2435,49 @@ export async function getMemberCampaignFinance(
 
     const result = await response.json();
     console.log('[getMemberCampaignFinance] Success');
+
+    // Transform the API response to match CampaignFinanceData interface
+    // Handle both flat (new API) and nested (summary.X) response formats
+    const summary = result.summary || result; // Use summary if nested, otherwise use root
+
+    const transformedData: CampaignFinanceData = {
+      candidateId: result.candidateId || result.externalLinks?.fec?.split('/candidate/')?.[1]?.replace('/', '') || '',
+      committeeId: result.committeeId || '',
+      opensecretsId: result.opensecretsId || result.externalLinks?.opensecrets?.split('cid=')?.[1] || undefined,
+      cycle: result.cycle,
+      availableCycles: result.availableCycles || [2024, 2022, 2020, 2018],
+      // Handle both flat and nested summary fields
+      totalRaised: summary.totalRaised || 0,
+      totalSpent: summary.totalSpent || 0,
+      cashOnHand: summary.cashOnHand || 0,
+      debts: summary.debts || 0,
+      individualContributions: summary.individualContributions || 0,
+      individualItemized: summary.individualItemized || 0,
+      individualUnitemized: summary.individualUnitemized || 0,
+      pacContributions: summary.pacContributions || 0,
+      partyContributions: summary.partyContributions || 0,
+      selfFinanced: summary.selfFinanced || 0,
+      transfers: summary.transfers || 0,
+      coverageStart: summary.coverageStart || '',
+      coverageEnd: summary.coverageEnd || '',
+      // Contributor arrays at root level
+      topContributorsByEmployer: result.topContributorsByEmployer || [],
+      topContributorsByIndustry: result.topContributorsByIndustry || [],
+      topContributorsByOccupation: result.topContributorsByOccupation || [],
+      contributionsByState: result.contributionsByState || [],
+      contributionsBySize: (result.contributionsBySize || []).map((s: any) => ({
+        size: s.size,
+        sizeLabel: s.label || s.sizeLabel,
+        total: s.total,
+        count: s.count,
+      })),
+      lastUpdated: result.lastUpdated || result.dataAvailability?.lastSynced || new Date().toISOString(),
+      source: result.source || (result.dataAvailability?.cached ? 'cache' : 'fec_api'),
+    };
+
     return {
       success: true,
-      data: result,
+      data: transformedData,
     };
   } catch (error) {
     console.error('[getMemberCampaignFinance] Caught error:', error);
