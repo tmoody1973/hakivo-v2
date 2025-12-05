@@ -360,7 +360,12 @@ export function CampaignFinanceTab({ memberId, memberName }: CampaignFinanceTabP
             {data.topContributorsByIndustry?.length > 0 ? (
               <div className="divide-y">
                 {data.topContributorsByIndustry
-                  .filter((c: ContributionByIndustry) => c.industry !== 'Unknown/Other' && c.industry !== 'Misc Business')
+                  .filter((c: ContributionByIndustry) => {
+                    const industry = (c.industry || '').toLowerCase();
+                    // Filter out non-industry categories
+                    const excluded = ['unknown/other', 'misc business', 'retired', 'homemakers/non-income earners'];
+                    return !excluded.includes(industry);
+                  })
                   .slice(0, 12)
                   .map((contrib: ContributionByIndustry, idx: number) => (
                   <div key={`industry-${idx}`} className="flex items-center justify-between py-3 px-4 hover:bg-muted/50 transition-colors">
@@ -400,9 +405,15 @@ export function CampaignFinanceTab({ memberId, memberName }: CampaignFinanceTabP
               <div className="divide-y">
                 {data.topContributorsByEmployer
                   .filter((c: ContributionByEmployer) => {
-                    const name = (c.employer || '').toUpperCase();
-                    // Filter out generic entries
-                    return !['RETIRED', 'SELF-EMPLOYED', 'SELF EMPLOYED', 'NOT EMPLOYED', 'HOMEMAKER', 'NONE', 'N/A', 'INFORMATION REQUESTED'].includes(name);
+                    const name = (c.employer || '').toUpperCase().trim();
+                    // Filter out generic/placeholder entries
+                    const exactExclude = ['RETIRED', 'SELF-EMPLOYED', 'SELF EMPLOYED', 'NOT EMPLOYED', 'HOMEMAKER', 'NONE', 'N/A', 'NULL', 'UNKNOWN', ''];
+                    if (exactExclude.includes(name)) return false;
+                    // Filter out partial matches
+                    if (name.startsWith('INFORMATION REQUESTED')) return false;
+                    if (name.startsWith('SELF ')) return false;
+                    if (name.includes('NOT EMPLOYED')) return false;
+                    return true;
                   })
                   .slice(0, 12)
                   .map((contrib: ContributionByEmployer, idx: number) => (
