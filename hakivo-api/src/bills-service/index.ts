@@ -3474,9 +3474,16 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
             total: r.total_amount,
             count: r.contribution_count
           }));
-          const industryContributions = aggregateByIndustry(employerData);
 
-          return c.json({
+          // If cache has summary but no contributor data, bypass cache and fetch fresh from FEC
+          const hasContributorData = employerData.length > 0 || (occupationContribs.results || []).length > 0;
+          if (!hasContributorData && cached.total_raised > 0) {
+            console.log(`Cache has summary but no contributor data for ${bioguideId} (${cycle}), fetching fresh from FEC`);
+            // Fall through to FEC API fetch below
+          } else {
+            const industryContributions = aggregateByIndustry(employerData);
+
+            return c.json({
             success: true,
             member: {
               bioguideId: member.bioguide_id,
@@ -3526,6 +3533,7 @@ app.get('/members/:bioguide_id/campaign-finance', async (c) => {
             source: 'cache',
             lastUpdated: cached.last_synced_at
           });
+          }
         }
       } catch (e) {
         console.log('Cache lookup failed, fetching from FEC:', e);

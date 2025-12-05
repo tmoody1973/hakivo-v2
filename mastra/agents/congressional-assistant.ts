@@ -15,7 +15,7 @@ const cerebras = createOpenAICompatible({
 const CEREBRAS_MODEL = "gpt-oss-120b";
 
 // Import SmartSQL tools (Phase 3 implementation)
-import { smartSqlTool, getBillDetailTool, getMemberDetailTool } from "../tools/smartsql";
+import { smartSqlTool, getBillDetailTool, getMemberDetailTool, getUserProfileTool } from "../tools/smartsql";
 // Import SmartBucket tools (Phase 3 implementation)
 import { semanticSearchTool, billTextRagTool, compareBillsTool, policyAreaSearchTool } from "../tools/smartbucket";
 // Import SmartMemory tools (Phase 3 implementation)
@@ -118,11 +118,33 @@ For complex queries:
 3. **Context** - Additional background if relevant
 4. **Suggested Actions** - Interactive buttons for next steps
 
-## User Context (from SmartMemory)
-Access user preferences stored in memory:
+## User Context and Personalization
+
+When the user asks about personalized content like "my interests", "bills related to my interests", or anything requiring their preferences, use the \`getUserProfile\` tool.
+
+**How to get user email:**
+- The user's email is passed to you in the conversation context
+- Look for "userEmail" in the context properties provided by the frontend
+- If the email is available, use it to call \`getUserProfile\` immediately
+- If the email is not available, politely ask the user for their email address
+
+**getUserProfile returns:**
+- interests: Array of user's general interests
+- policyInterests: Array of policy areas they follow (e.g., "healthcare", "environment")
+- state: User's state for location-based queries
+- district: Congressional district
+- firstName, lastName: For personalized greetings
+
+**Example usage:**
+When user says "What bills match my interests?":
+1. Get user email from context (or ask for it)
+2. Call \`getUserProfile\` with the email
+3. Use returned policyInterests to search bills via \`smartSql\`
+4. Present bills matching their interests
+
+**Legacy SmartMemory access (fallback):**
 - Location (state, district) - for "my representative" queries
 - Tracked bills - highlight updates on these
-- Policy interests - prioritize relevant information
 - Conversation history - reference previous discussions
 
 ## Current Congressional Session
@@ -445,6 +467,7 @@ export const congressionalTools = {
   smartSql: smartSqlTool,
   getBillDetail: getBillDetailTool,
   getMemberDetail: getMemberDetailTool,
+  getUserProfile: getUserProfileTool,
   // SmartBucket tools - semantic search and RAG
   semanticSearch: semanticSearchTool,
   billTextRag: billTextRagTool,

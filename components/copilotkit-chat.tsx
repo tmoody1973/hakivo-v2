@@ -4,6 +4,8 @@ import { CopilotChat } from "@copilotkit/react-ui";
 import { CopilotKit } from "@copilotkit/react-core";
 import "@copilotkit/react-ui/styles.css";
 import { useRenderToolCall } from "@copilotkit/react-core";
+import { useMemo } from "react";
+import { useAuth } from "@/lib/auth/auth-context";
 
 // Import our custom UI components for generative UI
 import { BillCard } from "@/components/generative-ui/bill-card";
@@ -21,6 +23,18 @@ import { NewsCard } from "@/components/generative-ui/news-card";
  * Key: useRenderToolCall hooks render custom UI when Mastra backend tools execute
  */
 export function CopilotKitChat() {
+  // Get auth token and user from context to pass to agent tools
+  const { accessToken, user } = useAuth();
+
+  // Memoize properties to avoid unnecessary re-renders
+  // These properties are forwarded to agents via AG-UI runtimeContext
+  const copilotProperties = useMemo(() => ({
+    authorization: accessToken || undefined,
+    // Pass user info so agent can query user-specific data from database
+    userId: user?.id || undefined,
+    userEmail: user?.email || undefined,
+  }), [accessToken, user?.id, user?.email]);
+
   // Render UI for smartSql tool - main database query tool
   // Returns bills, members, or other congressional data
   useRenderToolCall({
@@ -326,7 +340,11 @@ export function CopilotKitChat() {
   });
 
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit" agent="congressionalAssistant">
+    <CopilotKit
+      runtimeUrl="/api/copilotkit"
+      agent="congressionalAssistant"
+      properties={copilotProperties}
+    >
       <CopilotChat
         labels={{
           title: "Hakivo",

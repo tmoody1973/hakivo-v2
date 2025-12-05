@@ -909,9 +909,153 @@ export const getMemberDetailTool = createTool({
   },
 });
 
+/**
+ * User Profile interface for database results
+ */
+interface UserProfile {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  zip_code: string | null;
+  city: string | null;
+  congressional_district: string | null;
+  interests: string | null;
+  policy_interests: string | null;
+  state: string | null;
+  district: string | null;
+}
+
+/**
+ * Get User Profile Tool - Fetch user details and interests from Raindrop SQL
+ *
+ * This tool queries the users and user_preferences tables to get the current
+ * user's profile, including their policy interests and location.
+ */
+export const getUserProfileTool = createTool({
+  id: "getUserProfile",
+  description: `Get the current user's profile including their policy interests, location, and preferences.
+Use this tool when you need to personalize responses based on user interests or location.
+The tool returns interests, policy_interests, state, district, and other user details.
+If no email is provided, inform the user you need their email to look up their profile.`,
+  inputSchema: z.object({
+    email: z
+      .string()
+      .email()
+      .describe("User's email address to look up their profile"),
+  }),
+  execute: async ({ context }) => {
+    const { email } = context;
+
+    if (!email) {
+      return {
+        success: false,
+        profile: null,
+        error: "No email provided. Please provide the user's email address.",
+      };
+    }
+
+    try {
+      // Query users table joined with user_preferences
+      // Using parameterized-style escaping for safety
+      const escapedEmail = email.replace(/'/g, "''");
+      const sql = `
+        SELECT
+          u.id,
+          u.email,
+          u.first_name,
+          u.last_name,
+          u.zip_code,
+          u.city,
+          u.congressional_district,
+          up.interests,
+          up.policy_interests,
+          up.state,
+          up.district
+        FROM users u
+        LEFT JOIN user_preferences up ON u.id = up.user_id
+        WHERE u.email = '${escapedEmail}'
+        LIMIT 1
+      `;
+
+      const response = await fetch(
+        `${RAINDROP_SERVICES.ADMIN}/api/database/query`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: sql }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Database query failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const users = result.results || [];
+
+      if (users.length === 0) {
+        return {
+          success: false,
+          profile: null,
+          error: `No user found with email: ${email}`,
+        };
+      }
+
+      const user = users[0] as UserProfile;
+
+      // Parse interests if they're stored as JSON strings
+      let parsedInterests: string[] = [];
+      let parsedPolicyInterests: string[] = [];
+
+      if (user.interests) {
+        try {
+          parsedInterests = JSON.parse(user.interests);
+        } catch {
+          // If not JSON, treat as comma-separated or single value
+          parsedInterests = user.interests.split(",").map((s: string) => s.trim());
+        }
+      }
+
+      if (user.policy_interests) {
+        try {
+          parsedPolicyInterests = JSON.parse(user.policy_interests);
+        } catch {
+          parsedPolicyInterests = user.policy_interests.split(",").map((s: string) => s.trim());
+        }
+      }
+
+      return {
+        success: true,
+        profile: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          zipCode: user.zip_code,
+          city: user.city,
+          congressionalDistrict: user.congressional_district,
+          state: user.state,
+          district: user.district,
+          interests: parsedInterests,
+          policyInterests: parsedPolicyInterests,
+        },
+        error: null,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        profile: null,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+});
+
 // Export all SmartSQL tools
 export const smartSqlTools = {
   smartSql: smartSqlTool,
   getBillDetail: getBillDetailTool,
   getMemberDetail: getMemberDetailTool,
+  getUserProfile: getUserProfileTool,
 };
