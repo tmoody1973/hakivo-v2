@@ -110,6 +110,134 @@ function extractSource(url: string): string {
 }
 
 /**
+ * Get today's date formatted for search queries
+ */
+function getTodayFormatted(): { iso: string; readable: string; month: string; year: number } {
+  const today = new Date();
+  return {
+    iso: today.toISOString().split('T')[0], // "2025-12-05"
+    readable: today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }), // "December 5, 2025"
+    month: today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), // "December 2025"
+    year: today.getFullYear(),
+  };
+}
+
+/**
+ * Get the next recency level to try (progressive expansion)
+ */
+function getNextRecency(current: string): string | null {
+  const progression: Record<string, string | null> = {
+    day: "week",
+    week: "month",
+    month: null, // No further expansion
+  };
+  return progression[current] || null;
+}
+
+/**
+ * Perform a Perplexity search with progressive recency expansion
+ * If no results found for current recency, expands to next level automatically
+ */
+async function searchWithProgressiveRecency(
+  apiKey: string,
+  systemPrompt: string,
+  searchQuery: string,
+  initialRecency: string,
+  maxExpansions: number = 2
+): Promise<{ data: PerplexityResponse; finalRecency: string; expanded: boolean }> {
+  let currentRecency = initialRecency;
+  let expansionCount = 0;
+
+  while (expansionCount <= maxExpansions) {
+    const today = getTodayFormatted();
+    const recencyContext: Record<string, string> = {
+      day: `from ${today.readable} or the day before`,
+      week: `from the week of ${today.readable}`,
+      month: `from ${today.month}`,
+    };
+
+    const promptWithDate = systemPrompt.replace(
+      /Today's date is [^.]+\./,
+      `Today's date is ${today.readable}.`
+    ).replace(
+      /Search for the most recent[^.]+about/,
+      `Search for the most recent news ${recencyContext[currentRecency]} about`
+    );
+
+    const response = await fetch(PERPLEXITY_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "sonar",
+        messages: [
+          { role: "system", content: promptWithDate },
+          { role: "user", content: searchQuery },
+        ],
+        max_tokens: 1024,
+        temperature: 0.2,
+        return_citations: true,
+        search_recency_filter: currentRecency,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Perplexity API error: ${response.status}`);
+    }
+
+    const data: PerplexityResponse = await response.json();
+    const citations = data.citations || [];
+    const answer = data.choices[0]?.message?.content || "";
+
+    // Check if we got meaningful results
+    const hasResults = citations.length > 0 && answer.length > 100;
+
+    if (hasResults || !getNextRecency(currentRecency)) {
+      // Got results or no more expansion possible
+      return {
+        data,
+        finalRecency: currentRecency,
+        expanded: expansionCount > 0
+      };
+    }
+
+    // Expand to next recency level
+    const nextRecency = getNextRecency(currentRecency);
+    if (nextRecency) {
+      currentRecency = nextRecency;
+      expansionCount++;
+    } else {
+      break;
+    }
+  }
+
+  // Return last result even if empty
+  const finalResponse = await fetch(PERPLEXITY_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "sonar",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: searchQuery },
+      ],
+      max_tokens: 1024,
+      temperature: 0.2,
+      return_citations: true,
+      search_recency_filter: currentRecency,
+    }),
+  });
+
+  const finalData: PerplexityResponse = await finalResponse.json();
+  return { data: finalData, finalRecency: currentRecency, expanded: true };
+}
+
+/**
  * Search News Tool - Search for current news using Perplexity
  *
  * Searches for recent news articles about congressional topics,
@@ -124,6 +252,7 @@ Use this tool to:
 - Find news about specific legislators
 - Search for policy-related news coverage
 
+IMPORTANT: For "latest" or "recent" queries, always use recency="day" to get the most current news.
 Returns an AI-summarized answer with citations to source articles.`,
   inputSchema: z.object({
     query: z
@@ -136,11 +265,11 @@ Returns an AI-summarized answer with citations to source articles.`,
     recency: z
       .enum(["day", "week", "month"])
       .optional()
-      .default("week")
-      .describe("How recent the news should be"),
+      .default("day")
+      .describe("How recent the news should be - use 'day' for 'latest' queries"),
   }),
   execute: async ({ context }): Promise<NewsSearchResult> => {
-    const { query, topic, recency = "week" } = context;
+    const { query, topic, recency = "day" } = context;
 
     const apiKey = getPerplexityApiKey();
 
@@ -168,40 +297,17 @@ Returns an AI-summarized answer with citations to source articles.`,
         searchQuery = `${query} ${topicContext[topic] || ""}`;
       }
 
-      // Add recency context
-      const recencyContext: Record<string, string> = {
-        day: "from today or yesterday",
-        week: "from the past week",
-        month: "from the past month",
-      };
+      // Build system prompt with date context
+      const today = getTodayFormatted();
+      const systemPrompt = `You are a congressional news research assistant. Today's date is ${today.readable}. Search for the most recent news about the following topic. Focus on factual, non-partisan reporting from reputable news sources. Provide a brief summary of the key developments and cite your sources. Prioritize the most recent articles first.`;
 
-      const systemPrompt = `You are a congressional news research assistant. Search for recent news ${recencyContext[recency]} about the following topic. Focus on factual, non-partisan reporting from reputable news sources. Provide a brief summary of the key developments and cite your sources.`;
-
-      const response = await fetch(PERPLEXITY_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "sonar",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: searchQuery },
-          ],
-          max_tokens: 1024,
-          temperature: 0.2,
-          return_citations: true,
-          search_recency_filter: recency,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Perplexity API error: ${response.status} - ${errorText}`);
-      }
-
-      const data: PerplexityResponse = await response.json();
+      // Use progressive search - starts with requested recency, expands if no results
+      const { data, finalRecency, expanded } = await searchWithProgressiveRecency(
+        apiKey,
+        systemPrompt,
+        searchQuery,
+        recency
+      );
 
       // Extract the answer
       const answer = data.choices[0]?.message?.content || "";
@@ -216,12 +322,17 @@ Returns an AI-summarized answer with citations to source articles.`,
         relevanceScore: 1 - index * 0.1, // Higher rank = higher score
       }));
 
+      // Add note if search was expanded
+      const expandedNote = expanded
+        ? `\n\n(Note: No news found for "${recency}" timeframe, expanded search to "${finalRecency}")`
+        : "";
+
       return {
         success: true,
         articles,
         count: articles.length,
         query: searchQuery,
-        summary: answer,
+        summary: answer + expandedNote,
       };
     } catch (error) {
       return {
@@ -257,11 +368,11 @@ Use this for reliable, factual updates on congressional activities.`,
     recency: z
       .enum(["day", "week", "month"])
       .optional()
-      .default("week")
-      .describe("How recent the news should be"),
+      .default("day")
+      .describe("How recent the news should be - use 'day' for 'latest' or 'recent' queries"),
   }),
   execute: async ({ context }): Promise<NewsSearchResult> => {
-    const { query, chamber = "both", recency = "week" } = context;
+    const { query, chamber = "both", recency = "day" } = context;
 
     const apiKey = getPerplexityApiKey();
 
@@ -286,38 +397,17 @@ Use this for reliable, factual updates on congressional activities.`,
         chamberQuery = `${query} U.S. Congress`;
       }
 
-      const recencyContext: Record<string, string> = {
-        day: "from today or yesterday",
-        week: "from the past week",
-        month: "from the past month",
-      };
+      const today = getTodayFormatted();
+      const systemPrompt = `You are a congressional news research assistant. Today's date is ${today.readable}. Search for the most recent official congressional news about the following topic. Focus on trusted sources like Congress.gov, GovTrack, The Hill, Politico, Roll Call, C-SPAN, NPR, AP News, and Reuters. Provide factual, non-partisan information with citations. Prioritize the most recent articles first.`;
 
-      const systemPrompt = `You are a congressional news research assistant. Search for recent official congressional news ${recencyContext[recency]} about the following topic. Focus on trusted sources like Congress.gov, GovTrack, The Hill, Politico, Roll Call, C-SPAN, NPR, AP News, and Reuters. Provide factual, non-partisan information with citations.`;
+      // Use progressive search - starts with requested recency, expands if no results
+      const { data, finalRecency, expanded } = await searchWithProgressiveRecency(
+        apiKey,
+        systemPrompt,
+        chamberQuery,
+        recency
+      );
 
-      const response = await fetch(PERPLEXITY_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "sonar",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: chamberQuery },
-          ],
-          max_tokens: 1024,
-          temperature: 0.2,
-          return_citations: true,
-          search_recency_filter: recency,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Perplexity API error: ${response.status}`);
-      }
-
-      const data: PerplexityResponse = await response.json();
       const answer = data.choices[0]?.message?.content || "";
 
       const articles: NewsArticle[] = (data.citations || []).map((url, index) => ({
@@ -329,12 +419,17 @@ Use this for reliable, factual updates on congressional activities.`,
         relevanceScore: 1 - index * 0.1,
       }));
 
+      // Add note if search was expanded
+      const expandedNote = expanded
+        ? `\n\n(Note: No news found for "${recency}" timeframe, expanded search to "${finalRecency}")`
+        : "";
+
       return {
         success: true,
         articles,
         count: articles.length,
         query: chamberQuery,
-        summary: answer,
+        summary: answer + expandedNote,
       };
     } catch (error) {
       return {
@@ -371,10 +466,11 @@ including their statements, votes, and activities.`,
     recency: z
       .enum(["day", "week", "month"])
       .optional()
-      .default("week"),
+      .default("day")
+      .describe("How recent the news should be - use 'day' for 'latest' queries"),
   }),
   execute: async ({ context }): Promise<NewsSearchResult> => {
-    const { name, state, topic, recency = "week" } = context;
+    const { name, state, topic, recency = "day" } = context;
 
     const apiKey = getPerplexityApiKey();
 
@@ -399,38 +495,17 @@ including their statements, votes, and activities.`,
       }
       searchQuery += " congress legislator";
 
-      const recencyContext: Record<string, string> = {
-        day: "from today or yesterday",
-        week: "from the past week",
-        month: "from the past month",
-      };
+      const today = getTodayFormatted();
+      const systemPrompt = `You are a congressional research assistant. Today's date is ${today.readable}. Search for the most recent news about the legislator mentioned. Include information about their recent statements, votes, committee work, and any news coverage. Provide factual, non-partisan information with citations. Prioritize the most recent articles first.`;
 
-      const systemPrompt = `You are a congressional research assistant. Search for recent news ${recencyContext[recency]} about the legislator mentioned. Include information about their recent statements, votes, committee work, and any news coverage. Provide factual, non-partisan information with citations.`;
+      // Use progressive search - starts with requested recency, expands if no results
+      const { data, finalRecency, expanded } = await searchWithProgressiveRecency(
+        apiKey,
+        systemPrompt,
+        searchQuery,
+        recency
+      );
 
-      const response = await fetch(PERPLEXITY_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "sonar",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: searchQuery },
-          ],
-          max_tokens: 1024,
-          temperature: 0.2,
-          return_citations: true,
-          search_recency_filter: recency,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Perplexity API error: ${response.status}`);
-      }
-
-      const data: PerplexityResponse = await response.json();
       const answer = data.choices[0]?.message?.content || "";
 
       const articles: NewsArticle[] = (data.citations || []).map((url, index) => ({
@@ -442,12 +517,17 @@ including their statements, votes, and activities.`,
         relevanceScore: 1 - index * 0.1,
       }));
 
+      // Add note if search was expanded
+      const expandedNote = expanded
+        ? `\n\n(Note: No news found for "${recency}" timeframe, expanded search to "${finalRecency}")`
+        : "";
+
       return {
         success: true,
         articles,
         count: articles.length,
         query: searchQuery,
-        summary: answer,
+        summary: answer + expandedNote,
       };
     } catch (error) {
       return {

@@ -274,4 +274,8 @@ application "hakivo-new" {
   smartbucket "bill-texts" {}
 
   smartbucket "audio-briefs" {}
+
+  // SmartMemory for AI agent memory (working, episodic, semantic, procedural)
+  // Enables personalized user experiences and conversation continuity
+  smartmemory "congressional_memory" {}
 }

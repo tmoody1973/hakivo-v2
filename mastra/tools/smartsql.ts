@@ -102,15 +102,43 @@ interface QueryResult {
  * Parse natural language query to determine intent and entities
  */
 function parseNaturalQuery(query: string): {
-  intent: "bills" | "members" | "state_bills" | "votes" | "custom";
+  intent: "bills" | "members" | "state_bills" | "votes" | "sponsor_bills" | "custom";
   filters: Record<string, string | number | boolean>;
   keywords: string[];
+  sponsorName?: string;
 } {
   const lowerQuery = query.toLowerCase();
 
   // Detect intent
-  let intent: "bills" | "members" | "state_bills" | "votes" | "custom" =
+  let intent: "bills" | "members" | "state_bills" | "votes" | "sponsor_bills" | "custom" =
     "bills";
+  let sponsorName: string | undefined;
+
+  // Detect sponsor-based bill queries FIRST (before general intent detection)
+  // Patterns: "bills sponsored by X", "X's bills", "what has X sponsored", "bills by X"
+  const sponsorPatterns = [
+    /bills?\s+(?:sponsored|introduced|authored)\s+by\s+([a-z]+(?:\s+[a-z]+)?)/i,
+    /(?:sponsored|introduced|authored)\s+by\s+([a-z]+(?:\s+[a-z]+)?)/i,
+    /what\s+(?:has|did)\s+([a-z]+(?:\s+[a-z]+)?)\s+(?:sponsored|introduce)/i,
+    /([a-z]+(?:\s+[a-z]+)?)'s\s+bills?/i,
+    /bills?\s+by\s+([a-z]+(?:\s+[a-z]+)?)/i,
+    /([a-z]+(?:\s+[a-z]+)?)\s+(?:has\s+)?sponsored/i,
+    /what\s+(?:is|are)\s+([a-z]+(?:\s+[a-z]+)?)\s+(?:working\s+on|doing|up\s+to)/i,
+  ];
+
+  for (const pattern of sponsorPatterns) {
+    const match = query.match(pattern);
+    if (match && match[1]) {
+      // Extract sponsor name, filter out common words
+      const name = match[1].trim();
+      const commonWords = ['senator', 'rep', 'representative', 'congressman', 'congresswoman', 'the', 'a', 'an'];
+      if (!commonWords.includes(name.toLowerCase())) {
+        sponsorName = name;
+        intent = "sponsor_bills";
+        break;
+      }
+    }
+  }
 
   if (
     lowerQuery.includes("representative") ||
@@ -353,7 +381,7 @@ function parseNaturalQuery(query: string): {
     .filter((word) => word.length > 2 && !stopWords.includes(word))
     .slice(0, 5);
 
-  return { intent, filters, keywords };
+  return { intent, filters, keywords, sponsorName };
 }
 
 /**
@@ -418,6 +446,121 @@ async function searchBills(
       data: [],
       count: 0,
       query_type: "bills_search",
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+/**
+ * Search bills by sponsor name
+ * First looks up the member to get bioguide_id, then queries bills
+ */
+async function searchBillsBySponsor(
+  sponsorName: string,
+  filters: Record<string, string | number | boolean>
+): Promise<QueryResult> {
+  try {
+    // Step 1: Look up member by name
+    // The search API works best with last names, so try extracting last name if full name fails
+    let members: Array<{ bioguide_id: string; name?: string; first_name?: string; last_name?: string; party?: string; state?: string }> = [];
+
+    // First try the full name
+    const memberParams = new URLSearchParams();
+    memberParams.set("query", sponsorName);
+    memberParams.set("currentOnly", "true");
+    memberParams.set("limit", "5");
+
+    let memberUrl = `${RAINDROP_SERVICES.BILLS}/members/search?${memberParams.toString()}`;
+    let memberResponse = await measure("sponsor_member_lookup", () =>
+      robustFetch(memberUrl, { timeout: 8000, maxRetries: 2 })
+    );
+
+    if (memberResponse.ok) {
+      const memberResult = await memberResponse.json();
+      members = memberResult.members || memberResult || [];
+    }
+
+    // If no results and the name has multiple parts, try just the last name
+    if (members.length === 0 && sponsorName.includes(" ")) {
+      const nameParts = sponsorName.split(" ");
+      const lastName = nameParts[nameParts.length - 1]; // Get last word as last name
+
+      memberParams.set("query", lastName);
+      memberUrl = `${RAINDROP_SERVICES.BILLS}/members/search?${memberParams.toString()}`;
+      memberResponse = await measure("sponsor_member_lookup_lastname", () =>
+        robustFetch(memberUrl, { timeout: 8000, maxRetries: 2 })
+      );
+
+      if (memberResponse.ok) {
+        const memberResult = await memberResponse.json();
+        members = memberResult.members || memberResult || [];
+      }
+    }
+
+    if (members.length === 0) {
+      return {
+        success: true,
+        data: [],
+        count: 0,
+        query_type: "sponsor_bills_search",
+        error: `Could not find a member matching "${sponsorName}"`,
+      };
+    }
+
+    // Use the first matching member
+    const member = members[0];
+    const bioguideId = member.bioguide_id;
+    const memberName = member.name || `${member.first_name} ${member.last_name}`;
+
+    // Step 2: Query bills by sponsor_bioguide_id using admin endpoint
+    const congress = filters.congress || 119; // Default to current Congress
+    const sql = `
+      SELECT id, congress, bill_type, bill_number, title, introduced_date,
+             latest_action_date, latest_action_text, policy_area, sponsor_bioguide_id
+      FROM bills
+      WHERE sponsor_bioguide_id = "${bioguideId}"
+        AND congress = ${congress}
+      ORDER BY introduced_date DESC
+      LIMIT 20
+    `;
+
+    const billsResponse = await fetch(
+      `${RAINDROP_SERVICES.ADMIN}/api/database/query`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: sql }),
+      }
+    );
+
+    if (!billsResponse.ok) {
+      throw new Error(`Bills query failed: ${billsResponse.statusText}`);
+    }
+
+    const billsResult = await billsResponse.json();
+    const bills = billsResult.results || [];
+
+    // Add sponsor name to each bill for display
+    const enrichedBills = bills.map((bill: Record<string, unknown>) => ({
+      ...bill,
+      sponsor_name: memberName,
+      sponsor_party: member.party,
+      sponsor_state: member.state,
+    }));
+
+    return {
+      success: true,
+      data: enrichedBills,
+      count: enrichedBills.length,
+      query_type: "sponsor_bills_search",
+      sql_executed: sql,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      data: [],
+      count: 0,
+      query_type: "sponsor_bills_search",
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -597,6 +740,7 @@ export const smartSqlTool = createTool({
   id: "smartSql",
   description: `Search the Hakivo database using natural language. Supports queries about:
 - Federal bills: "Show me healthcare bills from the 119th Congress"
+- Bills by sponsor: "What bills has Ted Cruz sponsored", "bills sponsored by Tammy Baldwin", "what is AOC working on"
 - Members: "Find Democratic senators from California"
 - State bills: "Texas education legislation"
 - Votes: "How did my representative vote on H.R. 1234"
@@ -624,10 +768,16 @@ The tool automatically parses your query to determine the best search approach.`
     }
 
     // Parse natural language query
-    const { intent, filters, keywords } = parseNaturalQuery(query);
+    const { intent, filters, keywords, sponsorName } = parseNaturalQuery(query);
 
     // Route to appropriate search function
     switch (intent) {
+      case "sponsor_bills":
+        if (sponsorName) {
+          return searchBillsBySponsor(sponsorName, filters);
+        }
+        // Fall through to regular bills search if no sponsor found
+        return searchBills(filters, keywords);
       case "members":
         return searchMembers(filters, keywords);
       case "state_bills":

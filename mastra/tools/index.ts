@@ -35,6 +35,8 @@ export {
   storeWorkingMemoryTool,
   getBriefingTemplatesTool,
   getPersonalizedRecommendationsTool,
+  updateUserProfileTool,
+  searchPastSessionsTool,
   smartMemoryTools,
 } from "./smartmemory";
 

@@ -15,17 +15,21 @@ import { z } from "zod";
  */
 
 // Backend service URLs
+// From Raindrop deployment:
+// - auth-service = svc-...q15
+// - chat-service = svc-...q18
+// - dashboard-service = svc-...q19
 const DASHBOARD_SERVICE_URL =
   process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 const AUTH_SERVICE_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q17.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 const CHAT_SERVICE_URL =
   process.env.NEXT_PUBLIC_CHAT_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 // Type definitions for memory responses
 interface UserContext {
@@ -105,42 +109,50 @@ This is essential for:
     }
 
     try {
-      // Get dashboard overview which includes user context
-      const response = await fetch(`${DASHBOARD_SERVICE_URL}/dashboard/overview`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
+      // Fetch data in parallel: dashboard overview, representatives, and SmartMemory profile
+      const [overviewRes, repsRes, memoryProfileRes] = await Promise.all([
+        fetch(`${DASHBOARD_SERVICE_URL}/dashboard/overview`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }),
+        fetch(`${DASHBOARD_SERVICE_URL}/dashboard/representatives`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }),
+        fetch(`${CHAT_SERVICE_URL}/memory/profile`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        }).catch(() => null), // Don't fail if memory service unavailable
+      ]);
 
-      if (!response.ok) {
+      if (!overviewRes.ok) {
         return {
           success: false,
-          error: `Failed to get user context: ${response.statusText}`,
+          error: `Failed to get user context: ${overviewRes.statusText}`,
           context: null,
         };
       }
 
-      const data = await response.json();
+      const data = await overviewRes.json();
 
-      // Also get representatives to know the user's location
-      const repsResponse = await fetch(
-        `${DASHBOARD_SERVICE_URL}/dashboard/representatives`,
-        {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        }
-      );
-
+      // Get location from representatives
       let location = { state: null, district: null, zipcode: null };
-      if (repsResponse.ok) {
-        const repsData = await repsResponse.json();
+      if (repsRes.ok) {
+        const repsData = await repsRes.json();
         if (repsData.userLocation) {
           location = {
             state: repsData.userLocation.state || null,
             district: repsData.userLocation.district || null,
-            zipcode: null, // Not returned in this endpoint
+            zipcode: null,
           };
+        }
+      }
+
+      // Get interests from SmartMemory profile
+      let policyInterests: string[] = [];
+      let smartMemoryProfile = null;
+      if (memoryProfileRes && memoryProfileRes.ok) {
+        const profileData = await memoryProfileRes.json();
+        if (profileData.success && profileData.profile) {
+          smartMemoryProfile = profileData.profile;
+          policyInterests = profileData.profile.interests || [];
         }
       }
 
@@ -148,10 +160,12 @@ This is essential for:
         success: true,
         context: {
           location,
+          policyInterests, // From SmartMemory
           trackedBillsCount: data.totalBills || 0,
           recentActivityCount: data.recentActivity || 0,
           hasCompletedOnboarding: !!location.state,
         },
+        smartMemoryProfile, // Full profile if available
       };
     } catch (error) {
       return {
@@ -697,6 +711,170 @@ Use for:
   },
 });
 
+/**
+ * Update User Profile Tool - Updates user interests in SmartMemory
+ *
+ * Saves user preferences and interests to semantic memory for personalization.
+ */
+export const updateUserProfileTool = createTool({
+  id: "updateUserProfile",
+  description: `Update the user's profile in SmartMemory including their policy interests,
+tracked bills, and tracked legislators. Use this when the user expresses interest in
+specific topics or wants to track certain legislation or legislators.
+
+Examples:
+- User says "I'm interested in healthcare" - add "healthcare" to interests
+- User discusses immigration frequently - add "immigration" to interests
+- User asks to follow a specific bill - add to trackedBills`,
+  inputSchema: z.object({
+    authToken: z
+      .string()
+      .optional()
+      .describe("Auth token for the current user session"),
+    interests: z
+      .array(z.string())
+      .optional()
+      .describe("Policy interests to set (e.g., ['healthcare', 'immigration'])"),
+    trackedBills: z
+      .array(z.string())
+      .optional()
+      .describe("Bill IDs to track (e.g., ['hr-1234', 's-5678'])"),
+    trackedLegislators: z
+      .array(z.string())
+      .optional()
+      .describe("Legislator IDs to track"),
+    state: z.string().optional().describe("User's state (e.g., 'TX')"),
+    district: z.string().optional().describe("User's congressional district"),
+  }),
+  execute: async ({ context }) => {
+    const { authToken, interests, trackedBills, trackedLegislators, state, district } =
+      context;
+
+    if (!authToken) {
+      return {
+        success: false,
+        error: "No auth token provided - requires authentication",
+      };
+    }
+
+    try {
+      const response = await fetch(`${CHAT_SERVICE_URL}/memory/profile`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          interests,
+          trackedBills,
+          trackedLegislators,
+          state,
+          district,
+        }),
+      });
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `Failed to update profile: ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+
+      return {
+        success: true,
+        profile: data.profile,
+        message: "User profile updated in SmartMemory",
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+});
+
+/**
+ * Search Past Sessions Tool - Searches episodic memory for relevant past conversations
+ *
+ * Uses vector search to find previous conversations about specific topics.
+ */
+export const searchPastSessionsTool = createTool({
+  id: "searchPastSessions",
+  description: `Search past conversation sessions for relevant context.
+Use this when the user references previous discussions or when you need
+historical context about what the user has researched before.
+
+Examples:
+- "What did we discuss about healthcare last time?"
+- "Continue our conversation about that immigration bill"
+- Understanding user's prior knowledge on a topic`,
+  inputSchema: z.object({
+    authToken: z
+      .string()
+      .optional()
+      .describe("Auth token for the current user session"),
+    searchTerms: z
+      .string()
+      .describe("Topics or keywords to search for in past sessions"),
+    limit: z
+      .number()
+      .optional()
+      .default(5)
+      .describe("Maximum number of past sessions to return"),
+  }),
+  execute: async ({ context }) => {
+    const { authToken, searchTerms, limit = 5 } = context;
+
+    if (!authToken) {
+      return {
+        success: false,
+        error: "No auth token provided - requires authentication",
+        sessions: [],
+      };
+    }
+
+    try {
+      const response = await fetch(`${CHAT_SERVICE_URL}/memory/episodic/search`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          terms: searchTerms,
+          nMostRecent: limit,
+        }),
+      });
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `Failed to search past sessions: ${response.statusText}`,
+          sessions: [],
+        };
+      }
+
+      const data = await response.json();
+
+      return {
+        success: true,
+        searchTerms,
+        sessions: data.results || [],
+        totalFound: data.pagination?.total || 0,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        sessions: [],
+      };
+    }
+  },
+});
+
 // Export all SmartMemory tools
 export const smartMemoryTools = {
   getUserContext: getUserContextTool,
@@ -706,4 +884,6 @@ export const smartMemoryTools = {
   storeWorkingMemory: storeWorkingMemoryTool,
   getBriefingTemplates: getBriefingTemplatesTool,
   getPersonalizedRecommendations: getPersonalizedRecommendationsTool,
+  updateUserProfile: updateUserProfileTool,
+  searchPastSessions: searchPastSessionsTool,
 };
