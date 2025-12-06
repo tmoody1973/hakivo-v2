@@ -11,8 +11,13 @@ const cerebras = createOpenAICompatible({
   apiKey: process.env.CEREBRAS_API_KEY || "",
 });
 
-// Single model for all queries - keep it simple
-const CEREBRAS_MODEL = "gpt-oss-120b";
+// Model selection for latency optimization:
+// - zai-glm-4.6: Fast model optimized for tool calling (default)
+// - gpt-oss-120b: Deep reasoning model for complex analysis
+// Most queries are tool calls (DB lookups, news search) so we default to GLM-4.6
+const CEREBRAS_FAST_MODEL = "zai-glm-4.6";    // Tool calling, simple queries
+// Export deep model for future use in complex analysis scenarios
+export const CEREBRAS_DEEP_MODEL = "gpt-oss-120b";   // Complex analysis, synthesis
 
 // Import SmartSQL tools (Phase 3 implementation)
 import { smartSqlTool, getBillDetailTool, getMemberDetailTool, getUserProfileTool } from "../tools/smartsql";
@@ -501,24 +506,26 @@ export const congressionalTools = {
 };
 
 // Congressional Assistant Agent - Powered by Cerebras for ultra-fast inference
+// Uses the fast model (GLM-4.6) by default for efficient tool calling
 export const congressionalAssistant = new Agent({
   name: "congressional-assistant",
   instructions: congressionalSystemPrompt,
-  model: cerebras.chatModel(CEREBRAS_MODEL),
+  model: cerebras.chatModel(CEREBRAS_FAST_MODEL),
   tools: congressionalTools,
 });
 
 /**
  * Create a Congressional Assistant
  *
- * Uses Cerebras GPT-OSS 120B for all queries.
- * Simple and fast - no complex routing needed.
+ * Uses Cerebras GLM-4.6 (fast model) for tool-using agent steps.
+ * The deep model (gpt-oss-120b) is available via CEREBRAS_DEEP_MODEL for
+ * complex analysis tasks that require extended reasoning.
  */
 export function createCongressionalAssistant() {
   return new Agent({
     name: "congressional-assistant",
     instructions: congressionalSystemPrompt,
-    model: cerebras.chatModel(CEREBRAS_MODEL),
+    model: cerebras.chatModel(CEREBRAS_FAST_MODEL),
     tools: congressionalTools,
   });
 }
