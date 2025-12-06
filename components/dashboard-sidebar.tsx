@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, Users, Radio, MessageSquare, Settings } from 'lucide-react'
+import { LayoutDashboard, FileText, Users, Radio, MessageSquare, Settings, Mic } from 'lucide-react'
 
 const routes = [
   {
@@ -25,6 +25,11 @@ const routes = [
     label: "Briefs",
     icon: Radio,
     href: "/briefs",
+  },
+  {
+    label: "100 Laws Podcast",
+    icon: Mic,
+    href: "/podcast",
   },
   {
     label: "Congressional Assistant",

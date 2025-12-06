@@ -710,6 +710,334 @@ app.get('/briefs/stats', async (c) => {
   }
 });
 
+// ============================================
+// PODCAST ENDPOINTS - 100 Laws That Shaped America
+// ============================================
+
+/**
+ * GET /podcast
+ * List podcast episodes (public - no auth required)
+ */
+app.get('/podcast', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Parse query parameters
+    const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!) : 50;
+    const offset = c.req.query('offset') ? parseInt(c.req.query('offset')!) : 0;
+    const status = c.req.query('status'); // Filter by status (e.g., 'completed')
+
+    // Build query - join with historic_laws for law data
+    let sql = `
+      SELECT
+        pe.*,
+        hl.name as law_name,
+        hl.year as law_year,
+        hl.public_law as law_public_law,
+        hl.president_signed as law_president_signed,
+        hl.category as law_category,
+        hl.description as law_description,
+        hl.key_provisions as law_key_provisions,
+        hl.historical_impact as law_historical_impact
+      FROM podcast_episodes pe
+      JOIN historic_laws hl ON pe.law_id = hl.id
+      WHERE 1=1
+    `;
+    const bindings: any[] = [];
+
+    if (status) {
+      sql += ' AND pe.status = ?';
+      bindings.push(status);
+    }
+
+    sql += ' ORDER BY pe.episode_number ASC LIMIT ? OFFSET ?';
+    bindings.push(limit, offset);
+
+    const result = await db.prepare(sql).bind(...bindings).all();
+
+    // Get total count
+    let countSql = 'SELECT COUNT(*) as total FROM podcast_episodes WHERE 1=1';
+    const countBindings: any[] = [];
+
+    if (status) {
+      countSql += ' AND status = ?';
+      countBindings.push(status);
+    }
+
+    const countResult = await db.prepare(countSql).bind(...countBindings).first();
+    const total = countResult?.total as number || 0;
+
+    // Format results
+    const episodes = result.results?.map((row: any) => ({
+      id: row.id,
+      lawId: row.law_id,
+      episodeNumber: row.episode_number,
+      title: row.title,
+      headline: row.headline,
+      description: row.description,
+      audioUrl: row.audio_url,
+      audioDuration: row.audio_duration,
+      thumbnailUrl: row.thumbnail_url,
+      characterCount: row.character_count,
+      status: row.status,
+      createdAt: row.created_at,
+      publishedAt: row.published_at,
+      law: {
+        year: row.law_year,
+        category: row.law_category,
+        publicLaw: row.law_public_law
+      }
+    })) || [];
+
+    return c.json({
+      success: true,
+      episodes,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + limit < total
+      }
+    });
+  } catch (error) {
+    console.error('List podcast episodes error:', error);
+    return c.json({
+      error: 'Failed to list podcast episodes',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /podcast/:episodeId
+ * Get single podcast episode with full details (public - no auth required)
+ */
+app.get('/podcast/:episodeId', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const episodeId = c.req.param('episodeId');
+
+    // Get episode with law data
+    const episode = await db
+      .prepare(`
+        SELECT
+          pe.*,
+          hl.id as law_id,
+          hl.name as law_name,
+          hl.year as law_year,
+          hl.public_law as law_public_law,
+          hl.president_signed as law_president_signed,
+          hl.category as law_category,
+          hl.description as law_description,
+          hl.key_provisions as law_key_provisions,
+          hl.historical_impact as law_historical_impact
+        FROM podcast_episodes pe
+        JOIN historic_laws hl ON pe.law_id = hl.id
+        WHERE pe.id = ?
+      `)
+      .bind(episodeId)
+      .first();
+
+    if (!episode) {
+      return c.json({ error: 'Episode not found' }, 404);
+    }
+
+    // Parse key provisions from JSON
+    let keyProvisions: string[] = [];
+    try {
+      if (episode.law_key_provisions) {
+        keyProvisions = JSON.parse(episode.law_key_provisions as string);
+      }
+    } catch {
+      keyProvisions = [episode.law_key_provisions as string];
+    }
+
+    // Format response
+    const response = {
+      id: episode.id,
+      lawId: episode.law_id,
+      episodeNumber: episode.episode_number,
+      title: episode.title,
+      headline: episode.headline,
+      description: episode.description,
+      script: episode.script,
+      audioUrl: episode.audio_url,
+      audioDuration: episode.audio_duration,
+      thumbnailUrl: episode.thumbnail_url,
+      characterCount: episode.character_count,
+      status: episode.status,
+      createdAt: episode.created_at,
+      publishedAt: episode.published_at,
+      law: {
+        id: episode.law_id,
+        name: episode.law_name,
+        year: episode.law_year,
+        publicLaw: episode.law_public_law,
+        presidentSigned: episode.law_president_signed,
+        category: episode.law_category,
+        description: episode.law_description,
+        keyProvisions,
+        historicalImpact: episode.law_historical_impact
+      }
+    };
+
+    return c.json({
+      success: true,
+      episode: response
+    });
+  } catch (error) {
+    console.error('Get podcast episode error:', error);
+    return c.json({
+      error: 'Failed to get podcast episode',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /podcast/stats
+ * Get podcast series statistics (public)
+ */
+app.get('/podcast/stats', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    const stats = await db
+      .prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM historic_laws) as total_laws,
+          (SELECT COUNT(*) FROM podcast_episodes) as total_episodes,
+          (SELECT COUNT(*) FROM podcast_episodes WHERE status = 'completed') as completed_episodes,
+          (SELECT SUM(audio_duration) FROM podcast_episodes WHERE status = 'completed') as total_duration
+      `)
+      .first();
+
+    return c.json({
+      success: true,
+      stats: {
+        totalLaws: stats?.total_laws || 0,
+        totalEpisodes: stats?.total_episodes || 0,
+        completedEpisodes: stats?.completed_episodes || 0,
+        remainingEpisodes: (stats?.total_laws as number || 0) - (stats?.completed_episodes as number || 0),
+        totalDurationSeconds: stats?.total_duration || 0,
+        percentComplete: Math.round(((stats?.completed_episodes as number || 0) / (stats?.total_laws as number || 1)) * 100)
+      }
+    });
+  } catch (error) {
+    console.error('Get podcast stats error:', error);
+    return c.json({
+      error: 'Failed to get podcast stats',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /podcast/:episodeId/play
+ * Record a play (public - for analytics)
+ */
+app.post('/podcast/:episodeId/play', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const episodeId = c.req.param('episodeId');
+
+    // Record play in podcast_plays table
+    const playId = crypto.randomUUID();
+    const now = Date.now();
+
+    // Get user ID from auth if available (optional)
+    let userId: string | null = null;
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+      const auth = await verifyAuth(authHeader, c.env.JWT_SECRET);
+      if (auth) {
+        userId = auth.userId;
+      }
+    }
+
+    await db
+      .prepare(`
+        INSERT INTO podcast_plays (id, episode_id, user_id, played_at)
+        VALUES (?, ?, ?, ?)
+      `)
+      .bind(playId, episodeId, userId, now)
+      .run();
+
+    return c.json({
+      success: true,
+      message: 'Play recorded'
+    });
+  } catch (error) {
+    console.error('Record podcast play error:', error);
+    return c.json({
+      error: 'Failed to record play',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /podcast/latest
+ * Get the most recent completed episode (public)
+ */
+app.get('/podcast/latest', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    const episode = await db
+      .prepare(`
+        SELECT
+          pe.*,
+          hl.year as law_year,
+          hl.category as law_category,
+          hl.public_law as law_public_law
+        FROM podcast_episodes pe
+        JOIN historic_laws hl ON pe.law_id = hl.id
+        WHERE pe.status = 'completed'
+        ORDER BY pe.published_at DESC, pe.created_at DESC
+        LIMIT 1
+      `)
+      .first();
+
+    if (!episode) {
+      return c.json({
+        success: true,
+        episode: null,
+        message: 'No episodes available yet'
+      });
+    }
+
+    return c.json({
+      success: true,
+      episode: {
+        id: episode.id,
+        lawId: episode.law_id,
+        episodeNumber: episode.episode_number,
+        title: episode.title,
+        headline: episode.headline,
+        description: episode.description,
+        audioUrl: episode.audio_url,
+        audioDuration: episode.audio_duration,
+        thumbnailUrl: episode.thumbnail_url,
+        status: episode.status,
+        createdAt: episode.created_at,
+        publishedAt: episode.published_at,
+        law: {
+          year: episode.law_year,
+          category: episode.law_category,
+          publicLaw: episode.law_public_law
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get latest podcast episode error:', error);
+    return c.json({
+      error: 'Failed to get latest episode',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

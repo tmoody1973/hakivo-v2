@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/auth-context';
 import { DailyBriefWidget } from "@/components/widgets/daily-brief-widget"
+import { PodcastWidget } from "@/components/widgets/podcast-widget"
 import { RepresentativesHorizontalWidget } from "@/components/widgets/representatives-horizontal-widget"
 import { LatestActionsWidget } from "@/components/widgets/latest-actions-widget"
 import { PersonalizedContentWidget } from "@/components/widgets/personalized-content-widget"
@@ -75,7 +76,11 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <RepresentativesHorizontalWidget />
 
-        <DailyBriefWidget />
+        {/* Daily Brief and Podcast Widgets */}
+        <div className="grid gap-6 md:grid-cols-2 items-start">
+          <DailyBriefWidget />
+          <PodcastWidget />
+        </div>
 
         <div className="grid gap-6 md:grid-cols-2 items-start">
           <LatestActionsWidget userState={userState} token={accessToken} />

@@ -1,0 +1,1639 @@
+{
+  "metadata": {
+    "title": "100 Most Impactful US Legislation (1900-2000)",
+    "description": "A comprehensive collection of the most significant federal laws enacted in the United States during the 20th century",
+    "date_range": "1900-2000",
+    "total_entries": 100
+  },
+  "legislation": [
+    {
+      "id": 1,
+      "name": "Antiquities Act",
+      "year": 1906,
+      "public_law": "59-209",
+      "president_signed": "Theodore Roosevelt",
+      "category": "Environmental/Conservation",
+      "description": "Authorized the President to designate national monuments on federal lands to protect significant natural, cultural, or scientific features.",
+      "key_provisions": [
+        "Presidential authority to declare national monuments",
+        "Protection of objects of historic or scientific interest",
+        "Penalties for unauthorized excavation or destruction of antiquities"
+      ],
+      "historical_impact": "Enabled the creation of over 150 national monuments, protecting landmarks like the Grand Canyon before it became a national park."
+    },
+    {
+      "id": 2,
+      "name": "Pure Food and Drug Act",
+      "year": 1906,
+      "public_law": "59-384",
+      "president_signed": "Theodore Roosevelt",
+      "category": "Consumer Protection/Public Health",
+      "description": "Prohibited the manufacture, sale, or transportation of adulterated or misbranded foods and drugs in interstate commerce.",
+      "key_provisions": [
+        "Required accurate labeling of ingredients",
+        "Banned dangerous additives and preservatives",
+        "Created federal inspection and enforcement mechanisms"
+      ],
+      "historical_impact": "First major federal consumer protection law, laid groundwork for the FDA and modern food safety regulation."
+    },
+    {
+      "id": 3,
+      "name": "Meat Inspection Act",
+      "year": 1906,
+      "public_law": "59-242",
+      "president_signed": "Theodore Roosevelt",
+      "category": "Consumer Protection/Public Health",
+      "description": "Required federal inspection of meat processing facilities and mandated sanitary conditions.",
+      "key_provisions": [
+        "Mandatory ante-mortem and post-mortem inspection of livestock",
+        "Sanitary standards for slaughterhouses",
+        "USDA inspection and certification requirements"
+      ],
+      "historical_impact": "Transformed the meatpacking industry and established federal food safety standards still in effect today."
+    },
+    {
+      "id": 4,
+      "name": "Federal Reserve Act",
+      "year": 1913,
+      "public_law": "63-43",
+      "president_signed": "Woodrow Wilson",
+      "category": "Financial/Economic",
+      "description": "Created the Federal Reserve System, establishing a central banking system for the United States.",
+      "key_provisions": [
+        "Established 12 regional Federal Reserve Banks",
+        "Created the Federal Reserve Board",
+        "Authorized issuance of Federal Reserve notes",
+        "Established reserve requirements for member banks"
+      ],
+      "historical_impact": "Fundamentally restructured American banking and monetary policy, giving the government tools to manage economic cycles."
+    },
+    {
+      "id": 5,
+      "name": "Sixteenth Amendment (Income Tax)",
+      "year": 1913,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "William Howard Taft (proposed)",
+      "category": "Taxation/Constitutional",
+      "description": "Constitutional amendment authorizing Congress to levy an income tax without apportioning it among the states.",
+      "key_provisions": [
+        "Congressional power to tax incomes from any source",
+        "No requirement for apportionment based on state population"
+      ],
+      "historical_impact": "Enabled the modern federal income tax system, fundamentally changing how the federal government funds itself."
+    },
+    {
+      "id": 6,
+      "name": "Clayton Antitrust Act",
+      "year": 1914,
+      "public_law": "63-212",
+      "president_signed": "Woodrow Wilson",
+      "category": "Economic/Business Regulation",
+      "description": "Strengthened antitrust laws by specifically prohibiting certain business practices and protecting labor unions.",
+      "key_provisions": [
+        "Prohibited price discrimination, exclusive dealing, and tying arrangements",
+        "Banned interlocking directorates",
+        "Exempted labor unions from antitrust prosecution",
+        "Allowed private parties to sue for triple damages"
+      ],
+      "historical_impact": "Clarified and strengthened the Sherman Antitrust Act, providing more effective tools against monopolistic practices."
+    },
+    {
+      "id": 7,
+      "name": "Federal Trade Commission Act",
+      "year": 1914,
+      "public_law": "63-203",
+      "president_signed": "Woodrow Wilson",
+      "category": "Economic/Consumer Protection",
+      "description": "Created the Federal Trade Commission to prevent unfair methods of competition and deceptive business practices.",
+      "key_provisions": [
+        "Established the FTC as an independent agency",
+        "Authorized investigation of business practices",
+        "Power to issue cease and desist orders",
+        "Mandate to promote consumer protection"
+      ],
+      "historical_impact": "Created a permanent federal agency dedicated to protecting consumers and maintaining competitive markets."
+    },
+    {
+      "id": 8,
+      "name": "Seventeenth Amendment (Direct Election of Senators)",
+      "year": 1913,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "William Howard Taft (proposed)",
+      "category": "Constitutional/Electoral",
+      "description": "Established direct popular election of U.S. Senators, replacing selection by state legislatures.",
+      "key_provisions": [
+        "Senators elected by the people of each state",
+        "Governor authority to make temporary appointments",
+        "State legislature can empower governor to fill vacancies"
+      ],
+      "historical_impact": "Democratized the Senate and reduced corruption associated with legislative selection of senators."
+    },
+    {
+      "id": 9,
+      "name": "Eighteenth Amendment (Prohibition)",
+      "year": 1919,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "Woodrow Wilson (proposed)",
+      "category": "Constitutional/Social Policy",
+      "description": "Prohibited the manufacture, sale, and transportation of alcoholic beverages in the United States.",
+      "key_provisions": [
+        "Ban on production, sale, and transport of intoxicating liquors",
+        "Congressional and state enforcement authority",
+        "One-year implementation period"
+      ],
+      "historical_impact": "Launched the Prohibition era, leading to unintended consequences including organized crime growth; repealed by 21st Amendment in 1933."
+    },
+    {
+      "id": 10,
+      "name": "Nineteenth Amendment (Women's Suffrage)",
+      "year": 1920,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "Woodrow Wilson (proposed)",
+      "category": "Constitutional/Civil Rights",
+      "description": "Guaranteed women the right to vote, prohibiting denial of suffrage based on sex.",
+      "key_provisions": [
+        "Right to vote cannot be denied based on sex",
+        "Congressional enforcement authority"
+      ],
+      "historical_impact": "Doubled the eligible voting population and marked a major milestone in the women's rights movement."
+    },
+    {
+      "id": 11,
+      "name": "National Origins Act (Immigration Act of 1924)",
+      "year": 1924,
+      "public_law": "68-139",
+      "president_signed": "Calvin Coolidge",
+      "category": "Immigration",
+      "description": "Established national origin quotas limiting immigration, particularly from Southern and Eastern Europe and banning Asian immigration.",
+      "key_provisions": [
+        "2% quota based on 1890 census national origins",
+        "Complete exclusion of Asian immigrants",
+        "Preference for Northern and Western Europeans",
+        "Annual cap of 165,000 immigrants"
+      ],
+      "historical_impact": "Dramatically reshaped immigration patterns until replaced by the Immigration Act of 1965; reflected nativist sentiment of the era."
+    },
+    {
+      "id": 12,
+      "name": "Revenue Act of 1926",
+      "year": 1926,
+      "public_law": "69-20",
+      "president_signed": "Calvin Coolidge",
+      "category": "Taxation",
+      "description": "Reduced income tax rates and established the estate tax and gift tax as permanent features of the tax code.",
+      "key_provisions": [
+        "Reduced top marginal income tax rate to 25%",
+        "Established permanent estate tax",
+        "Created gift tax provisions",
+        "Reduced corporate tax rates"
+      ],
+      "historical_impact": "Established the estate and gift tax framework that continues today; represented 1920s approach to taxation."
+    },
+    {
+      "id": 13,
+      "name": "Norris-La Guardia Act",
+      "year": 1932,
+      "public_law": "72-65",
+      "president_signed": "Herbert Hoover",
+      "category": "Labor",
+      "description": "Limited federal courts' power to issue injunctions against labor unions and banned yellow-dog contracts.",
+      "key_provisions": [
+        "Restricted federal court injunctions in labor disputes",
+        "Outlawed yellow-dog contracts (anti-union employment agreements)",
+        "Protected workers' right to organize",
+        "Declared labor organization a matter of public policy"
+      ],
+      "historical_impact": "Major victory for organized labor; removed judicial obstacles to union organizing and collective bargaining."
+    },
+    {
+      "id": 14,
+      "name": "Twenty-First Amendment (Repeal of Prohibition)",
+      "year": 1933,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Constitutional/Social Policy",
+      "description": "Repealed the Eighteenth Amendment, ending nationwide Prohibition of alcohol.",
+      "key_provisions": [
+        "Repeal of the Eighteenth Amendment",
+        "State authority to regulate alcohol",
+        "Protection of dry states' laws"
+      ],
+      "historical_impact": "Only constitutional amendment to repeal another; ended the failed Prohibition experiment and restored state control over alcohol."
+    },
+    {
+      "id": 15,
+      "name": "Emergency Banking Act",
+      "year": 1933,
+      "public_law": "73-1",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Financial/Economic",
+      "description": "Provided for reopening of banks under federal supervision and Treasury assistance during the banking crisis.",
+      "key_provisions": [
+        "Presidential authority to declare bank holidays",
+        "Federal Reserve authorized to issue emergency currency",
+        "Treasury could provide capital to troubled banks",
+        "Reorganization procedures for insolvent banks"
+      ],
+      "historical_impact": "Helped restore confidence in the banking system during the Great Depression; first major New Deal legislation."
+    },
+    {
+      "id": 16,
+      "name": "Glass-Steagall Act (Banking Act of 1933)",
+      "year": 1933,
+      "public_law": "73-66",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Financial/Economic",
+      "description": "Separated commercial and investment banking and created the Federal Deposit Insurance Corporation.",
+      "key_provisions": [
+        "Separation of commercial and investment banking",
+        "Creation of FDIC to insure bank deposits",
+        "Regulation of interest rates on deposits",
+        "Enhanced Federal Reserve oversight"
+      ],
+      "historical_impact": "Stabilized the banking system for decades; FDIC continues to protect depositors; separation provisions repealed in 1999."
+    },
+    {
+      "id": 17,
+      "name": "Securities Act of 1933",
+      "year": 1933,
+      "public_law": "73-22",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Financial/Economic",
+      "description": "Required registration of securities offerings and disclosure of material information to investors.",
+      "key_provisions": [
+        "Registration requirements for securities offerings",
+        "Mandatory disclosure of financial information",
+        "Liability for false or misleading statements",
+        "Exemptions for certain types of offerings"
+      ],
+      "historical_impact": "Foundation of modern securities regulation; restored investor confidence after 1929 crash."
+    },
+    {
+      "id": 18,
+      "name": "Tennessee Valley Authority Act",
+      "year": 1933,
+      "public_law": "73-17",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Economic/Infrastructure",
+      "description": "Created the TVA as a federally owned corporation to provide flood control, electricity generation, and economic development in the Tennessee Valley.",
+      "key_provisions": [
+        "Federal corporation for regional development",
+        "Construction of dams and power plants",
+        "Flood control and navigation improvements",
+        "Fertilizer production and agricultural development"
+      ],
+      "historical_impact": "Transformed one of the poorest regions of the country; model for integrated regional development and public power."
+    },
+    {
+      "id": 19,
+      "name": "National Industrial Recovery Act",
+      "year": 1933,
+      "public_law": "73-67",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Economic/Labor",
+      "description": "Established the National Recovery Administration and guaranteed workers the right to organize unions.",
+      "key_provisions": [
+        "Industry codes of fair competition",
+        "Section 7(a) guaranteeing collective bargaining rights",
+        "Public works programs",
+        "Antitrust law suspension for code-compliant industries"
+      ],
+      "historical_impact": "Though struck down by Supreme Court in 1935, Section 7(a) inspired the Wagner Act and transformed labor relations."
+    },
+    {
+      "id": 20,
+      "name": "Securities Exchange Act of 1934",
+      "year": 1934,
+      "public_law": "73-291",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Financial/Economic",
+      "description": "Created the Securities and Exchange Commission and regulated secondary trading of securities.",
+      "key_provisions": [
+        "Establishment of the SEC",
+        "Regulation of stock exchanges and broker-dealers",
+        "Periodic reporting requirements for public companies",
+        "Prohibition of market manipulation and insider trading"
+      ],
+      "historical_impact": "Created the modern framework for securities market regulation and investor protection."
+    },
+    {
+      "id": 21,
+      "name": "Federal Communications Act",
+      "year": 1934,
+      "public_law": "73-416",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Communications/Regulatory",
+      "description": "Created the Federal Communications Commission to regulate interstate and international communications.",
+      "key_provisions": [
+        "Establishment of the FCC",
+        "Regulation of radio and telephone communications",
+        "Licensing requirements for broadcasters",
+        "Public interest standard for broadcast licenses"
+      ],
+      "historical_impact": "Established the regulatory framework for all electronic communications that continues to evolve today."
+    },
+    {
+      "id": 22,
+      "name": "National Housing Act of 1934",
+      "year": 1934,
+      "public_law": "73-479",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Housing/Economic",
+      "description": "Created the Federal Housing Administration to insure mortgage loans and stimulate the housing industry.",
+      "key_provisions": [
+        "Establishment of the FHA",
+        "Federal mortgage insurance program",
+        "Standardization of mortgage terms",
+        "Home improvement loan insurance"
+      ],
+      "historical_impact": "Revolutionized home ownership in America by making long-term, low-down-payment mortgages possible."
+    },
+    {
+      "id": 23,
+      "name": "Social Security Act",
+      "year": 1935,
+      "public_law": "74-271",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Social Welfare",
+      "description": "Established the Social Security system providing old-age benefits, unemployment insurance, and aid to dependent children.",
+      "key_provisions": [
+        "Old-age insurance program (Social Security)",
+        "Federal-state unemployment insurance",
+        "Aid to Dependent Children (later AFDC)",
+        "Aid to the blind and disabled",
+        "Maternal and child welfare programs"
+      ],
+      "historical_impact": "Created the foundation of the American social safety net; remains the largest government program today."
+    },
+    {
+      "id": 24,
+      "name": "National Labor Relations Act (Wagner Act)",
+      "year": 1935,
+      "public_law": "74-198",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Labor",
+      "description": "Guaranteed workers' rights to organize unions and bargain collectively, and established the National Labor Relations Board.",
+      "key_provisions": [
+        "Right to organize and join unions",
+        "Right to collective bargaining",
+        "Creation of the NLRB",
+        "Prohibition of unfair labor practices by employers",
+        "Protection of concerted activity"
+      ],
+      "historical_impact": "Transformed American labor relations; led to dramatic growth in union membership and collective bargaining."
+    },
+    {
+      "id": 25,
+      "name": "Rural Electrification Act",
+      "year": 1936,
+      "public_law": "74-605",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Infrastructure/Economic",
+      "description": "Created the Rural Electrification Administration to bring electricity to rural areas through low-interest loans.",
+      "key_provisions": [
+        "Low-interest loans for rural electric cooperatives",
+        "Technical assistance for electrification projects",
+        "Authorization for rural telephone service"
+      ],
+      "historical_impact": "Brought electricity to millions of rural Americans; by 1950, 90% of farms had electricity compared to 10% in 1935."
+    },
+    {
+      "id": 26,
+      "name": "Fair Labor Standards Act",
+      "year": 1938,
+      "public_law": "75-718",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Labor",
+      "description": "Established minimum wage, overtime pay requirements, and restrictions on child labor.",
+      "key_provisions": [
+        "Federal minimum wage (initially 25 cents/hour)",
+        "40-hour workweek with overtime pay requirement",
+        "Restrictions on child labor",
+        "Recordkeeping requirements for employers"
+      ],
+      "historical_impact": "Established fundamental labor protections that continue today; minimum wage has been raised numerous times."
+    },
+    {
+      "id": 27,
+      "name": "Food, Drug, and Cosmetic Act",
+      "year": 1938,
+      "public_law": "75-717",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Consumer Protection/Public Health",
+      "description": "Overhauled food and drug regulation, requiring pre-market approval of new drugs and setting food standards.",
+      "key_provisions": [
+        "Pre-market approval requirement for new drugs",
+        "Standards of identity for foods",
+        "Factory inspection authority",
+        "Cosmetics regulation",
+        "Enhanced enforcement powers"
+      ],
+      "historical_impact": "Modernized FDA authority; became foundation for pharmaceutical and food safety regulation."
+    },
+    {
+      "id": 28,
+      "name": "Hatch Act",
+      "year": 1939,
+      "public_law": "76-252",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Government/Electoral",
+      "description": "Restricted political activities of federal employees to prevent use of government resources for political campaigns.",
+      "key_provisions": [
+        "Prohibited federal employees from engaging in partisan political activities",
+        "Ban on using official authority to influence elections",
+        "Restrictions on political contributions by federal employees",
+        "Penalties for violations"
+      ],
+      "historical_impact": "Established the principle of a politically neutral civil service; remains in effect with modifications."
+    },
+    {
+      "id": 29,
+      "name": "Smith Act (Alien Registration Act)",
+      "year": 1940,
+      "public_law": "76-670",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "National Security/Immigration",
+      "description": "Required registration of aliens and made it a crime to advocate violent overthrow of the government.",
+      "key_provisions": [
+        "Registration and fingerprinting of non-citizens",
+        "Criminal penalties for advocating government overthrow",
+        "Prohibition on organizing groups advocating revolution",
+        "Deportation provisions"
+      ],
+      "historical_impact": "Used extensively during Cold War to prosecute Communist Party members; later limited by Supreme Court decisions."
+    },
+    {
+      "id": 30,
+      "name": "Lend-Lease Act",
+      "year": 1941,
+      "public_law": "77-11",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Foreign Policy/Defense",
+      "description": "Authorized the President to transfer defense materials to any country whose defense was vital to US security.",
+      "key_provisions": [
+        "Presidential authority to lend or lease defense articles",
+        "No dollar limit on aid",
+        "Countries deemed vital to US defense eligible",
+        "Repayment in kind or other terms"
+      ],
+      "historical_impact": "Enabled massive US support for Allies before Pearl Harbor; provided over $50 billion in aid during WWII."
+    },
+    {
+      "id": 31,
+      "name": "Servicemen's Readjustment Act (GI Bill)",
+      "year": 1944,
+      "public_law": "78-346",
+      "president_signed": "Franklin D. Roosevelt",
+      "category": "Veterans/Education",
+      "description": "Provided comprehensive benefits for returning WWII veterans including education, housing, and unemployment assistance.",
+      "key_provisions": [
+        "Education and training benefits",
+        "Low-interest home and business loans",
+        "Unemployment compensation",
+        "Job placement assistance",
+        "Hospital and medical care"
+      ],
+      "historical_impact": "Transformed American society by enabling millions of veterans to attend college and buy homes; created the modern middle class."
+    },
+    {
+      "id": 32,
+      "name": "Employment Act of 1946",
+      "year": 1946,
+      "public_law": "79-304",
+      "president_signed": "Harry S. Truman",
+      "category": "Economic",
+      "description": "Declared federal responsibility for promoting maximum employment and created the Council of Economic Advisers.",
+      "key_provisions": [
+        "Federal policy to promote maximum employment",
+        "Creation of Council of Economic Advisers",
+        "Annual Economic Report of the President",
+        "Joint Economic Committee of Congress"
+      ],
+      "historical_impact": "Established government responsibility for managing the economy; foundation of modern economic policy."
+    },
+    {
+      "id": 33,
+      "name": "Administrative Procedure Act",
+      "year": 1946,
+      "public_law": "79-404",
+      "president_signed": "Harry S. Truman",
+      "category": "Government/Administrative Law",
+      "description": "Established procedures for federal agency rulemaking and adjudication, and standards for judicial review.",
+      "key_provisions": [
+        "Notice-and-comment rulemaking procedures",
+        "Standards for agency adjudication",
+        "Right to judicial review of agency actions",
+        "Freedom of Information provisions",
+        "Separation of prosecutorial and adjudicative functions"
+      ],
+      "historical_impact": "Foundation of modern administrative law; governs how all federal agencies operate and are held accountable."
+    },
+    {
+      "id": 34,
+      "name": "National Security Act of 1947",
+      "year": 1947,
+      "public_law": "80-253",
+      "president_signed": "Harry S. Truman",
+      "category": "National Security/Defense",
+      "description": "Reorganized the military establishment, created the Department of Defense, CIA, and National Security Council.",
+      "key_provisions": [
+        "Unification of military under Department of Defense",
+        "Creation of the CIA",
+        "Establishment of National Security Council",
+        "Creation of the Air Force as separate branch",
+        "Joint Chiefs of Staff formalized"
+      ],
+      "historical_impact": "Created the modern national security state; these institutions continue to shape US foreign and defense policy."
+    },
+    {
+      "id": 35,
+      "name": "Taft-Hartley Act (Labor Management Relations Act)",
+      "year": 1947,
+      "public_law": "80-101",
+      "president_signed": "Passed over Truman's veto",
+      "category": "Labor",
+      "description": "Amended the Wagner Act to restrict union activities, prohibit closed shops, and allow states to pass right-to-work laws.",
+      "key_provisions": [
+        "Prohibition of closed shops",
+        "Right-to-work laws permitted",
+        "Ban on secondary boycotts and jurisdictional strikes",
+        "80-day cooling-off period for national emergency strikes",
+        "Union financial reporting requirements",
+        "Anti-communist affidavits required of union leaders"
+      ],
+      "historical_impact": "Significantly limited union power and began the decline of organized labor; remains controversial."
+    },
+    {
+      "id": 36,
+      "name": "Marshall Plan (Economic Cooperation Act)",
+      "year": 1948,
+      "public_law": "80-472",
+      "president_signed": "Harry S. Truman",
+      "category": "Foreign Policy/Economic",
+      "description": "Provided massive economic assistance for the reconstruction of Western Europe after World War II.",
+      "key_provisions": [
+        "Over $12 billion in economic aid to Europe",
+        "Creation of Economic Cooperation Administration",
+        "Recipient countries required to cooperate on recovery",
+        "Technical assistance and commodity aid"
+      ],
+      "historical_impact": "Rebuilt Western Europe, prevented communist expansion, and established US leadership in the postwar world."
+    },
+    {
+      "id": 37,
+      "name": "Housing Act of 1949",
+      "year": 1949,
+      "public_law": "81-171",
+      "president_signed": "Harry S. Truman",
+      "category": "Housing",
+      "description": "Established national housing policy goal of a decent home for every American and expanded public housing and urban renewal programs.",
+      "key_provisions": [
+        "Goal of 'a decent home' for every American family",
+        "Authorization of 810,000 public housing units",
+        "Urban renewal and slum clearance programs",
+        "Rural housing programs",
+        "Research and technical assistance"
+      ],
+      "historical_impact": "Major expansion of federal housing role; urban renewal programs later criticized for displacing minority communities."
+    },
+    {
+      "id": 38,
+      "name": "Internal Security Act (McCarran Act)",
+      "year": 1950,
+      "public_law": "81-831",
+      "president_signed": "Passed over Truman's veto",
+      "category": "National Security",
+      "description": "Required registration of communist organizations and established the Subversive Activities Control Board.",
+      "key_provisions": [
+        "Registration requirements for communist organizations",
+        "Subversive Activities Control Board created",
+        "Emergency detention provisions",
+        "Restrictions on communists' employment and travel"
+      ],
+      "historical_impact": "Epitomized Cold War anti-communist measures; most provisions later struck down or repealed."
+    },
+    {
+      "id": 39,
+      "name": "Social Security Amendments of 1950",
+      "year": 1950,
+      "public_law": "81-734",
+      "president_signed": "Harry S. Truman",
+      "category": "Social Welfare",
+      "description": "Dramatically expanded Social Security coverage and increased benefits.",
+      "key_provisions": [
+        "Extended coverage to 10 million additional workers",
+        "Increased benefits by 77%",
+        "Raised wage base and tax rates",
+        "Improved Aid to Dependent Children",
+        "Aid to the permanently disabled"
+      ],
+      "historical_impact": "Transformed Social Security from limited program to near-universal retirement system."
+    },
+    {
+      "id": 40,
+      "name": "Immigration and Nationality Act of 1952 (McCarran-Walter Act)",
+      "year": 1952,
+      "public_law": "82-414",
+      "president_signed": "Passed over Truman's veto",
+      "category": "Immigration",
+      "description": "Codified immigration law, retained national origins quotas, but eliminated racial bars to naturalization.",
+      "key_provisions": [
+        "Consolidated immigration laws into single statute",
+        "Maintained national origins quota system",
+        "Eliminated racial barriers to citizenship",
+        "Preference system for skills and family reunification",
+        "Enhanced security screening"
+      ],
+      "historical_impact": "First major immigration codification; racial equality provisions significant though quotas remained discriminatory."
+    },
+    {
+      "id": 41,
+      "name": "Twenty-Second Amendment (Presidential Term Limits)",
+      "year": 1951,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "N/A (ratified by states)",
+      "category": "Constitutional",
+      "description": "Limited presidents to two terms in office, codifying the tradition broken by Franklin D. Roosevelt.",
+      "key_provisions": [
+        "Two-term limit for presidents",
+        "Partial terms over two years count toward limit",
+        "Did not apply to incumbent (Truman)"
+      ],
+      "historical_impact": "Constitutionalized the two-term tradition; has prevented several popular presidents from seeking additional terms."
+    },
+    {
+      "id": 42,
+      "name": "Atomic Energy Act of 1954",
+      "year": 1954,
+      "public_law": "83-703",
+      "president_signed": "Dwight D. Eisenhower",
+      "category": "Energy/National Security",
+      "description": "Amended 1946 Act to allow private development of nuclear power while maintaining federal control over weapons.",
+      "key_provisions": [
+        "Private ownership of nuclear reactors permitted",
+        "Licensing system for civilian nuclear power",
+        "Continued government monopoly on weapons",
+        "International cooperation provisions",
+        "Atomic Energy Commission authority enhanced"
+      ],
+      "historical_impact": "Launched civilian nuclear power industry in the US; 'Atoms for Peace' program foundation."
+    },
+    {
+      "id": 43,
+      "name": "Brown v. Board of Education Implementation Act",
+      "year": 1955,
+      "public_law": "Supreme Court ruling implementation",
+      "president_signed": "N/A (judicial decision)",
+      "category": "Civil Rights/Education",
+      "description": "Supreme Court's Brown II decision requiring desegregation 'with all deliberate speed.'",
+      "key_provisions": [
+        "School desegregation required",
+        "'All deliberate speed' implementation standard",
+        "Federal court oversight of desegregation plans"
+      ],
+      "historical_impact": "Though a court decision, it reshaped American education and civil rights; implementation faced massive resistance."
+    },
+    {
+      "id": 44,
+      "name": "Federal-Aid Highway Act of 1956",
+      "year": 1956,
+      "public_law": "84-627",
+      "president_signed": "Dwight D. Eisenhower",
+      "category": "Infrastructure/Transportation",
+      "description": "Authorized construction of the Interstate Highway System, the largest public works project in American history.",
+      "key_provisions": [
+        "41,000 miles of interstate highways authorized",
+        "90% federal, 10% state funding ratio",
+        "Highway Trust Fund established",
+        "Design standards for controlled-access highways",
+        "25-year construction timeline"
+      ],
+      "historical_impact": "Transformed American geography, economy, and culture; enabled suburbanization and automobile-centered development."
+    },
+    {
+      "id": 45,
+      "name": "Civil Rights Act of 1957",
+      "year": 1957,
+      "public_law": "85-315",
+      "president_signed": "Dwight D. Eisenhower",
+      "category": "Civil Rights",
+      "description": "First civil rights legislation since Reconstruction, focused on voting rights protection.",
+      "key_provisions": [
+        "Created Civil Rights Division in Justice Department",
+        "Established U.S. Commission on Civil Rights",
+        "Federal authority to prosecute voting rights violations",
+        "Court injunctions against voting interference"
+      ],
+      "historical_impact": "Broke the legislative barrier to civil rights laws; though limited, opened door for stronger legislation."
+    },
+    {
+      "id": 46,
+      "name": "National Defense Education Act",
+      "year": 1958,
+      "public_law": "85-864",
+      "president_signed": "Dwight D. Eisenhower",
+      "category": "Education",
+      "description": "Provided federal funding for education in science, mathematics, and foreign languages after Sputnik launch.",
+      "key_provisions": [
+        "Student loans for higher education",
+        "Fellowships for graduate study",
+        "Funding for science and math instruction",
+        "Foreign language and area studies programs",
+        "Vocational education support"
+      ],
+      "historical_impact": "Marked major expansion of federal role in education; response to perceived Soviet technological advantage."
+    },
+    {
+      "id": 47,
+      "name": "Labor-Management Reporting and Disclosure Act (Landrum-Griffin Act)",
+      "year": 1959,
+      "public_law": "86-257",
+      "president_signed": "Dwight D. Eisenhower",
+      "category": "Labor",
+      "description": "Established a bill of rights for union members and required financial reporting by unions.",
+      "key_provisions": [
+        "Bill of rights for union members",
+        "Union officer election requirements",
+        "Financial disclosure requirements",
+        "Trusteeship limitations",
+        "Restrictions on ex-convicts holding union office"
+      ],
+      "historical_impact": "Addressed union corruption exposed by McClellan Committee; enhanced internal union democracy."
+    },
+    {
+      "id": 48,
+      "name": "Civil Rights Act of 1960",
+      "year": 1960,
+      "public_law": "86-449",
+      "president_signed": "Dwight D. Eisenhower",
+      "category": "Civil Rights",
+      "description": "Strengthened voting rights provisions and addressed obstruction of court orders in civil rights cases.",
+      "key_provisions": [
+        "Federal inspection of voter registration records",
+        "Penalties for obstruction of court orders",
+        "Penalties for flight to avoid prosecution for bombing",
+        "Federal custody of voting records"
+      ],
+      "historical_impact": "Incremental progress on voting rights; set stage for more comprehensive 1964 and 1965 legislation."
+    },
+    {
+      "id": 49,
+      "name": "Twenty-Third Amendment (DC Presidential Voting)",
+      "year": 1961,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "N/A (ratified by states)",
+      "category": "Constitutional/Electoral",
+      "description": "Granted citizens of Washington, D.C. the right to vote in presidential elections.",
+      "key_provisions": [
+        "DC granted electoral votes equal to least populous state",
+        "Currently three electoral votes",
+        "Treated as a state for Electoral College purposes"
+      ],
+      "historical_impact": "Enfranchised DC residents in presidential elections; DC statehood remains an ongoing issue."
+    },
+    {
+      "id": 50,
+      "name": "Peace Corps Act",
+      "year": 1961,
+      "public_law": "87-293",
+      "president_signed": "John F. Kennedy",
+      "category": "Foreign Policy",
+      "description": "Established the Peace Corps to promote world peace and friendship through volunteer service abroad.",
+      "key_provisions": [
+        "Volunteer service in developing countries",
+        "Technical assistance and training programs",
+        "Cultural exchange objectives",
+        "Two-year service commitment"
+      ],
+      "historical_impact": "Became iconic program of American idealism; over 240,000 volunteers have served in 142 countries."
+    },
+    {
+      "id": 51,
+      "name": "Trade Expansion Act of 1962",
+      "year": 1962,
+      "public_law": "87-794",
+      "president_signed": "John F. Kennedy",
+      "category": "Trade/Economic",
+      "description": "Granted presidential authority to negotiate tariff reductions and established trade adjustment assistance.",
+      "key_provisions": [
+        "Authority to cut tariffs up to 50%",
+        "Trade adjustment assistance for affected workers",
+        "Authority to eliminate tariffs on some products",
+        "Most-favored-nation principle"
+      ],
+      "historical_impact": "Enabled Kennedy Round of GATT negotiations; established model for future trade authority legislation."
+    },
+    {
+      "id": 52,
+      "name": "Equal Pay Act",
+      "year": 1963,
+      "public_law": "88-38",
+      "president_signed": "John F. Kennedy",
+      "category": "Labor/Civil Rights",
+      "description": "Prohibited wage discrimination based on sex for equal work requiring equal skill, effort, and responsibility.",
+      "key_provisions": [
+        "Equal pay for equal work regardless of sex",
+        "Amendment to Fair Labor Standards Act",
+        "Exceptions for seniority and merit systems",
+        "Enforcement by Department of Labor"
+      ],
+      "historical_impact": "First federal law addressing gender-based wage discrimination; foundation for workplace equality efforts."
+    },
+    {
+      "id": 53,
+      "name": "Clean Air Act of 1963",
+      "year": 1963,
+      "public_law": "88-206",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Environmental",
+      "description": "First federal legislation to address air pollution, providing research funding and enforcement authority.",
+      "key_provisions": [
+        "Federal research on air pollution",
+        "Grants to states for pollution control",
+        "Federal enforcement for interstate pollution",
+        "Motor vehicle emission studies"
+      ],
+      "historical_impact": "Beginning of federal air quality regulation; significantly strengthened by 1970 amendments."
+    },
+    {
+      "id": 54,
+      "name": "Civil Rights Act of 1964",
+      "year": 1964,
+      "public_law": "88-352",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Civil Rights",
+      "description": "Landmark legislation prohibiting discrimination based on race, color, religion, sex, or national origin in employment and public accommodations.",
+      "key_provisions": [
+        "Title II: Desegregation of public accommodations",
+        "Title VI: Non-discrimination in federally funded programs",
+        "Title VII: Employment discrimination prohibition",
+        "Equal Employment Opportunity Commission created",
+        "Voting rights provisions"
+      ],
+      "historical_impact": "Most significant civil rights legislation in American history; transformed American society and law."
+    },
+    {
+      "id": 55,
+      "name": "Economic Opportunity Act",
+      "year": 1964,
+      "public_law": "88-452",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Social Welfare",
+      "description": "Centerpiece of the War on Poverty, creating Job Corps, Head Start, VISTA, and Community Action Programs.",
+      "key_provisions": [
+        "Job Corps for youth employment training",
+        "Head Start for early childhood education",
+        "VISTA (domestic Peace Corps)",
+        "Community Action Programs",
+        "Work-study programs",
+        "Office of Economic Opportunity created"
+      ],
+      "historical_impact": "Launched War on Poverty; many programs continue today including Head Start and community action agencies."
+    },
+    {
+      "id": 56,
+      "name": "Twenty-Fourth Amendment (Poll Tax Prohibition)",
+      "year": 1964,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "N/A (ratified by states)",
+      "category": "Constitutional/Civil Rights",
+      "description": "Prohibited poll taxes in federal elections, removing a major barrier to voting for poor and minority citizens.",
+      "key_provisions": [
+        "Prohibition of poll taxes in federal elections",
+        "Congressional enforcement authority"
+      ],
+      "historical_impact": "Removed significant barrier to voting; Supreme Court extended ban to state elections in 1966."
+    },
+    {
+      "id": 57,
+      "name": "Gulf of Tonkin Resolution",
+      "year": 1964,
+      "public_law": "88-408",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Foreign Policy/Defense",
+      "description": "Authorized the President to use conventional military force in Southeast Asia without a formal declaration of war.",
+      "key_provisions": [
+        "Presidential authority to use 'all necessary steps'",
+        "Support for SEATO allies",
+        "Determination of national interest by President"
+      ],
+      "historical_impact": "Legal basis for Vietnam War escalation; later seen as cautionary tale about congressional war powers."
+    },
+    {
+      "id": 58,
+      "name": "Wilderness Act",
+      "year": 1964,
+      "public_law": "88-577",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Environmental/Conservation",
+      "description": "Created the National Wilderness Preservation System to protect pristine federal lands from development.",
+      "key_provisions": [
+        "Definition of wilderness as 'untrammeled by man'",
+        "Designation of 9.1 million acres of wilderness",
+        "Prohibition on roads, buildings, and motorized equipment",
+        "Congressional approval required for new designations"
+      ],
+      "historical_impact": "Protected over 111 million acres as wilderness; established principle of permanent land protection."
+    },
+    {
+      "id": 59,
+      "name": "Social Security Amendments of 1965 (Medicare and Medicaid)",
+      "year": 1965,
+      "public_law": "89-97",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Healthcare/Social Welfare",
+      "description": "Created Medicare and Medicaid, providing health insurance for the elderly and low-income Americans.",
+      "key_provisions": [
+        "Medicare Part A: Hospital insurance for elderly",
+        "Medicare Part B: Supplementary medical insurance",
+        "Medicaid: Federal-state health program for low-income",
+        "Increased Social Security benefits"
+      ],
+      "historical_impact": "Largest expansion of social insurance since 1935; transformed healthcare for elderly and poor Americans."
+    },
+    {
+      "id": 60,
+      "name": "Voting Rights Act of 1965",
+      "year": 1965,
+      "public_law": "89-110",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Civil Rights",
+      "description": "Prohibited racial discrimination in voting and authorized federal oversight of elections in covered jurisdictions.",
+      "key_provisions": [
+        "Prohibited literacy tests and similar devices",
+        "Federal examiner authority in covered jurisdictions",
+        "Preclearance requirement for election changes (Section 5)",
+        "Attorney General enforcement authority",
+        "Private right of action"
+      ],
+      "historical_impact": "Most effective civil rights legislation ever enacted; dramatically increased minority voter registration and participation."
+    },
+    {
+      "id": 61,
+      "name": "Immigration and Nationality Act of 1965 (Hart-Celler Act)",
+      "year": 1965,
+      "public_law": "89-236",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Immigration",
+      "description": "Abolished national origins quota system and established preference-based immigration emphasizing family reunification and skills.",
+      "key_provisions": [
+        "Abolished national origins quota system",
+        "Hemispheric limits (170,000 Eastern, 120,000 Western)",
+        "7% per-country limit",
+        "Family reunification preferences",
+        "Skills-based preferences"
+      ],
+      "historical_impact": "Fundamentally changed American immigration; led to dramatic diversification of immigrant origins."
+    },
+    {
+      "id": 62,
+      "name": "Higher Education Act of 1965",
+      "year": 1965,
+      "public_law": "89-329",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Education",
+      "description": "Strengthened educational resources of colleges and provided financial assistance for students.",
+      "key_provisions": [
+        "Federal scholarships and grants for students",
+        "Guaranteed student loan program",
+        "Work-study program expansion",
+        "Support for developing institutions",
+        "Teacher training programs"
+      ],
+      "historical_impact": "Opened higher education to millions; federal student aid programs have since helped tens of millions attend college."
+    },
+    {
+      "id": 63,
+      "name": "Elementary and Secondary Education Act",
+      "year": 1965,
+      "public_law": "89-10",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Education",
+      "description": "Provided federal funding for K-12 education, particularly for schools serving low-income students.",
+      "key_provisions": [
+        "Title I funding for high-poverty schools",
+        "School library and textbook programs",
+        "Supplementary educational centers",
+        "Educational research funding",
+        "State education agency strengthening"
+      ],
+      "historical_impact": "Established major federal role in K-12 education; Title I remains largest federal K-12 program."
+    },
+    {
+      "id": 64,
+      "name": "Water Quality Act of 1965",
+      "year": 1965,
+      "public_law": "89-234",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Environmental",
+      "description": "Required states to establish water quality standards for interstate waters.",
+      "key_provisions": [
+        "State water quality standards requirement",
+        "Federal Water Pollution Control Administration created",
+        "Enforcement mechanisms for standards",
+        "Research and development programs"
+      ],
+      "historical_impact": "First comprehensive federal water quality legislation; precursor to Clean Water Act."
+    },
+    {
+      "id": 65,
+      "name": "National Traffic and Motor Vehicle Safety Act",
+      "year": 1966,
+      "public_law": "89-563",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Consumer Protection/Safety",
+      "description": "Established federal motor vehicle safety standards and created the predecessor to NHTSA.",
+      "key_provisions": [
+        "Federal motor vehicle safety standards",
+        "National Traffic Safety Agency created",
+        "Manufacturer notification of defects",
+        "Research and testing programs"
+      ],
+      "historical_impact": "Led to seatbelts, airbags, and countless safety improvements; significantly reduced traffic fatalities."
+    },
+    {
+      "id": 66,
+      "name": "Freedom of Information Act",
+      "year": 1966,
+      "public_law": "89-487",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Government/Transparency",
+      "description": "Established public right of access to federal government records with limited exemptions.",
+      "key_provisions": [
+        "Presumption of public access to government records",
+        "Nine categories of exemptions",
+        "Agency response requirements",
+        "Judicial review of denials"
+      ],
+      "historical_impact": "Foundation of government transparency; enables citizens and journalists to access government information."
+    },
+    {
+      "id": 67,
+      "name": "Fair Housing Act (Civil Rights Act of 1968)",
+      "year": 1968,
+      "public_law": "90-284",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Civil Rights/Housing",
+      "description": "Prohibited discrimination in sale, rental, and financing of housing based on race, religion, national origin, and sex.",
+      "key_provisions": [
+        "Prohibition of housing discrimination",
+        "HUD enforcement authority",
+        "Private right of action",
+        "Anti-intimidation provisions",
+        "Exemptions for small landlords and religious organizations"
+      ],
+      "historical_impact": "Addressed residential segregation; enforcement strengthened over time though housing discrimination persists."
+    },
+    {
+      "id": 68,
+      "name": "Gun Control Act of 1968",
+      "year": 1968,
+      "public_law": "90-618",
+      "president_signed": "Lyndon B. Johnson",
+      "category": "Public Safety",
+      "description": "Regulated firearms industry and owners, including prohibiting interstate sale of firearms and gun ownership by certain individuals.",
+      "key_provisions": [
+        "Federal firearms licensing requirements",
+        "Prohibition on interstate firearms sales",
+        "Banned gun sales to felons and other prohibited persons",
+        "Import restrictions on certain firearms",
+        "Serial number requirements"
+      ],
+      "historical_impact": "First major federal gun control since 1930s; remains foundation of federal firearms regulation."
+    },
+    {
+      "id": 69,
+      "name": "National Environmental Policy Act",
+      "year": 1969,
+      "public_law": "91-190",
+      "president_signed": "Richard Nixon",
+      "category": "Environmental",
+      "description": "Required environmental impact statements for major federal actions and created the Council on Environmental Quality.",
+      "key_provisions": [
+        "Environmental impact statement requirement",
+        "Council on Environmental Quality established",
+        "National environmental policy declaration",
+        "Public participation requirements"
+      ],
+      "historical_impact": "Foundation of modern environmental law; EIS process has influenced countless federal decisions."
+    },
+    {
+      "id": 70,
+      "name": "Twenty-Sixth Amendment (Voting Age)",
+      "year": 1971,
+      "public_law": "Constitutional Amendment",
+      "president_signed": "N/A (ratified by states)",
+      "category": "Constitutional/Electoral",
+      "description": "Lowered the voting age from 21 to 18 in all elections.",
+      "key_provisions": [
+        "Right to vote cannot be denied to those 18 or older",
+        "Applies to federal, state, and local elections",
+        "Congressional enforcement authority"
+      ],
+      "historical_impact": "Fastest-ratified amendment in history; added millions of young voters to electorate during Vietnam era."
+    },
+    {
+      "id": 71,
+      "name": "Clean Air Act of 1970",
+      "year": 1970,
+      "public_law": "91-604",
+      "president_signed": "Richard Nixon",
+      "category": "Environmental",
+      "description": "Dramatically expanded federal authority over air pollution, establishing National Ambient Air Quality Standards and mobile source controls.",
+      "key_provisions": [
+        "National Ambient Air Quality Standards (NAAQS)",
+        "State Implementation Plans required",
+        "New Source Performance Standards",
+        "Automobile emission standards",
+        "EPA enforcement authority"
+      ],
+      "historical_impact": "Cornerstone of environmental regulation; has significantly improved air quality nationwide."
+    },
+    {
+      "id": 72,
+      "name": "Occupational Safety and Health Act",
+      "year": 1970,
+      "public_law": "91-596",
+      "president_signed": "Richard Nixon",
+      "category": "Labor/Safety",
+      "description": "Created OSHA to ensure safe and healthy working conditions through standards setting and enforcement.",
+      "key_provisions": [
+        "OSHA and NIOSH created",
+        "Workplace safety standards authority",
+        "Employer recordkeeping requirements",
+        "Worker right to safe workplace",
+        "Inspection and penalty authority"
+      ],
+      "historical_impact": "Transformed workplace safety; workplace fatalities have declined dramatically since enactment."
+    },
+    {
+      "id": 73,
+      "name": "Controlled Substances Act",
+      "year": 1970,
+      "public_law": "91-513",
+      "president_signed": "Richard Nixon",
+      "category": "Public Health/Criminal Justice",
+      "description": "Established federal drug policy, creating five schedules for drug classification and regulation.",
+      "key_provisions": [
+        "Five-schedule drug classification system",
+        "DEA (originally BNDD) authority",
+        "Manufacturing and distribution controls",
+        "Penalties for drug offenses",
+        "Research and treatment programs"
+      ],
+      "historical_impact": "Foundation of federal drug enforcement; continues to govern drug policy and enforcement."
+    },
+    {
+      "id": 74,
+      "name": "Federal Election Campaign Act",
+      "year": 1971,
+      "public_law": "92-225",
+      "president_signed": "Richard Nixon",
+      "category": "Electoral/Government",
+      "description": "Required disclosure of federal campaign contributions and expenditures and established contribution limits.",
+      "key_provisions": [
+        "Disclosure of campaign contributions and expenditures",
+        "Contribution limits (added in 1974 amendments)",
+        "Federal Election Commission created (1974)",
+        "Public financing of presidential elections",
+        "Media spending limits"
+      ],
+      "historical_impact": "Foundation of modern campaign finance law; significantly modified by Supreme Court decisions."
+    },
+    {
+      "id": 75,
+      "name": "Title IX of Education Amendments",
+      "year": 1972,
+      "public_law": "92-318",
+      "president_signed": "Richard Nixon",
+      "category": "Civil Rights/Education",
+      "description": "Prohibited sex discrimination in federally funded education programs and activities.",
+      "key_provisions": [
+        "No sex-based exclusion from educational programs",
+        "Applies to all federally funded education activities",
+        "Limited exemptions for religious institutions",
+        "Athletics equity requirements"
+      ],
+      "historical_impact": "Revolutionized women's opportunities in education and athletics; women's sports participation increased dramatically."
+    },
+    {
+      "id": 76,
+      "name": "Clean Water Act (Federal Water Pollution Control Act Amendments)",
+      "year": 1972,
+      "public_law": "92-500",
+      "president_signed": "Passed over Nixon's veto",
+      "category": "Environmental",
+      "description": "Established comprehensive federal water pollution control, including the NPDES permit system and technology-based standards.",
+      "key_provisions": [
+        "Goal of 'fishable and swimmable' waters",
+        "National Pollutant Discharge Elimination System (NPDES)",
+        "Technology-based effluent limits",
+        "Wetlands protection (Section 404)",
+        "Municipal wastewater treatment funding"
+      ],
+      "historical_impact": "Dramatically improved water quality nationwide; wetlands protection has been particularly significant."
+    },
+    {
+      "id": 77,
+      "name": "Consumer Product Safety Act",
+      "year": 1972,
+      "public_law": "92-573",
+      "president_signed": "Richard Nixon",
+      "category": "Consumer Protection",
+      "description": "Created the Consumer Product Safety Commission to develop safety standards and protect consumers from hazardous products.",
+      "key_provisions": [
+        "Consumer Product Safety Commission established",
+        "Authority to set safety standards",
+        "Product recall authority",
+        "Injury information clearinghouse",
+        "Research and testing programs"
+      ],
+      "historical_impact": "Established comprehensive consumer product safety regulation; has recalled thousands of dangerous products."
+    },
+    {
+      "id": 78,
+      "name": "Equal Employment Opportunity Act",
+      "year": 1972,
+      "public_law": "92-261",
+      "president_signed": "Richard Nixon",
+      "category": "Civil Rights/Labor",
+      "description": "Strengthened the EEOC by giving it litigation authority and extending coverage to state and local governments.",
+      "key_provisions": [
+        "EEOC authority to file lawsuits",
+        "Coverage extended to state and local governments",
+        "Educational institutions covered",
+        "Strengthened enforcement mechanisms"
+      ],
+      "historical_impact": "Made EEOC an effective enforcement agency; significantly expanded workplace discrimination protections."
+    },
+    {
+      "id": 79,
+      "name": "Endangered Species Act",
+      "year": 1973,
+      "public_law": "93-205",
+      "president_signed": "Richard Nixon",
+      "category": "Environmental",
+      "description": "Protected endangered and threatened species and their habitats through listing, critical habitat designation, and take prohibition.",
+      "key_provisions": [
+        "Listing process for endangered and threatened species",
+        "Critical habitat designation",
+        "Prohibition on 'take' of listed species",
+        "Federal agency consultation requirements",
+        "Recovery planning"
+      ],
+      "historical_impact": "One of the world's strongest wildlife protection laws; has prevented numerous extinctions."
+    },
+    {
+      "id": 80,
+      "name": "Rehabilitation Act of 1973",
+      "year": 1973,
+      "public_law": "93-112",
+      "president_signed": "Richard Nixon",
+      "category": "Civil Rights/Disability",
+      "description": "Prohibited discrimination against people with disabilities in federal programs and by federal contractors.",
+      "key_provisions": [
+        "Section 504: Non-discrimination in federal programs",
+        "Affirmative action by federal contractors",
+        "Vocational rehabilitation programs",
+        "Architectural barrier removal"
+      ],
+      "historical_impact": "First federal civil rights protection for disabled individuals; precursor to the ADA."
+    },
+    {
+      "id": 81,
+      "name": "War Powers Resolution",
+      "year": 1973,
+      "public_law": "93-148",
+      "president_signed": "Passed over Nixon's veto",
+      "category": "Foreign Policy/Constitutional",
+      "description": "Limited presidential war-making authority by requiring congressional notification and approval for military deployments.",
+      "key_provisions": [
+        "48-hour notification to Congress required",
+        "60-day limit on deployments without authorization",
+        "30-day withdrawal period",
+        "Congressional authority to order withdrawal"
+      ],
+      "historical_impact": "Attempted to reassert congressional war powers; effectiveness debated but shapes military deployment decisions."
+    },
+    {
+      "id": 82,
+      "name": "Employee Retirement Income Security Act (ERISA)",
+      "year": 1974,
+      "public_law": "93-406",
+      "president_signed": "Gerald Ford",
+      "category": "Labor/Financial",
+      "description": "Established minimum standards for private pension plans and created the Pension Benefit Guaranty Corporation.",
+      "key_provisions": [
+        "Vesting and funding standards for pensions",
+        "Fiduciary responsibilities",
+        "Pension Benefit Guaranty Corporation created",
+        "Reporting and disclosure requirements",
+        "Individual retirement accounts (IRAs) authorized"
+      ],
+      "historical_impact": "Protects retirement benefits for millions of workers; PBGC insures defined benefit plans."
+    },
+    {
+      "id": 83,
+      "name": "Privacy Act of 1974",
+      "year": 1974,
+      "public_law": "93-579",
+      "president_signed": "Gerald Ford",
+      "category": "Government/Privacy",
+      "description": "Established rules for federal agencies' collection, maintenance, and disclosure of personal information.",
+      "key_provisions": [
+        "Individual access to records about themselves",
+        "Right to request amendment of records",
+        "Restrictions on agency disclosure",
+        "Civil remedies for violations",
+        "Agency record-keeping requirements"
+      ],
+      "historical_impact": "Foundation of federal privacy protection; balances government information needs with individual privacy."
+    },
+    {
+      "id": 84,
+      "name": "Safe Drinking Water Act",
+      "year": 1974,
+      "public_law": "93-523",
+      "president_signed": "Gerald Ford",
+      "category": "Environmental/Public Health",
+      "description": "Established national standards for drinking water quality and protection of underground sources.",
+      "key_provisions": [
+        "National Primary Drinking Water Regulations",
+        "State primacy programs",
+        "Underground injection control",
+        "Sole source aquifer protection",
+        "Public notification requirements"
+      ],
+      "historical_impact": "Ensures safe drinking water for most Americans; continues to address emerging contaminants."
+    },
+    {
+      "id": 85,
+      "name": "Education for All Handicapped Children Act",
+      "year": 1975,
+      "public_law": "94-142",
+      "president_signed": "Gerald Ford",
+      "category": "Education/Disability",
+      "description": "Required public schools to provide free appropriate public education to children with disabilities.",
+      "key_provisions": [
+        "Free appropriate public education (FAPE)",
+        "Individualized Education Programs (IEPs)",
+        "Least restrictive environment requirement",
+        "Procedural safeguards for parents",
+        "Federal funding to states"
+      ],
+      "historical_impact": "Transformed education for disabled children; now known as IDEA, serves millions of students."
+    },
+    {
+      "id": 86,
+      "name": "Tax Reform Act of 1976",
+      "year": 1976,
+      "public_law": "94-455",
+      "president_signed": "Gerald Ford",
+      "category": "Taxation",
+      "description": "Major tax reform addressing estate taxes, tax shelters, and individual provisions.",
+      "key_provisions": [
+        "Unified estate and gift tax system",
+        "Minimum tax on preference items",
+        "At-risk rules for tax shelters",
+        "Earned income tax credit expansion",
+        "Capital gains holding period changes"
+      ],
+      "historical_impact": "Addressed many tax avoidance strategies; set stage for later comprehensive tax reform."
+    },
+    {
+      "id": 87,
+      "name": "Resource Conservation and Recovery Act",
+      "year": 1976,
+      "public_law": "94-580",
+      "president_signed": "Gerald Ford",
+      "category": "Environmental",
+      "description": "Established framework for management of hazardous and non-hazardous solid waste.",
+      "key_provisions": [
+        "Cradle-to-grave hazardous waste management",
+        "Manifest system for waste tracking",
+        "Treatment, storage, and disposal facility standards",
+        "State solid waste programs",
+        "Underground storage tank regulation (added later)"
+      ],
+      "historical_impact": "Controls hazardous waste from generation to disposal; prevents future Superfund sites."
+    },
+    {
+      "id": 88,
+      "name": "Toxic Substances Control Act",
+      "year": 1976,
+      "public_law": "94-469",
+      "president_signed": "Gerald Ford",
+      "category": "Environmental/Public Health",
+      "description": "Authorized EPA to require testing and regulate chemical substances entering the environment.",
+      "key_provisions": [
+        "Pre-manufacture notification for new chemicals",
+        "EPA authority to require testing",
+        "Regulation of existing chemicals",
+        "PCB phase-out",
+        "Asbestos regulation authority"
+      ],
+      "historical_impact": "First comprehensive regulation of chemical substances; reformed in 2016 to strengthen authority."
+    },
+    {
+      "id": 89,
+      "name": "Community Reinvestment Act",
+      "year": 1977,
+      "public_law": "95-128",
+      "president_signed": "Jimmy Carter",
+      "category": "Financial/Civil Rights",
+      "description": "Required banks to meet the credit needs of their entire communities, including low- and moderate-income neighborhoods.",
+      "key_provisions": [
+        "Affirmative obligation to serve community credit needs",
+        "Regular CRA examinations",
+        "Public ratings and comments",
+        "Consideration in merger and acquisition approvals"
+      ],
+      "historical_impact": "Addressed redlining and credit discrimination; has leveraged billions in community investment."
+    },
+    {
+      "id": 90,
+      "name": "Foreign Corrupt Practices Act",
+      "year": 1977,
+      "public_law": "95-213",
+      "president_signed": "Jimmy Carter",
+      "category": "Business/International",
+      "description": "Prohibited bribery of foreign officials and required accurate recordkeeping by public companies.",
+      "key_provisions": [
+        "Prohibition on bribing foreign officials",
+        "Accounting transparency requirements",
+        "Internal controls mandates",
+        "Criminal and civil penalties"
+      ],
+      "historical_impact": "First law worldwide to criminalize foreign bribery; model for international anti-corruption efforts."
+    },
+    {
+      "id": 91,
+      "name": "Airline Deregulation Act",
+      "year": 1978,
+      "public_law": "95-504",
+      "president_signed": "Jimmy Carter",
+      "category": "Economic/Transportation",
+      "description": "Removed federal control over airline fares, routes, and market entry, phasing out the Civil Aeronautics Board.",
+      "key_provisions": [
+        "Phased elimination of CAB authority",
+        "Free market entry for airlines",
+        "Fare flexibility",
+        "Essential air service program",
+        "CAB sunset (1985)"
+      ],
+      "historical_impact": "Transformed airline industry; fares dropped dramatically, service expanded, though consolidation followed."
+    },
+    {
+      "id": 92,
+      "name": "Pregnancy Discrimination Act",
+      "year": 1978,
+      "public_law": "95-555",
+      "president_signed": "Jimmy Carter",
+      "category": "Civil Rights/Labor",
+      "description": "Amended Title VII to prohibit sex discrimination on the basis of pregnancy, childbirth, or related medical conditions.",
+      "key_provisions": [
+        "Pregnancy discrimination is sex discrimination",
+        "Equal treatment in employment benefits",
+        "Medical coverage requirements",
+        "Protection for pregnancy-related conditions"
+      ],
+      "historical_impact": "Established pregnancy as protected status; foundation for workplace pregnancy accommodations."
+    },
+    {
+      "id": 93,
+      "name": "Ethics in Government Act",
+      "year": 1978,
+      "public_law": "95-521",
+      "president_signed": "Jimmy Carter",
+      "category": "Government/Ethics",
+      "description": "Created financial disclosure requirements for federal officials and the Office of Government Ethics.",
+      "key_provisions": [
+        "Financial disclosure for senior officials",
+        "Office of Government Ethics created",
+        "Independent counsel provisions (later expired)",
+        "Post-employment restrictions",
+        "Office of Special Counsel established"
+      ],
+      "historical_impact": "Response to Watergate; established framework for government ethics that continues today."
+    },
+    {
+      "id": 94,
+      "name": "Comprehensive Environmental Response, Compensation, and Liability Act (Superfund)",
+      "year": 1980,
+      "public_law": "96-510",
+      "president_signed": "Jimmy Carter",
+      "category": "Environmental",
+      "description": "Created liability scheme and trust fund for cleanup of hazardous waste sites.",
+      "key_provisions": [
+        "Strict, joint and several liability for cleanup",
+        "Hazardous Substances Superfund",
+        "National Priorities List of contaminated sites",
+        "EPA cleanup authority",
+        "Natural resource damages"
+      ],
+      "historical_impact": "Has funded cleanup of thousands of contaminated sites; 'polluter pays' principle established."
+    },
+    {
+      "id": 95,
+      "name": "Economic Recovery Tax Act of 1981",
+      "year": 1981,
+      "public_law": "97-34",
+      "president_signed": "Ronald Reagan",
+      "category": "Taxation/Economic",
+      "description": "Major tax reduction including across-the-board income tax rate cuts and accelerated depreciation for business.",
+      "key_provisions": [
+        "23% reduction in income tax rates over three years",
+        "Top rate reduced from 70% to 50%",
+        "Accelerated Cost Recovery System (ACRS)",
+        "Estate tax exemption increase",
+        "IRA expansion"
+      ],
+      "historical_impact": "Largest tax cut in American history at the time; cornerstone of Reagan economic policy."
+    },
+    {
+      "id": 96,
+      "name": "Immigration Reform and Control Act",
+      "year": 1986,
+      "public_law": "99-603",
+      "president_signed": "Ronald Reagan",
+      "category": "Immigration",
+      "description": "Provided amnesty for certain undocumented immigrants while establishing employer sanctions for hiring illegal workers.",
+      "key_provisions": [
+        "Legalization program for pre-1982 residents",
+        "Special agricultural worker program",
+        "Employer sanctions for knowingly hiring unauthorized workers",
+        "Increased border enforcement",
+        "Anti-discrimination provisions"
+      ],
+      "historical_impact": "Legalized approximately 3 million people; employer sanctions proved difficult to enforce."
+    },
+    {
+      "id": 97,
+      "name": "Tax Reform Act of 1986",
+      "year": 1986,
+      "public_law": "99-514",
+      "president_signed": "Ronald Reagan",
+      "category": "Taxation",
+      "description": "Comprehensive tax reform that lowered rates, broadened the base, and eliminated many tax shelters.",
+      "key_provisions": [
+        "Top individual rate reduced to 28%",
+        "Corporate rate reduced to 34%",
+        "Alternative minimum tax strengthened",
+        "Passive loss rules",
+        "Base broadening through deduction limits"
+      ],
+      "historical_impact": "Most comprehensive tax reform since 1954; established template for revenue-neutral reform."
+    },
+    {
+      "id": 98,
+      "name": "Americans with Disabilities Act",
+      "year": 1990,
+      "public_law": "101-336",
+      "president_signed": "George H.W. Bush",
+      "category": "Civil Rights/Disability",
+      "description": "Comprehensive civil rights law prohibiting discrimination against people with disabilities in employment, public services, and public accommodations.",
+      "key_provisions": [
+        "Title I: Employment discrimination prohibition",
+        "Title II: Public services accessibility",
+        "Title III: Public accommodations accessibility",
+        "Reasonable accommodation requirements",
+        "Telecommunications relay services"
+      ],
+      "historical_impact": "Most significant expansion of civil rights since 1960s; transformed accessibility across American society."
+    },
+    {
+      "id": 99,
+      "name": "Clean Air Act Amendments of 1990",
+      "year": 1990,
+      "public_law": "101-549",
+      "president_signed": "George H.W. Bush",
+      "category": "Environmental",
+      "description": "Major overhaul addressing acid rain, urban air pollution, toxic air emissions, and ozone depletion.",
+      "key_provisions": [
+        "Acid rain cap-and-trade program",
+        "Reformulated gasoline requirements",
+        "Hazardous air pollutants program (MACT)",
+        "Operating permit program",
+        "Stratospheric ozone protection"
+      ],
+      "historical_impact": "Demonstrated market-based environmental policy; acid rain program highly successful."
+    },
+    {
+      "id": 100,
+      "name": "Family and Medical Leave Act",
+      "year": 1993,
+      "public_law": "103-3",
+      "president_signed": "Bill Clinton",
+      "category": "Labor",
+      "description": "Required employers to provide unpaid, job-protected leave for family and medical reasons.",
+      "key_provisions": [
+        "12 weeks unpaid leave for qualifying reasons",
+        "Birth, adoption, or foster care of child",
+        "Serious health condition of family member",
+        "Employee's own serious health condition",
+        "Continuation of health benefits during leave"
+      ],
+      "historical_impact": "First federal mandate for family leave; millions have used FMLA protections since enactment."
+    }
+  ]
+}

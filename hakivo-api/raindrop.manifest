@@ -175,6 +175,11 @@ application "hakivo-new" {
     visibility = "private"
   }
 
+  // Podcast generator service for "100 Laws That Shaped America"
+  service "podcast-generator" {
+    visibility = "private"
+  }
+
   // Background workers
   observer "brief-generator" {
     source {
@@ -238,6 +243,12 @@ application "hakivo-new" {
   task "audio-retry-scheduler" {
     type = "cron"
     cron = "*/5 * * * *"  // Every 5 minutes
+  }
+
+  // Podcast generator scheduler - generates next "100 Laws" episode nightly
+  task "podcast-scheduler" {
+    type = "cron"
+    cron = "0 2 * * *"  // 2 AM daily
   }
 
   // Admin utilities
