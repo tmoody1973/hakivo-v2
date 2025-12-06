@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Search, Play, Loader2 } from "lucide-react";
+import { Search, Play, Pause, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useAudioPlayer, type AudioTrack } from "@/lib/audio/audio-player-context";
 
 interface Brief {
   id: string;
@@ -27,11 +28,41 @@ interface Brief {
 
 export default function BriefsPage() {
   const { accessToken, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { play, pause, currentTrack, isPlaying } = useAudioPlayer();
   const [briefs, setBriefs] = useState<Brief[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+
+  // Handle play button click - plays through persistent player
+  const handlePlayBrief = (brief: Brief) => {
+    if (!brief.audioUrl) return;
+
+    // If this brief is currently playing, pause it
+    if (currentTrack?.id === brief.id && isPlaying) {
+      pause();
+      return;
+    }
+
+    // Play this brief through the persistent player
+    const track: AudioTrack = {
+      id: brief.id,
+      title: brief.title,
+      type: 'brief',
+      audioUrl: brief.audioUrl,
+      imageUrl: brief.featuredImage,
+      duration: brief.audioDuration || undefined,
+      createdAt: new Date(brief.createdAt).toISOString(),
+    };
+
+    play(track);
+  };
+
+  // Check if a specific brief is currently playing
+  const isBriefPlaying = (briefId: string) => {
+    return currentTrack?.id === briefId && isPlaying;
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -237,9 +268,18 @@ export default function BriefsPage() {
                       <a href={`/briefs/${brief.id}`}>View</a>
                     </Button>
                     {brief.audioUrl && (
-                      <Button size="sm">
-                        <Play className="h-4 w-4 mr-1" />
-                        Play
+                      <Button size="sm" onClick={() => handlePlayBrief(brief)}>
+                        {isBriefPlaying(brief.id) ? (
+                          <>
+                            <Pause className="h-4 w-4 mr-1" />
+                            Pause
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4 mr-1" />
+                            Play
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>
