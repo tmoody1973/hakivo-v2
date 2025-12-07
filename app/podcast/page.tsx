@@ -30,10 +30,9 @@ interface PodcastEpisode {
 
 // Platform links for podcast distribution
 const PLATFORM_LINKS = [
-  { name: "Apple Podcasts", url: "#", icon: "🎧" },
-  { name: "Spotify", url: "#", icon: "🎵" },
-  { name: "YouTube", url: "#", icon: "▶️" },
-  { name: "RSS Feed", url: "#", icon: "📡" },
+  { name: "Apple Podcasts", url: "https://podcasts.apple.com/us/podcast/100-laws-that-change-america/id1859402488", icon: "🎧" },
+  { name: "Spotify", url: "https://open.spotify.com/show/0uXNW7aFYmjsihiIDOgVuB", icon: "🎵" },
+  { name: "RSS Feed", url: "https://www.spreaker.com/show/6817395/episodes/feed", icon: "📡" },
 ];
 
 export default function PodcastPage() {
