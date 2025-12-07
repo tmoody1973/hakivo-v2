@@ -114,6 +114,15 @@ application "hakivo-new" {
     secret = true
   }
 
+  // Stripe API keys for subscription payments
+  env "STRIPE_SECRET_KEY" {
+    secret = true
+  }
+
+  env "STRIPE_WEBHOOK_SECRET" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -144,6 +153,16 @@ application "hakivo-new" {
   }
 
   service "db-admin" {
+    visibility = "public"
+  }
+
+  // Stripe webhook handler - must be public for Stripe to reach
+  service "stripe-webhook" {
+    visibility = "public"
+  }
+
+  // Subscription management API - handles status, checkout, portal, usage tracking
+  service "subscription-api" {
     visibility = "public"
   }
 

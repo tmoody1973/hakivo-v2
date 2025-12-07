@@ -25,6 +25,11 @@ const RAINDROP_SERVICES = {
     "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Members Service (public)
   MEMBERS: "https://svc-01ka8k5e6tr0kgy0jkzj9m4q1b.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+  // Stripe Webhook Service (public) - handles Stripe webhook events
+  STRIPE_WEBHOOK: "https://svc-01kbx70mmpbcrf475s1hdsb2pm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+  // Subscription API Service (public) - manages user subscriptions
+  SUBSCRIPTION: process.env.NEXT_PUBLIC_SUBSCRIPTION_API_URL ||
+    "https://svc-01kbx70mmpbcrf475s1hdsb2pn.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
 } as const;
 
 type ServiceName = keyof typeof RAINDROP_SERVICES;
@@ -314,6 +319,139 @@ export const dashboardApi = {
 };
 
 // ============================================================================
+// Subscription Service (Stripe integration)
+// ============================================================================
+
+export interface SubscriptionStatus {
+  userId: string;
+  subscription: {
+    status: "free" | "active" | "past_due" | "canceling";
+    isPro: boolean;
+    stripeCustomerId: string | null;
+    startedAt: string | null;
+    endsAt: string | null;
+  };
+  usage: {
+    briefs: {
+      used: number;
+      limit: number | "unlimited";
+      remaining: number | "unlimited";
+      resetAt: string | null;
+    };
+    trackedBills: {
+      count: number;
+      limit: number | "unlimited";
+      canTrackMore: boolean;
+    };
+    followedMembers: {
+      count: number;
+      limit: number | "unlimited";
+      canFollowMore: boolean;
+    };
+  };
+  features: {
+    dailyBriefing: boolean;
+    realtimeAlerts: boolean;
+    audioDigests: boolean;
+    unlimitedBriefs: boolean;
+    unlimitedTracking: boolean;
+  };
+}
+
+export interface CheckoutInfo {
+  success: boolean;
+  checkout: {
+    priceId: string;
+    amount: number;
+    currency: string;
+    interval: string;
+    metadata: {
+      userId: string;
+      email: string;
+    };
+  };
+  requiresFrontendCheckout: boolean;
+  message: string;
+}
+
+export interface PortalInfo {
+  success: boolean;
+  portal: {
+    customerId: string;
+    returnUrl: string;
+  };
+  requiresFrontendPortal: boolean;
+  message: string;
+}
+
+export interface BriefUsageResult {
+  success: boolean;
+  canGenerateMore: boolean;
+  isPro: boolean;
+  usage: {
+    used: number | "unlimited";
+    limit: number | "unlimited";
+    remaining: number | "unlimited";
+  };
+  error?: string;
+  upgradeUrl?: string;
+}
+
+export interface LimitCheckResult {
+  allowed: boolean;
+  isPro: boolean;
+  reason: string | null;
+  currentCount?: number;
+  limit?: number;
+  upgradeUrl?: string;
+}
+
+export const subscriptionApi = {
+  // Get user's subscription status and limits
+  async getStatus(userId: string): Promise<SubscriptionStatus> {
+    return fetchFromService("SUBSCRIPTION", `/api/subscription/status/${userId}`);
+  },
+
+  // Create checkout session for Pro upgrade
+  async createCheckout(
+    userId: string,
+    successUrl?: string,
+    cancelUrl?: string
+  ): Promise<CheckoutInfo> {
+    return fetchFromService("SUBSCRIPTION", "/api/subscription/create-checkout", {
+      method: "POST",
+      body: JSON.stringify({ userId, successUrl, cancelUrl }),
+    });
+  },
+
+  // Create billing portal session for managing subscription
+  async createPortal(userId: string, returnUrl?: string): Promise<PortalInfo> {
+    return fetchFromService("SUBSCRIPTION", "/api/subscription/create-portal", {
+      method: "POST",
+      body: JSON.stringify({ userId, returnUrl }),
+    });
+  },
+
+  // Use a brief (increment counter for free tier)
+  async useBrief(userId: string): Promise<BriefUsageResult> {
+    return fetchFromService("SUBSCRIPTION", `/api/subscription/use-brief/${userId}`, {
+      method: "POST",
+    });
+  },
+
+  // Check if user can perform an action based on their subscription
+  async checkLimit(
+    userId: string,
+    action: "track_bill" | "follow_member" | "generate_brief" | "daily_briefing" | "realtime_alerts"
+  ): Promise<LimitCheckResult> {
+    return fetchFromService("SUBSCRIPTION", `/api/subscription/check-limit/${userId}`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    });
+  },
+};
+
+// ============================================================================
 // Export all APIs
 // ============================================================================
 
@@ -323,6 +461,7 @@ export const raindropClient = {
   chat: chatApi,
   briefs: briefsApi,
   dashboard: dashboardApi,
+  subscription: subscriptionApi,
 };
 
 export default raindropClient;
