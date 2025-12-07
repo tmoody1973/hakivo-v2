@@ -41,10 +41,117 @@ const PODCAST_VOICES = {
   nameB: 'David'
 };
 
+// Static thumbnail URL for all podcast episodes
+// Using a consistent branded image from the Next.js public folder
+const PODCAST_THUMBNAIL_URL = 'https://hakivo-v2.netlify.app/podcast-hakivo.png';
+
 /**
  * Podcast Generator Service
  */
 export default class extends Service<Env> {
+  /**
+   * Public method for service-to-service calls
+   * Called from podcast-scheduler: await this.env.PODCAST_GENERATOR.generate()
+   */
+  async generate(): Promise<GenerationResult> {
+    try {
+      // Get next ungenerated law
+      const nextLaw = await this.getNextLaw();
+
+      if (!nextLaw) {
+        return {
+          success: false,
+          error: 'All episodes have been generated'
+        };
+      }
+
+      return await this.generateEpisode(nextLaw);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[PODCAST-GEN] Generation failed:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  }
+
+  /**
+   * Public method for testing thumbnail generation
+   * Called from briefs-service: await c.env.PODCAST_GENERATOR.testThumbnail(episodeId)
+   */
+  async testThumbnail(episodeId?: string): Promise<{
+    success: boolean;
+    episodeId?: string;
+    lawName?: string;
+    thumbnailUrl?: string | null;
+    error?: string;
+  }> {
+    try {
+      let episode: { id: string; law_id: number } | null;
+
+      if (!episodeId) {
+        // Get first episode without thumbnail
+        episode = await this.env.APP_DB
+          .prepare('SELECT id, law_id FROM podcast_episodes WHERE thumbnail_url IS NULL LIMIT 1')
+          .first() as { id: string; law_id: number } | null;
+
+        if (!episode) {
+          return {
+            success: false,
+            error: 'No episodes without thumbnails found'
+          };
+        }
+      } else {
+        // Get specific episode
+        episode = await this.env.APP_DB
+          .prepare('SELECT id, law_id FROM podcast_episodes WHERE id = ?')
+          .bind(episodeId)
+          .first() as { id: string; law_id: number } | null;
+
+        if (!episode) {
+          return {
+            success: false,
+            error: 'Episode not found'
+          };
+        }
+      }
+
+      const law = await this.getLawById(episode.law_id);
+      if (!law) {
+        return {
+          success: false,
+          error: 'Law not found'
+        };
+      }
+
+      console.log(`[PODCAST-GEN] Testing thumbnail for episode ${episode.id}, law: ${law.name}`);
+      const thumbnailUrl = await this.generateThumbnail(law, episode.id);
+
+      if (thumbnailUrl) {
+        // Update the episode
+        await this.env.APP_DB
+          .prepare('UPDATE podcast_episodes SET thumbnail_url = ?, updated_at = ? WHERE id = ?')
+          .bind(thumbnailUrl, Date.now(), episode.id)
+          .run();
+      }
+
+      return {
+        success: !!thumbnailUrl,
+        episodeId: episode.id,
+        lawName: law.name,
+        thumbnailUrl
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[PODCAST-GEN] Test thumbnail error:', errorMessage);
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -474,84 +581,13 @@ ${nameB.toUpperCase()}: [emotional cue] dialogue...
   }
 
   /**
-   * Generate episode thumbnail using Gemini
+   * Get episode thumbnail - returns the static branded thumbnail URL
+   * Using a consistent image for all episodes instead of AI-generated thumbnails
    */
-  private async generateThumbnail(law: HistoricLaw, episodeId: string): Promise<string | null> {
-    try {
-      const geminiApiKey = this.env.GEMINI_API_KEY;
-      if (!geminiApiKey) {
-        console.warn('[PODCAST-GEN] GEMINI_API_KEY not set, skipping thumbnail');
-        return null;
-      }
-
-      const decade = Math.floor(law.year / 10) * 10;
-
-      const imagePrompt = `Create a vintage-inspired documentary poster image for a podcast episode about "${law.name}" from ${law.year}.
-
-Style: Muted, sepia-toned colors reminiscent of ${decade}s photography and documents. Documentary aesthetic.
-Theme: ${law.category}
-Era: ${decade}s America
-
-The image should evoke the historical period and the theme of ${law.description.substring(0, 100)}.
-
-IMPORTANT:
-- Do NOT include any text, words, titles, or labels in the image
-- Focus on symbolic imagery that represents the law's theme
-- Use period-appropriate visual elements
-- Create a composition suitable for a podcast thumbnail (square format)`;
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: imagePrompt }] }],
-            generationConfig: {
-              responseModalities: ['TEXT', 'IMAGE']
-            }
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[PODCAST-GEN] Gemini image error: ${response.status} - ${errorText}`);
-        return null;
-      }
-
-      const result = await response.json();
-      const parts = result.candidates?.[0]?.content?.parts;
-      const imagePart = parts?.find((p: any) => p.inlineData?.mimeType?.startsWith('image/'));
-
-      if (!imagePart?.inlineData) {
-        console.warn('[PODCAST-GEN] No image data in Gemini response');
-        return null;
-      }
-
-      const { mimeType, data: base64Data } = imagePart.inlineData;
-
-      // Convert base64 to Uint8Array
-      const binaryString = atob(base64Data);
-      const imageBuffer = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        imageBuffer[i] = binaryString.charCodeAt(i);
-      }
-
-      // Upload to Vultr storage
-      const uploadResult = await this.env.VULTR_STORAGE_CLIENT.uploadImage(
-        `podcast-${episodeId}`,
-        imageBuffer,
-        mimeType,
-        { lawName: law.name, year: String(law.year) }
-      );
-
-      return uploadResult.url;
-
-    } catch (error) {
-      console.error('[PODCAST-GEN] Thumbnail generation failed:', error);
-      return null;
-    }
+  private async generateThumbnail(_law: HistoricLaw, _episodeId: string): Promise<string | null> {
+    // Return the static thumbnail URL for all episodes
+    console.log(`[PODCAST-GEN] Using static thumbnail: ${PODCAST_THUMBNAIL_URL}`);
+    return PODCAST_THUMBNAIL_URL;
   }
 
   /**
