@@ -2,7 +2,24 @@
 
 ## Overview
 
-Build an email notification system using [Resend](https://resend.com) that delivers personalized legislative updates to users based on their interests, district, and tracked bills.
+Build an email notification system using [Resend](https://resend.com) + [React Email](https://react.email/) that delivers personalized legislative updates to users based on their interests, district, and tracked bills.
+
+---
+
+## Tech Stack
+
+| Tool | Purpose | Why |
+|------|---------|-----|
+| [Resend](https://resend.com) | Email delivery API | Developer-friendly, great deliverability, affordable |
+| [React Email](https://react.email/) | Email templates | Write emails as React components, preview in browser |
+
+### Why React Email + Resend?
+
+1. **Write emails like React components** - No more HTML tables and inline styles hell
+2. **Preview in browser** - See exactly what emails look like before sending
+3. **Type-safe** - Full TypeScript support for email props
+4. **Resend integration** - Built by the same team, seamless integration
+5. **Components library** - Pre-built `<Button>`, `<Section>`, `<Text>`, etc.
 
 ---
 
@@ -244,70 +261,695 @@ task "daily-briefing-scheduler" {
 
 ---
 
+## React Email Setup
+
+### Installation
+
+```bash
+# Install React Email and components
+npm install @react-email/components resend
+
+# Install dev server for previewing emails
+npm install react-email -D
+```
+
+### Project Structure
+
+```
+hakivo-v2/
+├── emails/                    # React Email templates
+│   ├── components/            # Shared email components
+│   │   ├── header.tsx
+│   │   ├── footer.tsx
+│   │   ├── bill-card.tsx
+│   │   ├── member-action.tsx
+│   │   └── audio-button.tsx
+│   ├── weekly-digest.tsx      # Weekly summary email
+│   ├── daily-briefing.tsx     # Daily update email
+│   ├── vote-alert.tsx         # Real-time vote notification
+│   ├── bill-update.tsx        # Bill status change
+│   ├── welcome.tsx            # Welcome email
+│   └── upgrade-prompt.tsx     # Pro upgrade nudge
+├── package.json               # Add email preview script
+```
+
+### Package.json Script
+
+```json
+{
+  "scripts": {
+    "email:dev": "email dev --dir emails --port 3001",
+    "email:export": "email export --dir emails --outDir out/emails"
+  }
+}
+```
+
+Run `npm run email:dev` to preview emails at `http://localhost:3001`
+
+---
+
 ## Email Templates (React Email)
+
+### Shared Components
+
+```tsx
+// emails/components/header.tsx
+import { Img, Section, Text } from '@react-email/components';
+
+export function EmailHeader() {
+  return (
+    <Section style={headerStyle}>
+      <Img
+        src="https://hakivo.com/logo.png"
+        width="120"
+        height="40"
+        alt="Hakivo"
+      />
+      <Text style={tagline}>Democracy, Explained</Text>
+    </Section>
+  );
+}
+
+const headerStyle = {
+  textAlign: 'center' as const,
+  padding: '20px 0',
+  borderBottom: '1px solid #e5e5e5',
+};
+
+const tagline = {
+  color: '#666',
+  fontSize: '14px',
+  margin: '8px 0 0',
+};
+```
+
+```tsx
+// emails/components/bill-card.tsx
+import { Section, Text, Link } from '@react-email/components';
+
+interface BillCardProps {
+  billNumber: string;
+  title: string;
+  status: string;
+  lastAction: string;
+  url: string;
+}
+
+export function BillCard({ billNumber, title, status, lastAction, url }: BillCardProps) {
+  return (
+    <Section style={cardStyle}>
+      <Text style={billNumberStyle}>{billNumber}</Text>
+      <Link href={url} style={titleStyle}>{title}</Link>
+      <Text style={statusStyle}>
+        Status: <strong>{status}</strong>
+      </Text>
+      <Text style={actionStyle}>{lastAction}</Text>
+    </Section>
+  );
+}
+
+const cardStyle = {
+  backgroundColor: '#f9fafb',
+  borderRadius: '8px',
+  padding: '16px',
+  marginBottom: '12px',
+};
+
+const billNumberStyle = {
+  fontSize: '12px',
+  color: '#6b7280',
+  margin: '0 0 4px',
+};
+
+const titleStyle = {
+  fontSize: '16px',
+  fontWeight: '600',
+  color: '#111827',
+  textDecoration: 'none',
+};
+
+const statusStyle = {
+  fontSize: '14px',
+  color: '#374151',
+  margin: '8px 0 4px',
+};
+
+const actionStyle = {
+  fontSize: '13px',
+  color: '#6b7280',
+  margin: '0',
+};
+```
+
+```tsx
+// emails/components/audio-button.tsx
+import { Button } from '@react-email/components';
+
+interface AudioButtonProps {
+  href: string;
+  duration: string;
+}
+
+export function AudioButton({ href, duration }: AudioButtonProps) {
+  return (
+    <Button href={href} style={buttonStyle}>
+      🎧 Listen to Audio Summary ({duration})
+    </Button>
+  );
+}
+
+const buttonStyle = {
+  backgroundColor: '#7c3aed',
+  borderRadius: '6px',
+  color: '#fff',
+  fontSize: '14px',
+  fontWeight: '600',
+  textDecoration: 'none',
+  textAlign: 'center' as const,
+  padding: '12px 24px',
+  display: 'block',
+  margin: '16px 0',
+};
+```
 
 ### Weekly Digest Template
 
 ```tsx
 // emails/weekly-digest.tsx
-import { Html, Head, Body, Container, Section, Text, Button, Hr } from '@react-email/components';
+import {
+  Html,
+  Head,
+  Body,
+  Container,
+  Section,
+  Text,
+  Button,
+  Hr,
+  Preview,
+} from '@react-email/components';
+import { EmailHeader } from './components/header';
+import { BillCard } from './components/bill-card';
+import { AudioButton } from './components/audio-button';
+
+interface MemberAction {
+  id: string;
+  memberName: string;
+  party: string;
+  action: string;
+  billNumber: string;
+  billTitle: string;
+  vote?: 'YES' | 'NO' | 'NOT VOTING';
+}
+
+interface BillUpdate {
+  id: string;
+  billNumber: string;
+  title: string;
+  status: string;
+  lastAction: string;
+  url: string;
+}
 
 interface WeeklyDigestProps {
   userName: string;
   district: string;
+  dateRange: string;
   memberActions: MemberAction[];
   trackedBillUpdates: BillUpdate[];
   audioUrl?: string;
+  audioDuration?: string;
+  unsubscribeUrl: string;
+  preferencesUrl: string;
 }
 
-export default function WeeklyDigest({ userName, district, memberActions, trackedBillUpdates, audioUrl }: WeeklyDigestProps) {
+export default function WeeklyDigest({
+  userName,
+  district,
+  dateRange,
+  memberActions,
+  trackedBillUpdates,
+  audioUrl,
+  audioDuration,
+  unsubscribeUrl,
+  preferencesUrl,
+}: WeeklyDigestProps) {
   return (
     <Html>
       <Head />
+      <Preview>Your Week in Congress - {dateRange}</Preview>
       <Body style={main}>
         <Container style={container}>
-          <Text style={heading}>Your Week in Congress</Text>
-          <Text style={subheading}>{district}</Text>
+          <EmailHeader />
 
-          {audioUrl && (
-            <Button href={audioUrl} style={audioButton}>
-              🎧 Listen to Audio Summary (8 min)
-            </Button>
+          <Section style={heroSection}>
+            <Text style={greeting}>Hi {userName},</Text>
+            <Text style={heading}>Your Week in Congress</Text>
+            <Text style={subheading}>{district} • {dateRange}</Text>
+          </Section>
+
+          {audioUrl && audioDuration && (
+            <AudioButton href={audioUrl} duration={audioDuration} />
           )}
 
-          <Hr />
+          <Hr style={divider} />
 
-          <Section>
-            <Text style={sectionTitle}>Your Representatives This Week</Text>
-            {memberActions.map(action => (
-              <MemberActionRow key={action.id} action={action} />
-            ))}
-          </Section>
+          {memberActions.length > 0 && (
+            <Section>
+              <Text style={sectionTitle}>Your Representatives This Week</Text>
+              {memberActions.map(action => (
+                <Section key={action.id} style={actionRow}>
+                  <Text style={memberName}>
+                    {action.memberName} ({action.party})
+                  </Text>
+                  <Text style={actionText}>
+                    {action.vote && (
+                      <span style={action.vote === 'YES' ? voteYes : voteNo}>
+                        {action.vote}
+                      </span>
+                    )}
+                    {' '}{action.action} on {action.billNumber}
+                  </Text>
+                  <Text style={billTitleSmall}>{action.billTitle}</Text>
+                </Section>
+              ))}
+            </Section>
+          )}
 
-          <Hr />
+          <Hr style={divider} />
 
-          <Section>
-            <Text style={sectionTitle}>Bills You're Tracking</Text>
-            {trackedBillUpdates.map(bill => (
-              <BillUpdateRow key={bill.id} bill={bill} />
-            ))}
-          </Section>
+          {trackedBillUpdates.length > 0 && (
+            <Section>
+              <Text style={sectionTitle}>Bills You're Tracking</Text>
+              {trackedBillUpdates.map(bill => (
+                <BillCard
+                  key={bill.id}
+                  billNumber={bill.billNumber}
+                  title={bill.title}
+                  status={bill.status}
+                  lastAction={bill.lastAction}
+                  url={bill.url}
+                />
+              ))}
+            </Section>
+          )}
 
-          <Hr />
+          <Hr style={divider} />
 
           <Button href="https://hakivo.com/dashboard" style={ctaButton}>
             View Full Dashboard
           </Button>
 
-          <Text style={footer}>
-            You're receiving this because you signed up for Hakivo weekly updates.
-            <a href="{{unsubscribe_url}}">Unsubscribe</a> or <a href="https://hakivo.com/settings/notifications">manage preferences</a>
-          </Text>
+          <Section style={footer}>
+            <Text style={footerText}>
+              You're receiving this because you signed up for Hakivo weekly updates.
+            </Text>
+            <Text style={footerLinks}>
+              <a href={unsubscribeUrl} style={footerLink}>Unsubscribe</a>
+              {' • '}
+              <a href={preferencesUrl} style={footerLink}>Manage preferences</a>
+            </Text>
+          </Section>
         </Container>
       </Body>
     </Html>
   );
 }
+
+// Styles
+const main = {
+  backgroundColor: '#f6f9fc',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+};
+
+const container = {
+  backgroundColor: '#ffffff',
+  margin: '0 auto',
+  padding: '20px 0 48px',
+  maxWidth: '600px',
+};
+
+const heroSection = {
+  padding: '32px 24px',
+  textAlign: 'center' as const,
+};
+
+const greeting = {
+  fontSize: '16px',
+  color: '#666',
+  margin: '0 0 8px',
+};
+
+const heading = {
+  fontSize: '28px',
+  fontWeight: '700',
+  color: '#111827',
+  margin: '0 0 8px',
+};
+
+const subheading = {
+  fontSize: '14px',
+  color: '#6b7280',
+  margin: '0',
+};
+
+const divider = {
+  borderColor: '#e5e7eb',
+  margin: '24px 0',
+};
+
+const sectionTitle = {
+  fontSize: '18px',
+  fontWeight: '600',
+  color: '#111827',
+  padding: '0 24px',
+  margin: '0 0 16px',
+};
+
+const actionRow = {
+  padding: '12px 24px',
+  borderBottom: '1px solid #f3f4f6',
+};
+
+const memberName = {
+  fontSize: '14px',
+  fontWeight: '600',
+  color: '#111827',
+  margin: '0 0 4px',
+};
+
+const actionText = {
+  fontSize: '14px',
+  color: '#374151',
+  margin: '0 0 4px',
+};
+
+const billTitleSmall = {
+  fontSize: '13px',
+  color: '#6b7280',
+  margin: '0',
+};
+
+const voteYes = {
+  backgroundColor: '#dcfce7',
+  color: '#166534',
+  padding: '2px 6px',
+  borderRadius: '4px',
+  fontSize: '12px',
+  fontWeight: '600',
+};
+
+const voteNo = {
+  backgroundColor: '#fee2e2',
+  color: '#991b1b',
+  padding: '2px 6px',
+  borderRadius: '4px',
+  fontSize: '12px',
+  fontWeight: '600',
+};
+
+const ctaButton = {
+  backgroundColor: '#7c3aed',
+  borderRadius: '6px',
+  color: '#fff',
+  fontSize: '16px',
+  fontWeight: '600',
+  textDecoration: 'none',
+  textAlign: 'center' as const,
+  padding: '14px 28px',
+  display: 'block',
+  margin: '24px auto',
+  maxWidth: '200px',
+};
+
+const footer = {
+  padding: '24px',
+  textAlign: 'center' as const,
+};
+
+const footerText = {
+  fontSize: '12px',
+  color: '#9ca3af',
+  margin: '0 0 8px',
+};
+
+const footerLinks = {
+  fontSize: '12px',
+  margin: '0',
+};
+
+const footerLink = {
+  color: '#6b7280',
+  textDecoration: 'underline',
+};
+
+// Preview props for development
+WeeklyDigest.PreviewProps = {
+  userName: 'Sarah',
+  district: 'California 11th District',
+  dateRange: 'Dec 1-7, 2024',
+  memberActions: [
+    {
+      id: '1',
+      memberName: 'Rep. Nancy Pelosi',
+      party: 'D',
+      action: 'Voted',
+      billNumber: 'H.R. 1234',
+      billTitle: 'Infrastructure Investment Act',
+      vote: 'YES',
+    },
+    {
+      id: '2',
+      memberName: 'Sen. Alex Padilla',
+      party: 'D',
+      action: 'Co-sponsored',
+      billNumber: 'S. 567',
+      billTitle: 'Climate Action Now Act',
+    },
+  ],
+  trackedBillUpdates: [
+    {
+      id: '1',
+      billNumber: 'H.R. 1234',
+      title: 'Infrastructure Investment Act',
+      status: 'Passed House',
+      lastAction: 'Referred to Senate Committee on Dec 5',
+      url: 'https://hakivo.com/bills/hr1234-118',
+    },
+  ],
+  audioUrl: 'https://hakivo.com/audio/weekly-digest-dec-7.mp3',
+  audioDuration: '8 min',
+  unsubscribeUrl: 'https://hakivo.com/unsubscribe?token=xxx',
+  preferencesUrl: 'https://hakivo.com/settings/notifications',
+} as WeeklyDigestProps;
+```
+
+### Vote Alert Template (Real-time)
+
+```tsx
+// emails/vote-alert.tsx
+import {
+  Html,
+  Head,
+  Body,
+  Container,
+  Section,
+  Text,
+  Button,
+  Preview,
+} from '@react-email/components';
+import { EmailHeader } from './components/header';
+
+interface VoteAlertProps {
+  billNumber: string;
+  billTitle: string;
+  passed: boolean;
+  yesVotes: number;
+  noVotes: number;
+  memberVotes: Array<{
+    name: string;
+    party: string;
+    vote: 'YES' | 'NO' | 'NOT VOTING';
+    isUserRep: boolean;
+  }>;
+  billUrl: string;
+  unsubscribeUrl: string;
+}
+
+export default function VoteAlert({
+  billNumber,
+  billTitle,
+  passed,
+  yesVotes,
+  noVotes,
+  memberVotes,
+  billUrl,
+  unsubscribeUrl,
+}: VoteAlertProps) {
+  return (
+    <Html>
+      <Head />
+      <Preview>
+        🚨 {billNumber} {passed ? 'PASSED' : 'FAILED'} ({yesVotes}-{noVotes})
+      </Preview>
+      <Body style={main}>
+        <Container style={container}>
+          <EmailHeader />
+
+          <Section style={alertBanner(passed)}>
+            <Text style={alertEmoji}>{passed ? '✅' : '❌'}</Text>
+            <Text style={alertTitle}>
+              {billNumber} {passed ? 'PASSED' : 'FAILED'}
+            </Text>
+            <Text style={voteCount}>{yesVotes} - {noVotes}</Text>
+          </Section>
+
+          <Section style={content}>
+            <Text style={billTitleStyle}>{billTitle}</Text>
+
+            {memberVotes.filter(m => m.isUserRep).length > 0 && (
+              <>
+                <Text style={sectionLabel}>Your Representatives Voted:</Text>
+                {memberVotes
+                  .filter(m => m.isUserRep)
+                  .map((member, i) => (
+                    <Text key={i} style={memberVote}>
+                      <span style={member.vote === 'YES' ? voteYes : voteNo}>
+                        {member.vote}
+                      </span>
+                      {' '}{member.name} ({member.party})
+                    </Text>
+                  ))}
+              </>
+            )}
+
+            <Button href={billUrl} style={ctaButton}>
+              View Full Vote Record
+            </Button>
+          </Section>
+
+          <Section style={footer}>
+            <Text style={footerText}>
+              You're receiving this because you're tracking {billNumber}.
+            </Text>
+            <a href={unsubscribeUrl} style={footerLink}>
+              Stop alerts for this bill
+            </a>
+          </Section>
+        </Container>
+      </Body>
+    </Html>
+  );
+}
+
+const main = {
+  backgroundColor: '#f6f9fc',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+};
+
+const container = {
+  backgroundColor: '#ffffff',
+  margin: '0 auto',
+  maxWidth: '600px',
+};
+
+const alertBanner = (passed: boolean) => ({
+  backgroundColor: passed ? '#dcfce7' : '#fee2e2',
+  padding: '32px 24px',
+  textAlign: 'center' as const,
+});
+
+const alertEmoji = {
+  fontSize: '48px',
+  margin: '0 0 12px',
+};
+
+const alertTitle = {
+  fontSize: '24px',
+  fontWeight: '700',
+  color: '#111827',
+  margin: '0 0 8px',
+};
+
+const voteCount = {
+  fontSize: '32px',
+  fontWeight: '700',
+  color: '#374151',
+  margin: '0',
+};
+
+const content = {
+  padding: '24px',
+};
+
+const billTitleStyle = {
+  fontSize: '18px',
+  fontWeight: '600',
+  color: '#111827',
+  margin: '0 0 24px',
+};
+
+const sectionLabel = {
+  fontSize: '14px',
+  fontWeight: '600',
+  color: '#6b7280',
+  margin: '0 0 12px',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.5px',
+};
+
+const memberVote = {
+  fontSize: '16px',
+  color: '#374151',
+  margin: '0 0 8px',
+};
+
+const voteYes = {
+  backgroundColor: '#dcfce7',
+  color: '#166534',
+  padding: '2px 8px',
+  borderRadius: '4px',
+  fontWeight: '600',
+};
+
+const voteNo = {
+  backgroundColor: '#fee2e2',
+  color: '#991b1b',
+  padding: '2px 8px',
+  borderRadius: '4px',
+  fontWeight: '600',
+};
+
+const ctaButton = {
+  backgroundColor: '#7c3aed',
+  borderRadius: '6px',
+  color: '#fff',
+  fontSize: '14px',
+  fontWeight: '600',
+  textDecoration: 'none',
+  textAlign: 'center' as const,
+  padding: '12px 24px',
+  display: 'block',
+  margin: '24px auto 0',
+  maxWidth: '200px',
+};
+
+const footer = {
+  padding: '24px',
+  textAlign: 'center' as const,
+  borderTop: '1px solid #e5e7eb',
+};
+
+const footerText = {
+  fontSize: '12px',
+  color: '#9ca3af',
+  margin: '0 0 8px',
+};
+
+const footerLink = {
+  fontSize: '12px',
+  color: '#6b7280',
+  textDecoration: 'underline',
+};
 ```
 
 ---
