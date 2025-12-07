@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
-import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, MessageSquare, LogOut, Menu, X } from 'lucide-react'
+import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, X } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -45,6 +45,11 @@ const routes = [
     label: "Briefs",
     icon: Radio,
     href: "/briefs",
+  },
+  {
+    label: "Podcast",
+    icon: Mic,
+    href: "/podcast",
   },
   {
     label: "Congressional Assistant",

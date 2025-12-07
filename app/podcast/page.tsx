@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Search, Play, Pause, Loader2, Mic, Calendar, Clock } from "lucide-react";
+import { Play, Pause, Loader2, Clock, Calendar, Search, ChevronRight } from "lucide-react";
 import { useAudioPlayer, type AudioTrack } from "@/lib/audio/audio-player-context";
 
 interface PodcastEpisode {
@@ -29,26 +28,30 @@ interface PodcastEpisode {
   };
 }
 
+// Platform links for podcast distribution
+const PLATFORM_LINKS = [
+  { name: "Apple Podcasts", url: "#", icon: "🎧" },
+  { name: "Spotify", url: "#", icon: "🎵" },
+  { name: "YouTube", url: "#", icon: "▶️" },
+  { name: "RSS Feed", url: "#", icon: "📡" },
+];
+
 export default function PodcastPage() {
   const { play, pause, currentTrack, isPlaying } = useAudioPlayer();
   const [episodes, setEpisodes] = useState<PodcastEpisode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [decadeFilter, setDecadeFilter] = useState("all");
 
-  // Handle play button click - plays through persistent player
+  // Handle play button click
   const handlePlayEpisode = (episode: PodcastEpisode) => {
     if (!episode.audioUrl) return;
 
-    // If this episode is currently playing, pause it
     if (currentTrack?.id === episode.id && isPlaying) {
       pause();
       return;
     }
 
-    // Play this episode through the persistent player
     const track: AudioTrack = {
       id: episode.id,
       title: episode.headline || episode.title,
@@ -62,7 +65,6 @@ export default function PodcastPage() {
     play(track);
   };
 
-  // Check if a specific episode is currently playing
   const isEpisodePlaying = (episodeId: string) => {
     return currentTrack?.id === episodeId && isPlaying;
   };
@@ -97,16 +99,14 @@ export default function PodcastPage() {
     }
   };
 
-  // Format date for display
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
-      month: 'long',
+      month: 'short',
       day: 'numeric',
       year: 'numeric',
     });
   };
 
-  // Format duration for display
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return '--:--';
     const mins = Math.floor(seconds / 60);
@@ -114,239 +114,248 @@ export default function PodcastPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Get unique categories from episodes
-  const categories = [...new Set(episodes.map(ep => ep.law.category))].filter(Boolean);
-
-  // Get unique decades from episodes
-  const decades = [...new Set(episodes.map(ep => Math.floor(ep.law.year / 10) * 10))].sort();
-
-  // Filter episodes
+  // Filter episodes by search
   const filteredEpisodes = episodes.filter((episode) => {
-    const matchesSearch =
-      episode.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      episode.headline.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (episode.description?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
-    const matchesCategory = categoryFilter === "all" || episode.law.category === categoryFilter;
-    const matchesDecade = decadeFilter === "all" || Math.floor(episode.law.year / 10) * 10 === parseInt(decadeFilter);
-    return matchesSearch && matchesCategory && matchesDecade;
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      episode.title.toLowerCase().includes(query) ||
+      episode.headline.toLowerCase().includes(query) ||
+      (episode.description?.toLowerCase().includes(query) ?? false) ||
+      String(episode.law.year).includes(query)
+    );
   });
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <Mic className="h-8 w-8 text-primary" />
-              100 Laws That Shaped America
-            </h1>
-            <p className="text-muted-foreground">
-              A narrative journey through the legislation that defined our nation
-            </p>
+  return (
+    <div className="min-h-screen pb-32">
+      {/* Hero Section */}
+      <div className="bg-gradient-to-b from-primary/10 via-primary/5 to-background">
+        <div className="max-w-6xl mx-auto px-6 md:px-8 py-12 md:py-16">
+          <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-start">
+            {/* Podcast Artwork */}
+            <div className="flex-shrink-0 mx-auto md:mx-0">
+              <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/10">
+                <img
+                  src="/podcast-hakivo.png"
+                  alt="Signed Into Law Podcast"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+
+            {/* Podcast Info */}
+            <div className="flex-1 space-y-6 text-center md:text-left">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-primary uppercase tracking-wider">
+                  A Hakivo Original Podcast
+                </p>
+                <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight">
+                  Signed Into Law
+                </h1>
+                <p className="text-xl text-muted-foreground">
+                  The 100 bills that built modern America
+                </p>
+              </div>
+
+              <div className="space-y-4 text-foreground/80 max-w-2xl">
+                <p className="leading-relaxed">
+                  Every law tells a story—of movements that demanded change, crises that forced action, and compromises that shaped a nation.
+                </p>
+                <p className="leading-relaxed">
+                  <strong>Signed Into Law</strong> is a daily podcast from Hakivo, the AI-powered civic engagement platform that turns dense legislative text into clear, listenable audio briefings.
+                </p>
+                <p className="leading-relaxed">
+                  Each episode unpacks one of the 100 most consequential pieces of US legislation from 1900 to 2000: the debates behind them, the provisions within them, and the legacy they left.
+                </p>
+              </div>
+
+              {/* Progress indicator */}
+              <div className="flex items-center gap-4 justify-center md:justify-start">
+                <div className="flex items-center gap-2">
+                  <div className="w-32 bg-muted rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(episodes.length, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    {episodes.length}/100 episodes
+                  </span>
+                </div>
+              </div>
+
+              {/* Platform Links */}
+              <div className="flex flex-wrap gap-3 justify-center md:justify-start">
+                {PLATFORM_LINKS.map((platform) => (
+                  <Button
+                    key={platform.name}
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    asChild
+                  >
+                    <a href={platform.url} target="_blank" rel="noopener noreferrer">
+                      <span>{platform.icon}</span>
+                      {platform.name}
+                    </a>
+                  </Button>
+                ))}
+              </div>
+
+              <p className="text-sm text-muted-foreground italic">
+                Subscribe and start your 100-day civic education journey.
+              </p>
+            </div>
           </div>
+        </div>
+      </div>
+
+      {/* Episodes Section */}
+      <div className="max-w-6xl mx-auto px-6 md:px-8 py-8">
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <h2 className="text-2xl font-serif font-bold">
+            Episodes
+          </h2>
+
+          {/* Search */}
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search episodes..."
+              className="pl-10"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Loading State */}
+        {isLoading && (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        </div>
-      </div>
-    );
-  }
+        )}
 
-  // Error state
-  if (error) {
-    return (
-      <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <Mic className="h-8 w-8 text-primary" />
-              100 Laws That Shaped America
-            </h1>
+        {/* Error State */}
+        {error && !isLoading && (
+          <div className="text-center py-20">
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <Button onClick={fetchEpisodes}>Try Again</Button>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && !error && filteredEpisodes.length === 0 && (
+          <div className="text-center py-20">
             <p className="text-muted-foreground">
-              A narrative journey through the legislation that defined our nation
+              {searchQuery ? 'No episodes match your search.' : 'Episodes coming soon!'}
             </p>
           </div>
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground">{error}</p>
-              <Button className="mt-4" onClick={fetchEpisodes}>Try Again</Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+        )}
 
-  // Empty state
-  if (filteredEpisodes.length === 0) {
-    return (
-      <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <Mic className="h-8 w-8 text-primary" />
-              100 Laws That Shaped America
-            </h1>
-            <p className="text-muted-foreground">
-              A narrative journey through the legislation that defined our nation
-            </p>
-          </div>
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Mic className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-semibold text-lg mb-2">No Episodes Yet</h3>
-              <p className="text-muted-foreground">
-                Episodes are being generated. Check back soon for new content!
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen pb-32 px-6 md:px-8 py-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Mic className="h-8 w-8 text-primary" />
-            100 Laws That Shaped America
-          </h1>
-          <p className="text-muted-foreground">
-            A narrative journey through the legislation that defined our nation
-          </p>
-        </div>
-
-        {/* Progress Banner */}
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Series Progress</p>
-                <p className="text-xs text-muted-foreground">
-                  {episodes.length} of 100 episodes available
-                </p>
-              </div>
-              <div className="w-32 bg-muted rounded-full h-2 overflow-hidden">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-500"
-                  style={{ width: `${episodes.length}%` }}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <Input
-                  placeholder="Search episodes..."
-                  className="w-full"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-full md:w-[200px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={decadeFilter} onValueChange={setDecadeFilter}>
-                <SelectTrigger className="w-full md:w-[200px]">
-                  <SelectValue placeholder="Decade" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Decades</SelectItem>
-                  {decades.map(decade => (
-                    <SelectItem key={decade} value={String(decade)}>{decade}s</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Episodes Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEpisodes.map((episode) => (
-            <Card key={episode.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-              <div className="aspect-video bg-muted overflow-hidden relative">
-                <img
-                  src={episode.thumbnailUrl || "/podcast-placeholder.jpg"}
-                  alt={episode.headline}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-2 left-2">
-                  <Badge className="bg-black/70 text-white font-mono">
-                    EP {episode.episodeNumber}
-                  </Badge>
+        {/* Episode List */}
+        {!isLoading && !error && filteredEpisodes.length > 0 && (
+          <div className="space-y-1">
+            {filteredEpisodes.map((episode, index) => (
+              <div
+                key={episode.id}
+                className={`group flex items-start gap-4 p-4 rounded-lg hover:bg-muted/50 transition-colors ${
+                  index !== filteredEpisodes.length - 1 ? 'border-b border-border/50' : ''
+                }`}
+              >
+                {/* Episode Number / Play Button */}
+                <div className="flex-shrink-0 w-16 flex flex-col items-center gap-1">
+                  {episode.audioUrl ? (
+                    <button
+                      onClick={() => handlePlayEpisode(episode)}
+                      className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                        isEpisodePlaying(episode.id)
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted group-hover:bg-primary group-hover:text-primary-foreground'
+                      }`}
+                    >
+                      {isEpisodePlaying(episode.id) ? (
+                        <Pause className="h-5 w-5 fill-current" />
+                      ) : (
+                        <Play className="h-5 w-5 fill-current ml-0.5" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                      <span className="text-sm font-mono text-muted-foreground">
+                        {episode.episodeNumber}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="absolute bottom-2 right-2">
-                  <Badge variant="secondary" className="bg-black/70 text-white">
-                    {episode.law.year}
-                  </Badge>
-                </div>
-              </div>
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant="secondary" className="bg-primary/10 text-primary text-xs">
+
+                {/* Episode Content */}
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="font-medium">Episode {episode.episodeNumber}</span>
+                    <span>·</span>
+                    <span>{episode.law.year}</span>
+                    <span>·</span>
+                    <Badge variant="outline" className="text-xs font-normal">
                       {episode.law.category}
                     </Badge>
                   </div>
 
-                  <h3 className="font-semibold text-lg leading-tight line-clamp-2">
-                    {episode.headline}
-                  </h3>
+                  <Link
+                    href={`/podcast/${episode.id}`}
+                    className="block group/link"
+                  >
+                    <h3 className="font-semibold text-lg leading-snug group-hover/link:text-primary transition-colors line-clamp-1">
+                      {episode.headline}
+                    </h3>
+                  </Link>
 
                   <p className="text-sm text-muted-foreground line-clamp-2">
-                    {episode.title}
+                    {episode.description || episode.title}
                   </p>
+
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground pt-1">
+                    {episode.audioDuration && (
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatDuration(episode.audioDuration)}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {formatDate(episode.publishedAt || episode.createdAt)}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    {formatDuration(episode.audioDuration)}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" asChild>
-                      <a href={`/podcast/${episode.id}`}>View</a>
-                    </Button>
-                    {episode.audioUrl && (
-                      <Button size="sm" onClick={() => handlePlayEpisode(episode)}>
-                        {isEpisodePlaying(episode.id) ? (
-                          <>
-                            <Pause className="h-4 w-4 mr-1" />
-                            Pause
-                          </>
-                        ) : (
-                          <>
-                            <Play className="h-4 w-4 mr-1" />
-                            Play
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </div>
+                {/* View Arrow */}
+                <div className="flex-shrink-0 self-center">
+                  <Link
+                    href={`/podcast/${episode.id}`}
+                    className="p-2 rounded-full hover:bg-muted transition-colors"
+                  >
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  </Link>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* About Section */}
+      <div className="bg-muted/30 border-t">
+        <div className="max-w-6xl mx-auto px-6 md:px-8 py-12">
+          <div className="max-w-2xl">
+            <h3 className="text-lg font-semibold mb-3">About This Podcast</h3>
+            <p className="text-muted-foreground leading-relaxed mb-4">
+              Produced using AI voice generation technology, this series brings Hakivo's mission to life—making democracy understandable, one bill at a time.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              From the Antiquities Act to the Americans with Disabilities Act, each episode offers a 10-12 minute deep dive into the laws that shaped the American experience.
+            </p>
+          </div>
         </div>
       </div>
     </div>
