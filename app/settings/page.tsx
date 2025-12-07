@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getUserPreferences, updateUserProfile, updateUserPreferences } from '@/lib/api/backend';
 import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
+import { subscriptionApi, SubscriptionStatus } from '@/lib/raindrop-client';
 
 const POLICY_INTERESTS = [
   { name: 'Environment & Energy', icon: '🌱' },
@@ -113,6 +114,81 @@ function SettingsPageContent() {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [autoplay, setAutoplay] = useState(false);
+
+  // Subscription state
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  // Load subscription status
+  useEffect(() => {
+    const loadSubscription = async () => {
+      if (!user?.id) return;
+
+      setSubscriptionLoading(true);
+      try {
+        const status = await subscriptionApi.getStatus(user.id);
+        setSubscriptionStatus(status);
+      } catch (error) {
+        console.error('[Settings] Error loading subscription:', error);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+
+    loadSubscription();
+  }, [user?.id]);
+
+  // Handle upgrade to Pro
+  const handleUpgrade = async () => {
+    if (!user?.id) return;
+
+    setUpgradeLoading(true);
+    try {
+      // Get checkout URL from our API (server creates the Stripe session)
+      const checkoutInfo = await subscriptionApi.createCheckout(
+        user.id,
+        `${window.location.origin}/settings?tab=subscription&upgrade=success`,
+        `${window.location.origin}/settings?tab=subscription&upgrade=canceled`
+      );
+
+      // Redirect to Stripe Checkout
+      if (checkoutInfo.checkoutUrl) {
+        window.location.href = checkoutInfo.checkoutUrl;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch (error) {
+      console.error('[Settings] Upgrade error:', error);
+      alert('Failed to start checkout. Please try again.');
+      setUpgradeLoading(false);
+    }
+  };
+
+  // Handle manage subscription (billing portal)
+  const handleManageSubscription = async () => {
+    if (!user?.id) return;
+
+    setPortalLoading(true);
+    try {
+      const portalInfo = await subscriptionApi.createPortal(
+        user.id,
+        `${window.location.origin}/settings?tab=subscription`
+      );
+
+      // Redirect to Stripe billing portal
+      if (portalInfo.portalUrl) {
+        window.location.href = portalInfo.portalUrl;
+      } else {
+        throw new Error('No portal URL received');
+      }
+    } catch (error) {
+      console.error('[Settings] Portal error:', error);
+      alert('Failed to open billing portal. Please try again.');
+      setPortalLoading(false);
+    }
+  };
 
   // Load user data on mount
   useEffect(() => {
@@ -332,6 +408,21 @@ function SettingsPageContent() {
             {counts && counts.total > 0 && (
               <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded">
                 {counts.total}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('subscription')}
+            className={`px-3 py-2 text-sm font-medium rounded-md text-left ${
+              activeTab === 'subscription'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            Subscription
+            {subscriptionStatus?.subscription.isPro && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded">
+                Pro
               </span>
             )}
           </button>
@@ -841,6 +932,280 @@ function SettingsPageContent() {
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Subscription Tab */}
+          {activeTab === 'subscription' && (
+            <div className="space-y-6">
+              {/* Current Plan */}
+              <div className="rounded-lg border bg-card p-6 space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Your Subscription</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Manage your Hakivo Pro subscription
+                  </p>
+                </div>
+
+                {subscriptionLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : subscriptionStatus ? (
+                  <div className="space-y-6">
+                    {/* Plan Badge */}
+                    <div className="flex items-center gap-4">
+                      <div className={`px-4 py-2 rounded-lg ${
+                        subscriptionStatus.subscription.isPro
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        <span className="font-semibold text-lg">
+                          {subscriptionStatus.subscription.isPro ? 'Hakivo Pro' : 'Free Plan'}
+                        </span>
+                      </div>
+                      {subscriptionStatus.subscription.isPro && (
+                        <span className="text-sm text-muted-foreground">
+                          $12/month
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Pro Features List */}
+                    {!subscriptionStatus.subscription.isPro && (
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-3">
+                          Upgrade to Hakivo Pro - $12/month
+                        </h3>
+                        <ul className="space-y-2 text-sm">
+                          <li className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Unlimited audio briefs (vs 3/month)
+                          </li>
+                          <li className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Unlimited bill tracking (vs 3 bills)
+                          </li>
+                          <li className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Unlimited member following (vs 3 members)
+                          </li>
+                          <li className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Daily briefing emails
+                          </li>
+                          <li className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Real-time vote alerts
+                          </li>
+                        </ul>
+                        <button
+                          onClick={handleUpgrade}
+                          disabled={upgradeLoading}
+                          className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {upgradeLoading ? 'Processing...' : 'Upgrade to Pro'}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Pro Management */}
+                    {subscriptionStatus.subscription.isPro && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 border rounded-lg bg-green-50/50 dark:bg-green-900/10">
+                          <div>
+                            <p className="font-medium text-green-800 dark:text-green-200">
+                              Thank you for being a Pro member!
+                            </p>
+                            <p className="text-sm text-green-600 dark:text-green-400">
+                              You have access to all premium features.
+                            </p>
+                          </div>
+                          <button
+                            onClick={handleManageSubscription}
+                            disabled={portalLoading}
+                            className="px-4 py-2 border rounded-md hover:bg-accent text-sm disabled:opacity-50"
+                          >
+                            {portalLoading ? 'Loading...' : 'Manage Subscription'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    Unable to load subscription status. Please try again later.
+                  </div>
+                )}
+              </div>
+
+              {/* Usage Stats */}
+              {subscriptionStatus && (
+                <div className="rounded-lg border bg-card p-6 space-y-4">
+                  <h3 className="font-semibold">Your Usage</h3>
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    {/* Briefs Usage */}
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-sm text-muted-foreground mb-1">Audio Briefs</div>
+                      <div className="text-2xl font-bold">
+                        {subscriptionStatus.usage.briefs.limit === 'unlimited'
+                          ? 'Unlimited'
+                          : `${subscriptionStatus.usage.briefs.used} / ${subscriptionStatus.usage.briefs.limit}`
+                        }
+                      </div>
+                      {subscriptionStatus.usage.briefs.limit !== 'unlimited' && (
+                        <div className="mt-2">
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all"
+                              style={{
+                                width: `${Math.min(100, (subscriptionStatus.usage.briefs.used / (subscriptionStatus.usage.briefs.limit as number)) * 100)}%`
+                              }}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {subscriptionStatus.usage.briefs.remaining} remaining this month
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bills Usage */}
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-sm text-muted-foreground mb-1">Tracked Bills</div>
+                      <div className="text-2xl font-bold">
+                        {subscriptionStatus.usage.trackedBills.limit === 'unlimited'
+                          ? subscriptionStatus.usage.trackedBills.count
+                          : `${subscriptionStatus.usage.trackedBills.count} / ${subscriptionStatus.usage.trackedBills.limit}`
+                        }
+                      </div>
+                      {subscriptionStatus.usage.trackedBills.limit !== 'unlimited' && (
+                        <div className="mt-2">
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                subscriptionStatus.usage.trackedBills.canTrackMore ? 'bg-primary' : 'bg-destructive'
+                              }`}
+                              style={{
+                                width: `${Math.min(100, (subscriptionStatus.usage.trackedBills.count / (subscriptionStatus.usage.trackedBills.limit as number)) * 100)}%`
+                              }}
+                            />
+                          </div>
+                          {!subscriptionStatus.usage.trackedBills.canTrackMore && (
+                            <p className="text-xs text-destructive mt-1">
+                              Limit reached - upgrade to track more
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Members Usage */}
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-sm text-muted-foreground mb-1">Followed Members</div>
+                      <div className="text-2xl font-bold">
+                        {subscriptionStatus.usage.followedMembers.limit === 'unlimited'
+                          ? subscriptionStatus.usage.followedMembers.count
+                          : `${subscriptionStatus.usage.followedMembers.count} / ${subscriptionStatus.usage.followedMembers.limit}`
+                        }
+                      </div>
+                      {subscriptionStatus.usage.followedMembers.limit !== 'unlimited' && (
+                        <div className="mt-2">
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                subscriptionStatus.usage.followedMembers.canFollowMore ? 'bg-primary' : 'bg-destructive'
+                              }`}
+                              style={{
+                                width: `${Math.min(100, (subscriptionStatus.usage.followedMembers.count / (subscriptionStatus.usage.followedMembers.limit as number)) * 100)}%`
+                              }}
+                            />
+                          </div>
+                          {!subscriptionStatus.usage.followedMembers.canFollowMore && (
+                            <p className="text-xs text-destructive mt-1">
+                              Limit reached - upgrade to follow more
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Features Status */}
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="text-sm font-medium mb-3">Premium Features</h4>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div className="flex items-center gap-2">
+                        {subscriptionStatus.features.dailyBriefing ? (
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        <span className={subscriptionStatus.features.dailyBriefing ? '' : 'text-muted-foreground'}>
+                          Daily Briefing Emails
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {subscriptionStatus.features.realtimeAlerts ? (
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        <span className={subscriptionStatus.features.realtimeAlerts ? '' : 'text-muted-foreground'}>
+                          Real-time Vote Alerts
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {subscriptionStatus.features.audioDigests ? (
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        <span className={subscriptionStatus.features.audioDigests ? '' : 'text-muted-foreground'}>
+                          Audio Digests
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {subscriptionStatus.features.unlimitedTracking ? (
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        <span className={subscriptionStatus.features.unlimitedTracking ? '' : 'text-muted-foreground'}>
+                          Unlimited Tracking
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

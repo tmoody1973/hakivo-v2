@@ -360,28 +360,13 @@ export interface SubscriptionStatus {
 
 export interface CheckoutInfo {
   success: boolean;
-  checkout: {
-    priceId: string;
-    amount: number;
-    currency: string;
-    interval: string;
-    metadata: {
-      userId: string;
-      email: string;
-    };
-  };
-  requiresFrontendCheckout: boolean;
-  message: string;
+  checkoutUrl: string;
+  sessionId: string;
 }
 
 export interface PortalInfo {
   success: boolean;
-  portal: {
-    customerId: string;
-    returnUrl: string;
-  };
-  requiresFrontendPortal: boolean;
-  message: string;
+  portalUrl: string;
 }
 
 export interface BriefUsageResult {

@@ -177,37 +177,59 @@ app.post('/api/subscription/create-checkout', async (c) => {
       return c.json({ error: 'User already has an active subscription' }, 400);
     }
 
-    // Initialize Stripe (using Raindrop's built-in payment context if available)
-    // For now, we'll return a payment URL that the frontend can redirect to
-    // The actual Stripe checkout will be handled by Raindrop's payment system
-
-    // Build checkout URL with metadata
-    const checkoutParams = new URLSearchParams({
-      userId,
-      email: user.email as string,
-      priceId: HAKIVO_PRO_PRICE_ID,
-      successUrl: successUrl || 'https://hakivo-v2.netlify.app/dashboard?upgrade=success',
-      cancelUrl: cancelUrl || 'https://hakivo-v2.netlify.app/pricing?upgrade=canceled'
+    // Initialize Stripe
+    const stripe = new Stripe(c.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2025-11-17.clover',
     });
 
-    // Return checkout info
-    // The frontend will use this to redirect to Stripe checkout
+    // Create or retrieve Stripe customer
+    let customerId = user.stripe_customer_id as string | null;
+
+    if (!customerId) {
+      // Create new Stripe customer
+      const customer = await stripe.customers.create({
+        email: user.email as string,
+        metadata: {
+          userId: userId,
+        },
+      });
+      customerId = customer.id;
+
+      // Save customer ID to database
+      await db
+        .prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?')
+        .bind(customerId, userId)
+        .run();
+    }
+
+    // Create Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: HAKIVO_PRO_PRICE_ID,
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url: successUrl || 'https://hakivo-v2.netlify.app/settings?tab=subscription&upgrade=success',
+      cancel_url: cancelUrl || 'https://hakivo-v2.netlify.app/settings?tab=subscription&upgrade=canceled',
+      metadata: {
+        userId: userId,
+      },
+      subscription_data: {
+        metadata: {
+          userId: userId,
+        },
+      },
+    });
+
+    // Return checkout URL
     return c.json({
       success: true,
-      checkout: {
-        priceId: HAKIVO_PRO_PRICE_ID,
-        amount: 1200, // $12.00 in cents
-        currency: 'usd',
-        interval: 'month',
-        metadata: {
-          userId,
-          email: user.email
-        }
-      },
-      // If using Raindrop's built-in payment, this would be handled differently
-      // For now, we indicate that checkout needs to be completed via frontend
-      requiresFrontendCheckout: true,
-      message: 'Use Stripe.js on frontend to create checkout session with this configuration'
+      checkoutUrl: session.url,
+      sessionId: session.id,
     });
   } catch (error) {
     console.error('[Subscription API] Error creating checkout:', error);
@@ -247,16 +269,20 @@ app.post('/api/subscription/create-portal', async (c) => {
       return c.json({ error: 'User has no Stripe customer account' }, 400);
     }
 
-    // Return portal configuration
-    // The actual portal session would be created via Stripe API
+    // Initialize Stripe
+    const stripe = new Stripe(c.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2025-11-17.clover',
+    });
+
+    // Create billing portal session
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripe_customer_id as string,
+      return_url: returnUrl || 'https://hakivo-v2.netlify.app/settings?tab=subscription',
+    });
+
     return c.json({
       success: true,
-      portal: {
-        customerId: user.stripe_customer_id,
-        returnUrl: returnUrl || 'https://hakivo-v2.netlify.app/settings/subscription'
-      },
-      requiresFrontendPortal: true,
-      message: 'Use Stripe.js on frontend to create portal session with this customer ID'
+      portalUrl: session.url,
     });
   } catch (error) {
     console.error('[Subscription API] Error creating portal:', error);
