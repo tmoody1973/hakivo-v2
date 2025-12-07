@@ -3,12 +3,72 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { Play, Pause, Download, Loader2, ArrowLeft, Calendar, Clock, FileText, Scale, User } from "lucide-react"
+import { Play, Pause, Download, Loader2, ArrowLeft, Calendar, Clock, FileText, Scale, User, Newspaper } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAudioPlayer, type AudioTrack } from "@/lib/audio/audio-player-context"
+import ReactMarkdown, { Components } from "react-markdown"
+import remarkGfm from "remark-gfm"
+
+// Custom components for ReactMarkdown - styled for podcast articles
+const markdownComponents: Components = {
+  // Enhanced paragraph styling - high contrast for accessibility
+  p: ({ children, ...props }) => (
+    <p className="mb-6 leading-8 text-foreground" {...props}>
+      {children}
+    </p>
+  ),
+  // Enhanced heading styles
+  h2: ({ children, ...props }) => (
+    <h2
+      className="text-2xl font-serif font-bold mt-12 mb-6 pb-3 border-b border-border/50 text-foreground tracking-tight"
+      {...props}
+    >
+      {children}
+    </h2>
+  ),
+  h3: ({ children, ...props }) => (
+    <h3
+      className="text-xl font-serif font-semibold mt-10 mb-4 text-foreground tracking-tight"
+      {...props}
+    >
+      {children}
+    </h3>
+  ),
+  // Style strong/bold text
+  strong: ({ children, ...props }) => (
+    <strong className="font-semibold text-foreground" {...props}>
+      {children}
+    </strong>
+  ),
+  // Style lists - high contrast for accessibility
+  ul: ({ children, ...props }) => (
+    <ul className="my-6 ml-6 list-disc space-y-2 text-foreground" {...props}>
+      {children}
+    </ul>
+  ),
+  ol: ({ children, ...props }) => (
+    <ol className="my-6 ml-6 list-decimal space-y-2 text-foreground" {...props}>
+      {children}
+    </ol>
+  ),
+  li: ({ children, ...props }) => (
+    <li className="leading-7" {...props}>
+      {children}
+    </li>
+  ),
+  // Style blockquotes - high contrast for accessibility
+  blockquote: ({ children, ...props }) => (
+    <blockquote
+      className="my-6 border-l-4 border-primary/50 bg-muted/30 py-3 px-5 rounded-r-lg text-foreground"
+      {...props}
+    >
+      {children}
+    </blockquote>
+  ),
+};
 
 interface PodcastEpisode {
   id: string;
@@ -17,6 +77,7 @@ interface PodcastEpisode {
   title: string;
   headline: string;
   description: string | null;
+  content: string | null;  // Expanded written article
   script: string | null;
   audioUrl: string | null;
   audioDuration: number | null;
@@ -248,8 +309,12 @@ export default function PodcastDetailPage() {
           </div>
 
           {/* Content Tabs */}
-          <Tabs defaultValue="about" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <Tabs defaultValue={episode.content ? "article" : "about"} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-4 max-w-lg">
+              <TabsTrigger value="article" className="text-sm">
+                <Newspaper className="mr-2 h-4 w-4" />
+                Article
+              </TabsTrigger>
               <TabsTrigger value="about" className="text-sm">
                 <Scale className="mr-2 h-4 w-4" />
                 About
@@ -263,6 +328,35 @@ export default function PodcastDetailPage() {
                 Transcript
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="article" className="mt-0">
+              {episode.content ? (
+                <article className="max-w-none">
+                  {/* Lead paragraph styling for first paragraph */}
+                  <style jsx global>{`
+                    .podcast-article > p:first-of-type {
+                      font-size: 1.125rem;
+                      line-height: 2;
+                      color: hsl(var(--foreground));
+                    }
+                  `}</style>
+                  <div className="podcast-article">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={markdownComponents}
+                    >
+                      {episode.content}
+                    </ReactMarkdown>
+                  </div>
+                </article>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Newspaper className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>Written article not available for this episode yet.</p>
+                  <p className="text-sm mt-2">Check out the About tab for law details.</p>
+                </div>
+              )}
+            </TabsContent>
 
             <TabsContent value="about" className="mt-0 space-y-6">
               {/* Law Info Card */}

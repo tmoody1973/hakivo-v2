@@ -50,16 +50,10 @@ export default class extends Task<Env> {
       }
 
       // Trigger the podcast-generator service to generate next episode
+      // Using direct method call per Raindrop service-to-service documentation
       console.log('🚀 [PODCAST-SCHEDULER] Triggering podcast-generator service...');
 
-      const response = await this.env.PODCAST_GENERATOR.fetch(
-        new Request('http://internal/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        })
-      );
-
-      const result = await response.json() as {
+      const result = await this.env.PODCAST_GENERATOR.generate() as {
         success: boolean;
         episodeId?: string;
         headline?: string;

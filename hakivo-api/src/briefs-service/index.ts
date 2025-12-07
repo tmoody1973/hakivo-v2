@@ -809,94 +809,9 @@ app.get('/podcast', async (c) => {
 });
 
 /**
- * GET /podcast/:episodeId
- * Get single podcast episode with full details (public - no auth required)
- */
-app.get('/podcast/:episodeId', async (c) => {
-  try {
-    const db = c.env.APP_DB;
-    const episodeId = c.req.param('episodeId');
-
-    // Get episode with law data
-    const episode = await db
-      .prepare(`
-        SELECT
-          pe.*,
-          hl.id as law_id,
-          hl.name as law_name,
-          hl.year as law_year,
-          hl.public_law as law_public_law,
-          hl.president_signed as law_president_signed,
-          hl.category as law_category,
-          hl.description as law_description,
-          hl.key_provisions as law_key_provisions,
-          hl.historical_impact as law_historical_impact
-        FROM podcast_episodes pe
-        JOIN historic_laws hl ON pe.law_id = hl.id
-        WHERE pe.id = ?
-      `)
-      .bind(episodeId)
-      .first();
-
-    if (!episode) {
-      return c.json({ error: 'Episode not found' }, 404);
-    }
-
-    // Parse key provisions from JSON
-    let keyProvisions: string[] = [];
-    try {
-      if (episode.law_key_provisions) {
-        keyProvisions = JSON.parse(episode.law_key_provisions as string);
-      }
-    } catch {
-      keyProvisions = [episode.law_key_provisions as string];
-    }
-
-    // Format response
-    const response = {
-      id: episode.id,
-      lawId: episode.law_id,
-      episodeNumber: episode.episode_number,
-      title: episode.title,
-      headline: episode.headline,
-      description: episode.description,
-      script: episode.script,
-      audioUrl: episode.audio_url,
-      audioDuration: episode.audio_duration,
-      thumbnailUrl: episode.thumbnail_url,
-      characterCount: episode.character_count,
-      status: episode.status,
-      createdAt: episode.created_at,
-      publishedAt: episode.published_at,
-      law: {
-        id: episode.law_id,
-        name: episode.law_name,
-        year: episode.law_year,
-        publicLaw: episode.law_public_law,
-        presidentSigned: episode.law_president_signed,
-        category: episode.law_category,
-        description: episode.law_description,
-        keyProvisions,
-        historicalImpact: episode.law_historical_impact
-      }
-    };
-
-    return c.json({
-      success: true,
-      episode: response
-    });
-  } catch (error) {
-    console.error('Get podcast episode error:', error);
-    return c.json({
-      error: 'Failed to get podcast episode',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-
-/**
  * GET /podcast/stats
  * Get podcast series statistics (public)
+ * NOTE: Must be defined BEFORE /podcast/:episodeId to avoid route conflicts
  */
 app.get('/podcast/stats', async (c) => {
   try {
@@ -933,52 +848,9 @@ app.get('/podcast/stats', async (c) => {
 });
 
 /**
- * POST /podcast/:episodeId/play
- * Record a play (public - for analytics)
- */
-app.post('/podcast/:episodeId/play', async (c) => {
-  try {
-    const db = c.env.APP_DB;
-    const episodeId = c.req.param('episodeId');
-
-    // Record play in podcast_plays table
-    const playId = crypto.randomUUID();
-    const now = Date.now();
-
-    // Get user ID from auth if available (optional)
-    let userId: string | null = null;
-    const authHeader = c.req.header('Authorization');
-    if (authHeader) {
-      const auth = await verifyAuth(authHeader, c.env.JWT_SECRET);
-      if (auth) {
-        userId = auth.userId;
-      }
-    }
-
-    await db
-      .prepare(`
-        INSERT INTO podcast_plays (id, episode_id, user_id, played_at)
-        VALUES (?, ?, ?, ?)
-      `)
-      .bind(playId, episodeId, userId, now)
-      .run();
-
-    return c.json({
-      success: true,
-      message: 'Play recorded'
-    });
-  } catch (error) {
-    console.error('Record podcast play error:', error);
-    return c.json({
-      error: 'Failed to record play',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, 500);
-  }
-});
-
-/**
  * GET /podcast/latest
  * Get the most recent completed episode (public)
+ * NOTE: Must be defined BEFORE /podcast/:episodeId to avoid route conflicts
  */
 app.get('/podcast/latest', async (c) => {
   try {
@@ -1033,6 +905,196 @@ app.get('/podcast/latest', async (c) => {
     console.error('Get latest podcast episode error:', error);
     return c.json({
       error: 'Failed to get latest episode',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /podcast/test-generate
+ * Test endpoint to trigger podcast generation for a specific law (no auth - dev only)
+ * NOTE: Must be defined BEFORE /podcast/:episodeId to avoid route conflicts
+ */
+app.post('/podcast/test-generate', async (c) => {
+  try {
+    // Use direct method call per Raindrop service-to-service documentation
+    const result = await c.env.PODCAST_GENERATOR.generate() as {
+      success: boolean;
+      episodeId?: string;
+      headline?: string;
+      error?: string;
+    };
+
+    return c.json({
+      success: true,
+      message: 'Podcast generation triggered',
+      result
+    });
+  } catch (error) {
+    console.error('Test podcast generate error:', error);
+    return c.json({
+      error: 'Failed to trigger podcast generation',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /podcast/test-thumbnail
+ * Test endpoint to generate thumbnail for an existing episode (no auth - dev only)
+ * NOTE: Must be defined BEFORE /podcast/:episodeId to avoid route conflicts
+ */
+app.post('/podcast/test-thumbnail', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { episodeId } = body;
+
+    // Use direct method call per Raindrop service-to-service documentation
+    const result = await c.env.PODCAST_GENERATOR.testThumbnail(episodeId) as {
+      success: boolean;
+      episodeId?: string;
+      lawName?: string;
+      thumbnailUrl?: string | null;
+      error?: string;
+    };
+
+    return c.json(result);
+  } catch (error) {
+    console.error('Test podcast thumbnail error:', error);
+    return c.json({
+      error: 'Failed to test thumbnail generation',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /podcast/:episodeId
+ * Get single podcast episode with full details (public - no auth required)
+ * NOTE: Must be defined AFTER specific routes like /stats, /latest, /test-generate
+ */
+app.get('/podcast/:episodeId', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const episodeId = c.req.param('episodeId');
+
+    // Get episode with law data
+    const episode = await db
+      .prepare(`
+        SELECT
+          pe.*,
+          hl.id as law_id,
+          hl.name as law_name,
+          hl.year as law_year,
+          hl.public_law as law_public_law,
+          hl.president_signed as law_president_signed,
+          hl.category as law_category,
+          hl.description as law_description,
+          hl.key_provisions as law_key_provisions,
+          hl.historical_impact as law_historical_impact
+        FROM podcast_episodes pe
+        JOIN historic_laws hl ON pe.law_id = hl.id
+        WHERE pe.id = ?
+      `)
+      .bind(episodeId)
+      .first();
+
+    if (!episode) {
+      return c.json({ error: 'Episode not found' }, 404);
+    }
+
+    // Parse key provisions from JSON
+    let keyProvisions: string[] = [];
+    try {
+      if (episode.law_key_provisions) {
+        keyProvisions = JSON.parse(episode.law_key_provisions as string);
+      }
+    } catch {
+      keyProvisions = [episode.law_key_provisions as string];
+    }
+
+    // Format response
+    const response = {
+      id: episode.id,
+      lawId: episode.law_id,
+      episodeNumber: episode.episode_number,
+      title: episode.title,
+      headline: episode.headline,
+      description: episode.description,
+      content: episode.content,  // Expanded written article content
+      script: episode.script,
+      audioUrl: episode.audio_url,
+      audioDuration: episode.audio_duration,
+      thumbnailUrl: episode.thumbnail_url,
+      characterCount: episode.character_count,
+      status: episode.status,
+      createdAt: episode.created_at,
+      publishedAt: episode.published_at,
+      law: {
+        id: episode.law_id,
+        name: episode.law_name,
+        year: episode.law_year,
+        publicLaw: episode.law_public_law,
+        presidentSigned: episode.law_president_signed,
+        category: episode.law_category,
+        description: episode.law_description,
+        keyProvisions,
+        historicalImpact: episode.law_historical_impact
+      }
+    };
+
+    return c.json({
+      success: true,
+      episode: response
+    });
+  } catch (error) {
+    console.error('Get podcast episode error:', error);
+    return c.json({
+      error: 'Failed to get podcast episode',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /podcast/:episodeId/play
+ * Record a play (public - for analytics)
+ */
+app.post('/podcast/:episodeId/play', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const episodeId = c.req.param('episodeId');
+
+    // Record play in podcast_plays table
+    const playId = crypto.randomUUID();
+    const now = Date.now();
+
+    // Get user ID from auth if available (optional)
+    let userId: string | null = null;
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+      const auth = await verifyAuth(authHeader, c.env.JWT_SECRET);
+      if (auth) {
+        userId = auth.userId;
+      }
+    }
+
+    await db
+      .prepare(`
+        INSERT INTO podcast_plays (id, episode_id, user_id, played_at)
+        VALUES (?, ?, ?, ?)
+      `)
+      .bind(playId, episodeId, userId, now)
+      .run();
+
+    return c.json({
+      success: true,
+      message: 'Play recorded'
+    });
+  } catch (error) {
+    console.error('Record podcast play error:', error);
+    return c.json({
+      error: 'Failed to record play',
       message: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

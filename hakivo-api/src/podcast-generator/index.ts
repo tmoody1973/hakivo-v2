@@ -390,18 +390,24 @@ export default class extends Service<Env> {
       console.log(`[PODCAST-GEN] Script generated: ${scriptResult.script.length} chars`);
       console.log(`[PODCAST-GEN] Headline: ${scriptResult.headline}`);
 
+      // Generate expanded article content for the Article tab
+      console.log(`[PODCAST-GEN] Generating article content...`);
+      const articleContent = await this.generateArticleContent(law);
+      console.log(`[PODCAST-GEN] Article content: ${articleContent.length} chars`);
+
       // Generate thumbnail
       console.log(`[PODCAST-GEN] Generating thumbnail...`);
       const thumbnailUrl = await this.generateThumbnail(law, episodeId);
       console.log(`[PODCAST-GEN] Thumbnail: ${thumbnailUrl || 'failed'}`);
 
-      // Update episode record with script (audio will be processed separately)
+      // Update episode record with script and article content (audio will be processed separately)
       await this.env.APP_DB
         .prepare(`
           UPDATE podcast_episodes
           SET headline = ?,
               description = ?,
               script = ?,
+              content = ?,
               thumbnail_url = ?,
               character_count = ?,
               status = ?,
@@ -412,6 +418,7 @@ export default class extends Service<Env> {
           scriptResult.headline,
           scriptResult.description,
           scriptResult.script,
+          articleContent,
           thumbnailUrl,
           scriptResult.script.length,
           'script_ready', // Ready for audio processing
@@ -451,6 +458,74 @@ export default class extends Service<Env> {
         error: errorMessage
       };
     }
+  }
+
+  /**
+   * Generate expanded written article about the law for the Article tab
+   * This is the "written detail" equivalent to what daily briefs have
+   */
+  private async generateArticleContent(law: HistoricLaw): Promise<string> {
+    // Parse key provisions
+    let keyProvisions: string[];
+    try {
+      keyProvisions = JSON.parse(law.key_provisions);
+    } catch {
+      keyProvisions = [law.key_provisions];
+    }
+
+    const decade = Math.floor(law.year / 10) * 10;
+    const decadeContext = this.getDecadeContext(decade);
+
+    const systemPrompt = `You are writing an informative, engaging article for a civics education platform about a historic American law.
+
+Write in a clear, accessible style similar to high-quality journalism or documentary narration. The audience is curious citizens who want to understand American history and government.
+
+=== VERIFIED LAW DATA (THIS IS YOUR ONLY SOURCE OF TRUTH) ===
+Name: ${law.name}
+Year: ${law.year}
+Public Law: ${law.public_law}
+President Who Signed: ${law.president_signed}
+Category: ${law.category}
+Description: ${law.description}
+Key Provisions:
+${keyProvisions.map(p => `  • ${p}`).join('\n')}
+Historical Impact: ${law.historical_impact}
+
+=== HISTORICAL CONTEXT FOR THE ${decade}s ===
+${decadeContext}
+
+FORBIDDEN (THESE WILL CAUSE FACTUAL ERRORS):
+- Making up specific vote counts, dates, or statistics not in the data above
+- Inventing quotes from historical figures
+- Adding "facts" about this law from your training data
+- Making up names of legislators, activists, or other people`;
+
+    const userPrompt = `Write a 600-900 word article about the ${law.name} (${law.year}).
+
+Structure the article with these sections (use section headers):
+
+## The Problem It Solved
+Explain what was wrong in America before this law. What problems or injustices prompted action?
+
+## What the Law Did
+Explain the key provisions in plain language. What did this law actually change?
+
+## Historical Impact
+How did this law shape America? What changed because of it?
+
+## Legacy Today
+Is this law still in effect? Has it been modified? How does it affect Americans today?
+
+Write in an engaging, narrative style. Make history come alive while staying strictly factual based on the provided data.`;
+
+    const result = await this.env.CLAUDE_CLIENT.generateCompletion(
+      systemPrompt,
+      userPrompt,
+      2048,  // max tokens
+      0.6    // temperature - informative but engaging
+    );
+
+    return result.content || '';
   }
 
   /**

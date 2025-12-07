@@ -248,7 +248,7 @@ application "hakivo-new" {
   // Podcast generator scheduler - generates next "100 Laws" episode nightly
   task "podcast-scheduler" {
     type = "cron"
-    cron = "0 2 * * *"  // 2 AM daily
+    cron = "0 2 * * *"  // Daily at 2 AM UTC
   }
 
   // Admin utilities
