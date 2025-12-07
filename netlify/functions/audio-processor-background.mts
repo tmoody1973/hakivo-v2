@@ -1,8 +1,8 @@
 /**
  * Netlify Background Function for Audio Processing
  *
- * Polls database for briefs with status='script_ready' and processes
- * audio generation using Gemini TTS, then uploads directly to Vultr.
+ * Polls database for briefs AND podcast episodes with status='script_ready'
+ * and processes audio generation using Gemini TTS, then uploads to Vultr.
  *
  * Background functions get 15-minute timeout (vs 10s for regular functions).
  * This function polls the database instead of using POST body since
@@ -23,10 +23,23 @@ const VOICE_PAIRS = [
   { hostA: 'Aoede', hostB: 'Fenrir', names: 'Susan & Chris' },
 ];
 
+// Fixed voice pair for podcast episodes (consistent branding)
+const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David' };
+
 const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
 
 // Raindrop db-admin URL for database queries
 const DB_ADMIN_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+
+// Content types for audio processing
+type ContentType = 'brief' | 'podcast';
+
+interface AudioContent {
+  id: string;
+  script: string;
+  status: string;
+  type: ContentType;
+}
 
 interface Brief {
   id: string;
@@ -71,6 +84,35 @@ function convertToDialoguePrompt(script: string, voiceA: string, voiceB: string)
 }
 
 /**
+ * Convert podcast script format (SARAH:/DAVID:) to Gemini's named speaker format
+ * Podcast scripts use character names instead of HOST A/HOST B
+ */
+function convertPodcastToDialoguePrompt(script: string, voiceA: string, voiceB: string): string {
+  const lines = script.split('\n');
+  const convertedLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Match SARAH: or DAVID: at the start (with optional brackets for stage directions)
+    if (trimmed.startsWith('SARAH:')) {
+      // Remove stage directions like [with dramatic tension] for cleaner TTS
+      const content = trimmed.substring(6).trim().replace(/^\[[^\]]*\]\s*/, '');
+      convertedLines.push(`${voiceA}: ${content}`);
+    } else if (trimmed.startsWith('DAVID:')) {
+      const content = trimmed.substring(6).trim().replace(/^\[[^\]]*\]\s*/, '');
+      convertedLines.push(`${voiceB}: ${content}`);
+    } else {
+      // Skip non-dialogue lines (stage directions, etc.)
+      continue;
+    }
+  }
+
+  return convertedLines.join('\n');
+}
+
+/**
  * Query database for briefs ready for audio processing
  */
 async function getBriefsReadyForAudio(): Promise<Brief[]> {
@@ -89,6 +131,27 @@ async function getBriefsReadyForAudio(): Promise<Brief[]> {
 
   const result = await response.json() as { results?: Brief[] };
   return result.results || [];
+}
+
+/**
+ * Query database for podcast episodes ready for audio processing
+ */
+async function getPodcastEpisodesReadyForAudio(): Promise<AudioContent[]> {
+  const query = `SELECT id, script, status FROM podcast_episodes WHERE status = 'script_ready' ORDER BY episode_number ASC LIMIT 1`;
+
+  const response = await fetch(`${DB_ADMIN_URL}/api/database/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) {
+    console.error(`[AUDIO] Failed to query podcast episodes: ${response.status}`);
+    return [];
+  }
+
+  const result = await response.json() as { results?: Brief[] };
+  return (result.results || []).map(ep => ({ ...ep, type: 'podcast' as ContentType }));
 }
 
 /**
@@ -112,6 +175,30 @@ async function updateBriefStatus(
 
   if (!response.ok) {
     console.error(`[AUDIO] Failed to update brief status: ${response.status}`);
+  }
+}
+
+/**
+ * Update podcast episode status in database
+ */
+async function updatePodcastStatus(
+  episodeId: string,
+  status: string,
+  audioUrl: string | null
+): Promise<void> {
+  const timestamp = Date.now();
+  const query = audioUrl
+    ? `UPDATE podcast_episodes SET status = '${status}', audio_url = '${audioUrl}', updated_at = ${timestamp} WHERE id = '${episodeId}'`
+    : `UPDATE podcast_episodes SET status = '${status}', updated_at = ${timestamp} WHERE id = '${episodeId}'`;
+
+  const response = await fetch(`${DB_ADMIN_URL}/api/database/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) {
+    console.error(`[AUDIO] Failed to update podcast episode status: ${response.status}`);
   }
 }
 
@@ -166,24 +253,31 @@ function encodePcmToMp3(pcmBuffer: Buffer, sampleRate: number = 24000, channels:
 /**
  * Generate date-based file key
  * Format: audio/YYYY/MM/DD/brief-{briefId}-{timestamp}.mp3
+ * For podcasts: podcast/100-laws/{episodeId}-{timestamp}.mp3
  */
-function generateFileKey(briefId: string): string {
+function generateFileKey(id: string, type: ContentType = 'brief'): string {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   const ts = date.getTime();
 
-  return `audio/${year}/${month}/${day}/brief-${briefId}-${ts}.mp3`;
+  if (type === 'podcast') {
+    // Podcast episodes get their own folder structure
+    return `podcast/100-laws/${id}-${ts}.mp3`;
+  }
+
+  return `audio/${year}/${month}/${day}/brief-${id}-${ts}.mp3`;
 }
 
 /**
  * Upload audio directly to Vultr S3-compatible storage using AWS SDK
  */
 async function uploadAudio(
-  briefId: string,
+  id: string,
   audioBuffer: Uint8Array,
-  mimeType: string
+  mimeType: string,
+  type: ContentType = 'brief'
 ): Promise<string> {
   const endpoint = Netlify.env.get('VULTR_ENDPOINT') || 'sjc1.vultrobjects.com';
   const accessKeyId = Netlify.env.get('VULTR_ACCESS_KEY');
@@ -206,7 +300,7 @@ async function uploadAudio(
     },
   });
 
-  const key = generateFileKey(briefId);
+  const key = generateFileKey(id, type);
 
   console.log(`[AUDIO] Uploading to Vultr: bucket=${bucketName}, key=${key}, size=${audioBuffer.length} bytes`);
 
@@ -217,7 +311,8 @@ async function uploadAudio(
     ContentType: mimeType,
     CacheControl: 'public, max-age=31536000',
     Metadata: {
-      briefId,
+      contentId: id,
+      contentType: type,
       generatedAt: new Date().toISOString(),
     },
   }));
@@ -338,11 +433,124 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 }
 
 /**
- * Background function handler - polls database for briefs to process
+ * Process a single podcast episode's audio generation
+ */
+async function processPodcastEpisode(episode: AudioContent, geminiApiKey: string): Promise<void> {
+  console.log(`[AUDIO] Processing podcast episode: ${episode.id}`);
+  console.log(`[AUDIO] Script length: ${episode.script.length} characters`);
+
+  // Mark as processing to prevent duplicate processing
+  await updatePodcastStatus(episode.id, 'audio_processing', null);
+
+  try {
+    // Use fixed voice pair for consistent podcast branding
+    const voicePair = PODCAST_VOICE_PAIR;
+    console.log(`[AUDIO] Using podcast voices: ${voicePair.names}`);
+
+    // Convert podcast script to dialogue format (SARAH:/DAVID: -> Kore:/Puck:)
+    const dialoguePrompt = convertPodcastToDialoguePrompt(episode.script, voicePair.hostA, voicePair.hostB);
+    console.log(`[AUDIO] Dialogue prompt preview: ${dialoguePrompt.substring(0, 200)}...`);
+
+    // Call Gemini TTS API
+    console.log('[AUDIO] Calling Gemini TTS API for podcast...');
+    const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: dialoguePrompt }]
+        }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            multiSpeakerVoiceConfig: {
+              speakerVoiceConfigs: [
+                {
+                  speaker: voicePair.hostA,
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: voicePair.hostA }
+                  }
+                },
+                {
+                  speaker: voicePair.hostB,
+                  voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: voicePair.hostB }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      })
+    });
+
+    if (!ttsResponse.ok) {
+      const errorText = await ttsResponse.text();
+      console.error(`[AUDIO] Gemini TTS error ${ttsResponse.status}: ${errorText}`);
+      await updatePodcastStatus(episode.id, 'audio_failed', null);
+      return;
+    }
+
+    const ttsResult = await ttsResponse.json() as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            inlineData?: {
+              mimeType: string;
+              data: string;
+            }
+          }>
+        }
+      }>
+    };
+
+    // Extract audio data
+    const audioData = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    if (!audioData) {
+      console.error('[AUDIO] No audio data in Gemini response');
+      await updatePodcastStatus(episode.id, 'audio_failed', null);
+      return;
+    }
+
+    console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
+
+    // Convert base64 to buffer (raw PCM data - 16-bit signed, 24kHz, mono)
+    const pcmBuffer = Buffer.from(audioData.data, 'base64');
+    console.log(`[AUDIO] Raw PCM size: ${pcmBuffer.length} bytes`);
+
+    // Convert PCM to MP3 using lamejs (pure JavaScript - no native dependencies!)
+    console.log('[AUDIO] Converting PCM to MP3 using lamejs...');
+    const mp3Buffer = encodePcmToMp3(pcmBuffer, 24000, 1);
+
+    // Upload to Vultr storage directly
+    console.log('[AUDIO] Uploading podcast MP3 to Vultr storage...');
+    const audioUrl = await uploadAudio(episode.id, mp3Buffer, 'audio/mpeg', 'podcast');
+
+    console.log(`[AUDIO] Uploaded podcast to: ${audioUrl}`);
+
+    // Update episode with completed status and audio URL
+    await updatePodcastStatus(episode.id, 'completed', audioUrl);
+
+    console.log(`[AUDIO] Successfully processed podcast episode ${episode.id}`);
+
+  } catch (error) {
+    console.error('[AUDIO] Podcast audio generation error:', error);
+    await updatePodcastStatus(episode.id, 'audio_failed', null);
+  }
+}
+
+/**
+ * Background function handler - polls database for briefs AND podcast episodes
  *
- * This is a BACKGROUND FUNCTION (15 min timeout) that polls for briefs.
+ * This is a BACKGROUND FUNCTION (15 min timeout) that polls for content.
  * It must be triggered via HTTP call, but ignores the request body
  * (since background functions have empty POST bodies).
+ *
+ * Processes both:
+ * - Daily briefs from `briefs` table (HOST A:/HOST B: format)
+ * - Podcast episodes from `podcast_episodes` table (SARAH:/DAVID: format)
  */
 export default async (_req: Request, _context: Context) => {
   console.log('[AUDIO] Background function triggered');
@@ -357,16 +565,27 @@ export default async (_req: Request, _context: Context) => {
   // Query for briefs ready for audio
   const briefs = await getBriefsReadyForAudio();
 
-  if (briefs.length === 0) {
+  if (briefs.length > 0) {
+    console.log(`[AUDIO] Found ${briefs.length} brief(s) ready for audio`);
+    // Process one brief at a time
+    for (const brief of briefs) {
+      await processBrief(brief, geminiApiKey);
+    }
+  } else {
     console.log('[AUDIO] No briefs ready for audio processing');
-    return;
   }
 
-  console.log(`[AUDIO] Found ${briefs.length} brief(s) ready for audio`);
+  // Query for podcast episodes ready for audio
+  const episodes = await getPodcastEpisodesReadyForAudio();
 
-  // Process one brief at a time
-  for (const brief of briefs) {
-    await processBrief(brief, geminiApiKey);
+  if (episodes.length > 0) {
+    console.log(`[AUDIO] Found ${episodes.length} podcast episode(s) ready for audio`);
+    // Process one episode at a time
+    for (const episode of episodes) {
+      await processPodcastEpisode(episode, geminiApiKey);
+    }
+  } else {
+    console.log('[AUDIO] No podcast episodes ready for audio processing');
   }
 
   console.log('[AUDIO] Background function complete');
