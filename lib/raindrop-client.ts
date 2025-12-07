@@ -35,6 +35,8 @@ const RAINDROP_SERVICES = {
 type ServiceName = keyof typeof RAINDROP_SERVICES;
 
 // Generic fetch wrapper with auth
+// Note: Only sets Content-Type for requests with body to avoid CORS preflight
+// Cloudflare/Raindrop blocks OPTIONS requests, so we use simple requests where possible
 async function fetchFromService<T>(
   service: ServiceName,
   endpoint: string,
@@ -42,10 +44,16 @@ async function fetchFromService<T>(
   token?: string
 ): Promise<T> {
   const headers: HeadersInit = {
-    "Content-Type": "application/json",
     ...(options.headers || {}),
   };
 
+  // Only set Content-Type for requests with a body (avoids CORS preflight for GET)
+  if (options.body) {
+    (headers as Record<string, string>)["Content-Type"] = "application/json";
+  }
+
+  // Note: Authorization header triggers CORS preflight
+  // For endpoints that need auth, consider using query params instead
   if (token) {
     (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
   }
