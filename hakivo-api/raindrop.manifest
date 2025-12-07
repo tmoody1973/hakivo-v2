@@ -1,5 +1,12 @@
 application "hakivo-new" {
 
+  // Stripe payments integration - Pro tier at $12/month
+  // Services with visibility = "paid" require active subscription
+  // Non-subscribers get 402 response with paymentUrl
+  payments {
+    mode = "test"  // Change to "live" for production
+  }
+
   // Environment variables for API keys
   env "WORKOS_API_KEY" {
     secret = true
@@ -99,6 +106,11 @@ application "hakivo-new" {
   }
 
   env "SPREAKER_REDIRECT_URI" {
+    secret = true
+  }
+
+  // Resend API for email notifications and newsletters
+  env "RESEND_API_KEY" {
     secret = true
   }
 
