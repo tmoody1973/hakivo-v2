@@ -55,6 +55,11 @@ export interface Env {
   PEXELS_API_KEY: string;
   PODCAST_GENERATOR: ServiceStub<import('../podcast-generator/index.js').default>;
   SESSION_CACHE: KvCache;
+  SPREAKER_CLIENT_ID: string;
+  SPREAKER_CLIENT_SECRET: string;
+  SPREAKER_REDIRECT_URI: string;
+  SPREAKER_SHOW_ID: string;
+  SPREAKER_TOKENS: KvCache;
   SYNC_QUEUE: Queue<import('../congress-sync-observer').Body>;
   tracer: Tracer;
   USER_SERVICE: ServiceStub<import('../user-service/index.js').default>;
