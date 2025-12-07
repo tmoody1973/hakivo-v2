@@ -85,6 +85,23 @@ application "hakivo-new" {
     secret = true
   }
 
+  // Spreaker OAuth credentials for podcast distribution
+  env "SPREAKER_CLIENT_ID" {
+    secret = true
+  }
+
+  env "SPREAKER_CLIENT_SECRET" {
+    secret = true
+  }
+
+  env "SPREAKER_SHOW_ID" {
+    secret = true
+  }
+
+  env "SPREAKER_REDIRECT_URI" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -115,7 +132,7 @@ application "hakivo-new" {
   }
 
   service "db-admin" {
-    visibility = "private"
+    visibility = "public"
   }
 
   // Inngest webhook handler - disabled due to edge runtime compatibility issues
@@ -280,6 +297,9 @@ application "hakivo-new" {
   kv_cache "image-cache" {}
 
   kv_cache "actions-cache" {}
+
+  // Spreaker OAuth token storage
+  kv_cache "spreaker-tokens" {}
 
   // SmartBuckets for storage with automatic search
   smartbucket "bill-texts" {}
