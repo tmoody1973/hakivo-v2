@@ -1057,6 +1057,147 @@ app.get('/podcast/:episodeId', async (c) => {
 });
 
 /**
+ * POST /podcast/:episodeId/backfill-content
+ * Generate article content for an existing episode (no auth - dev only)
+ */
+app.post('/podcast/:episodeId/backfill-content', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const episodeId = c.req.param('episodeId');
+
+    // Get episode with law data
+    const episode = await db
+      .prepare(`
+        SELECT
+          pe.id, pe.content,
+          hl.name, hl.year, hl.public_law, hl.president_signed,
+          hl.category, hl.description, hl.key_provisions, hl.historical_impact
+        FROM podcast_episodes pe
+        JOIN historic_laws hl ON pe.law_id = hl.id
+        WHERE pe.id = ?
+      `)
+      .bind(episodeId)
+      .first();
+
+    if (!episode) {
+      return c.json({ error: 'Episode not found' }, 404);
+    }
+
+    // Skip if already has content
+    if (episode.content) {
+      return c.json({
+        success: true,
+        message: 'Episode already has content',
+        skipped: true
+      });
+    }
+
+    // Parse key provisions
+    let keyProvisions: string[];
+    try {
+      keyProvisions = JSON.parse(episode.key_provisions as string);
+    } catch {
+      keyProvisions = [episode.key_provisions as string];
+    }
+
+    // Get decade context
+    const decade = Math.floor((episode.year as number) / 10) * 10;
+    const decadeContexts: Record<number, string> = {
+      1900: "The Progressive Era - America is industrializing rapidly. Muckraking journalists expose corruption. Theodore Roosevelt champions reform.",
+      1910: "World War I looms. Women's suffrage movement gains momentum. The federal government expands its role in regulating business.",
+      1920: "The Roaring Twenties - Prohibition, jazz, flappers. Economic boom followed by the 1929 crash. Immigration restrictions tighten.",
+      1930: "The Great Depression devastates America. FDR's New Deal transforms government. One in four Americans unemployed at the worst.",
+      1940: "World War II mobilizes the nation. The home front transforms. Post-war prosperity and the GI Bill reshape society.",
+      1950: "Cold War tensions rise. McCarthyism and fear of communism. Suburban growth. The civil rights movement begins to stir.",
+      1960: "The Civil Rights Movement reaches its peak. JFK, LBJ's Great Society. Vietnam War protests. Cultural revolution.",
+      1970: "Watergate. Environmental movement. Women's rights. Economic stagflation. Distrust of government grows.",
+      1980: "Reagan Revolution. Deregulation. Cold War tensions. Economic recovery. Beginning of the computer age.",
+      1990: "End of Cold War. Technology boom. Globalization accelerates. Economic prosperity returns."
+    };
+    const decadeContext = decadeContexts[decade] || `The ${decade}s in America - a time of significant change and development.`;
+
+    // Generate article content using Claude
+    const systemPrompt = `You are writing an informative, engaging article for a civics education platform about a historic American law.
+
+Write in a clear, accessible style similar to high-quality journalism or documentary narration. The audience is curious citizens who want to understand American history and government.
+
+=== VERIFIED LAW DATA (THIS IS YOUR ONLY SOURCE OF TRUTH) ===
+Name: ${episode.name}
+Year: ${episode.year}
+Public Law: ${episode.public_law}
+President Who Signed: ${episode.president_signed}
+Category: ${episode.category}
+Description: ${episode.description}
+Key Provisions:
+${keyProvisions.map(p => `  • ${p}`).join('\n')}
+Historical Impact: ${episode.historical_impact}
+
+=== HISTORICAL CONTEXT FOR THE ${decade}s ===
+${decadeContext}
+
+FORBIDDEN (THESE WILL CAUSE FACTUAL ERRORS):
+- Making up specific vote counts, dates, or statistics not in the data above
+- Inventing quotes from historical figures
+- Adding "facts" about this law from your training data
+- Making up names of legislators, activists, or other people`;
+
+    const userPrompt = `Write a 600-900 word article about the ${episode.name} (${episode.year}).
+
+Structure the article with these sections (use section headers):
+
+## The Problem It Solved
+Explain what was wrong in America before this law. What problems or injustices prompted action?
+
+## What the Law Did
+Explain the key provisions in plain language. What did this law actually change?
+
+## Historical Impact
+How did this law shape America? What changed because of it?
+
+## Legacy Today
+Is this law still in effect? Has it been modified? How does it affect Americans today?
+
+Write in an engaging, narrative style. Make history come alive while staying strictly factual based on the provided data.`;
+
+    console.log(`[BACKFILL] Generating article for episode ${episodeId}: ${episode.name}`);
+
+    const result = await c.env.CLAUDE_CLIENT.generateCompletion(
+      systemPrompt,
+      userPrompt,
+      2048,
+      0.6
+    );
+
+    const content = result.content || '';
+
+    if (!content) {
+      return c.json({ error: 'Failed to generate article content' }, 500);
+    }
+
+    // Update episode with content
+    await db
+      .prepare('UPDATE podcast_episodes SET content = ?, updated_at = ? WHERE id = ?')
+      .bind(content, Date.now(), episodeId)
+      .run();
+
+    console.log(`[BACKFILL] Article content saved for episode ${episodeId}: ${content.length} chars`);
+
+    return c.json({
+      success: true,
+      episodeId,
+      contentLength: content.length,
+      preview: content.substring(0, 200) + '...'
+    });
+  } catch (error) {
+    console.error('Backfill content error:', error);
+    return c.json({
+      error: 'Failed to backfill content',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * POST /podcast/:episodeId/play
  * Record a play (public - for analytics)
  */
