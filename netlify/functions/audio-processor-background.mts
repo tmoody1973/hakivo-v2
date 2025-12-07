@@ -433,7 +433,109 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 }
 
 /**
+ * Split dialogue into chunks at natural boundaries (max ~4000 chars per chunk)
+ * This ensures we stay within Gemini TTS limits while maintaining conversation flow
+ */
+function chunkDialogue(dialogue: string, maxChunkSize: number = 4000): string[] {
+  const lines = dialogue.split('\n').filter(l => l.trim());
+  const chunks: string[] = [];
+  let currentChunk: string[] = [];
+  let currentSize = 0;
+
+  for (const line of lines) {
+    // If adding this line would exceed limit, save current chunk and start new one
+    if (currentSize + line.length + 1 > maxChunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.join('\n'));
+      currentChunk = [];
+      currentSize = 0;
+    }
+    currentChunk.push(line);
+    currentSize += line.length + 1;
+  }
+
+  // Don't forget the last chunk
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk.join('\n'));
+  }
+
+  return chunks;
+}
+
+/**
+ * Generate audio for a single dialogue chunk
+ */
+async function generateAudioChunk(
+  dialogueChunk: string,
+  voicePair: typeof PODCAST_VOICE_PAIR,
+  geminiApiKey: string,
+  chunkIndex: number
+): Promise<Buffer | null> {
+  console.log(`[AUDIO] Processing chunk ${chunkIndex + 1}, length: ${dialogueChunk.length} chars`);
+
+  const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: dialogueChunk }]
+      }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          multiSpeakerVoiceConfig: {
+            speakerVoiceConfigs: [
+              {
+                speaker: voicePair.hostA,
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: voicePair.hostA }
+                }
+              },
+              {
+                speaker: voicePair.hostB,
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: voicePair.hostB }
+                }
+              }
+            ]
+          }
+        }
+      }
+    })
+  });
+
+  if (!ttsResponse.ok) {
+    const errorText = await ttsResponse.text();
+    console.error(`[AUDIO] Gemini TTS chunk ${chunkIndex + 1} error ${ttsResponse.status}: ${errorText}`);
+    return null;
+  }
+
+  const ttsResult = await ttsResponse.json() as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{
+          inlineData?: {
+            mimeType: string;
+            data: string;
+          }
+        }>
+      }
+    }>
+  };
+
+  const audioData = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+  if (!audioData) {
+    console.error(`[AUDIO] No audio data in chunk ${chunkIndex + 1} response`);
+    return null;
+  }
+
+  return Buffer.from(audioData.data, 'base64');
+}
+
+/**
  * Process a single podcast episode's audio generation
+ * Handles long scripts by chunking and concatenating audio
  */
 async function processPodcastEpisode(episode: AudioContent, geminiApiKey: string): Promise<void> {
   console.log(`[AUDIO] Processing podcast episode: ${episode.id}`);
@@ -449,80 +551,35 @@ async function processPodcastEpisode(episode: AudioContent, geminiApiKey: string
 
     // Convert podcast script to dialogue format (SARAH:/DAVID: -> Kore:/Puck:)
     const dialoguePrompt = convertPodcastToDialoguePrompt(episode.script, voicePair.hostA, voicePair.hostB);
+    console.log(`[AUDIO] Total dialogue length: ${dialoguePrompt.length} chars`);
     console.log(`[AUDIO] Dialogue prompt preview: ${dialoguePrompt.substring(0, 200)}...`);
 
-    // Call Gemini TTS API
-    console.log('[AUDIO] Calling Gemini TTS API for podcast...');
-    const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: dialoguePrompt }]
-        }],
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            multiSpeakerVoiceConfig: {
-              speakerVoiceConfigs: [
-                {
-                  speaker: voicePair.hostA,
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voicePair.hostA }
-                  }
-                },
-                {
-                  speaker: voicePair.hostB,
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voicePair.hostB }
-                  }
-                }
-              ]
-            }
-          }
-        }
-      })
-    });
+    // Chunk the dialogue for long scripts (Gemini TTS has ~4000 char limit)
+    const chunks = chunkDialogue(dialoguePrompt, 4000);
+    console.log(`[AUDIO] Split into ${chunks.length} chunks for processing`);
 
-    if (!ttsResponse.ok) {
-      const errorText = await ttsResponse.text();
-      console.error(`[AUDIO] Gemini TTS error ${ttsResponse.status}: ${errorText}`);
-      await updatePodcastStatus(episode.id, 'audio_failed', null);
-      return;
+    // Generate audio for each chunk
+    const pcmBuffers: Buffer[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const pcmBuffer = await generateAudioChunk(chunks[i]!, voicePair, geminiApiKey, i);
+      if (!pcmBuffer) {
+        console.error(`[AUDIO] Failed to generate audio for chunk ${i + 1}`);
+        await updatePodcastStatus(episode.id, 'audio_failed', null);
+        return;
+      }
+      pcmBuffers.push(pcmBuffer);
+      console.log(`[AUDIO] Chunk ${i + 1}/${chunks.length} complete: ${pcmBuffer.length} bytes`);
     }
 
-    const ttsResult = await ttsResponse.json() as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{
-            inlineData?: {
-              mimeType: string;
-              data: string;
-            }
-          }>
-        }
-      }>
-    };
+    // Concatenate all PCM buffers
+    const totalPcmLength = pcmBuffers.reduce((sum, buf) => sum + buf.length, 0);
+    console.log(`[AUDIO] Total PCM size: ${totalPcmLength} bytes from ${pcmBuffers.length} chunks`);
 
-    // Extract audio data
-    const audioData = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-    if (!audioData) {
-      console.error('[AUDIO] No audio data in Gemini response');
-      await updatePodcastStatus(episode.id, 'audio_failed', null);
-      return;
-    }
+    const combinedPcm = Buffer.concat(pcmBuffers);
 
-    console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
-
-    // Convert base64 to buffer (raw PCM data - 16-bit signed, 24kHz, mono)
-    const pcmBuffer = Buffer.from(audioData.data, 'base64');
-    console.log(`[AUDIO] Raw PCM size: ${pcmBuffer.length} bytes`);
-
-    // Convert PCM to MP3 using lamejs (pure JavaScript - no native dependencies!)
-    console.log('[AUDIO] Converting PCM to MP3 using lamejs...');
-    const mp3Buffer = encodePcmToMp3(pcmBuffer, 24000, 1);
+    // Convert combined PCM to MP3 using lamejs
+    console.log('[AUDIO] Converting combined PCM to MP3 using lamejs...');
+    const mp3Buffer = encodePcmToMp3(combinedPcm, 24000, 1);
 
     // Upload to Vultr storage directly
     console.log('[AUDIO] Uploading podcast MP3 to Vultr storage...');
