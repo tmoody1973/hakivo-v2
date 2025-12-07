@@ -406,23 +406,37 @@ export const subscriptionApi = {
   },
 
   // Create checkout session for Pro upgrade
+  // Uses local Next.js proxy to avoid CORS issues with POST requests
   async createCheckout(
     userId: string,
     successUrl?: string,
     cancelUrl?: string
   ): Promise<CheckoutInfo> {
-    return fetchFromService("SUBSCRIPTION", "/api/subscription/create-checkout", {
+    const response = await fetch("/api/subscription/checkout", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, successUrl, cancelUrl }),
     });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(error.message || error.error || `HTTP ${response.status}`);
+    }
+    return response.json();
   },
 
   // Create billing portal session for managing subscription
+  // Uses local Next.js proxy to avoid CORS issues with POST requests
   async createPortal(userId: string, returnUrl?: string): Promise<PortalInfo> {
-    return fetchFromService("SUBSCRIPTION", "/api/subscription/create-portal", {
+    const response = await fetch("/api/subscription/portal", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, returnUrl }),
     });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(error.message || error.error || `HTTP ${response.status}`);
+    }
+    return response.json();
   },
 
   // Use a brief (increment counter for free tier)
