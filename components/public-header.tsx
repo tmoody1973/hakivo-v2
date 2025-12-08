@@ -15,8 +15,20 @@ export function PublicHeader() {
           <span className="text-xl font-bold">Hakivo</span>
         </Link>
 
-        {/* Auth buttons */}
+        {/* Navigation & Auth buttons */}
         <div className="flex items-center gap-3">
+          <Link
+            href="/about"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
+          >
+            About
+          </Link>
+          <Link
+            href="/pricing"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
+          >
+            Pricing
+          </Link>
           <Button variant="ghost" asChild>
             <Link href="/auth/signin">Sign In</Link>
           </Button>

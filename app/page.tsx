@@ -21,6 +21,12 @@ export default function HomePage() {
           </Link>
           <nav className="flex items-center gap-3">
             <Link
+              href="/about"
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+            >
+              About
+            </Link>
+            <Link
               href="/pricing"
               className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
             >
@@ -310,9 +316,10 @@ export default function HomePage() {
               <div className="text-sm text-muted-foreground">Civic engagement for the podcast generation.</div>
             </div>
             <div className="flex gap-6">
-              <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</Link>
+              <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</Link>
+              <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
               <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
-              <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
+              <Link href="mailto:info@hakivo.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
             </div>
           </div>
         </div>
