@@ -144,7 +144,7 @@ export default function PricingPage() {
                 </div>
               </div>
               <Button variant="outline" size="lg" asChild className="rounded-full px-8 whitespace-nowrap">
-                <Link href="mailto:tarik@hakivo.app?subject=Hakivo Team Inquiry">
+                <Link href="mailto:info@hakivo.com?subject=Hakivo Team Inquiry">
                   Contact Sales
                 </Link>
               </Button>
@@ -209,7 +209,7 @@ export default function PricingPage() {
             />
             <FAQItem
               question="Do you offer discounts for nonprofits or educators?"
-              answer="Yes, we offer special pricing for nonprofits, educational institutions, and civic organizations. Contact us at tarik@hakivo.app to learn more."
+              answer="Yes, we offer special pricing for nonprofits, educational institutions, and civic organizations. Contact us at info@hakivo.com to learn more."
             />
             <FAQItem
               question="What's included in the free tier?"
@@ -251,7 +251,7 @@ export default function PricingPage() {
               <Link href="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Home</Link>
               <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
               <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
-              <Link href="mailto:tarik@hakivo.app" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
+              <Link href="mailto:info@hakivo.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
             </div>
           </div>
         </div>
