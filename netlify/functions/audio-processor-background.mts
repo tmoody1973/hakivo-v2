@@ -28,8 +28,8 @@ const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David
 
 const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
 
-// Raindrop db-admin URL for database queries
-const DB_ADMIN_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Raindrop db-admin URL for database queries and Spreaker uploads
+const DB_ADMIN_URL = 'https://svc-01kbwj6m2fjpvfp9jj2xpefwqm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 // Content types for audio processing
 type ContentType = 'brief' | 'podcast';
@@ -199,6 +199,40 @@ async function updatePodcastStatus(
 
   if (!response.ok) {
     console.error(`[AUDIO] Failed to update podcast episode status: ${response.status}`);
+  }
+}
+
+/**
+ * Upload podcast episode to Spreaker after audio is ready
+ * Uses the same endpoint as the backfill functionality
+ */
+async function uploadToSpreaker(episodeId: string): Promise<boolean> {
+  console.log(`[SPREAKER] Auto-uploading episode ${episodeId} to Spreaker...`);
+
+  try {
+    const response = await fetch(`${DB_ADMIN_URL}/spreaker/upload/${episodeId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[SPREAKER] Upload failed: ${response.status} - ${errorText}`);
+      return false;
+    }
+
+    const result = await response.json() as { success?: boolean; spreakerId?: string; error?: string };
+
+    if (result.success) {
+      console.log(`[SPREAKER] ✅ Episode ${episodeId} uploaded successfully! Spreaker ID: ${result.spreakerId}`);
+      return true;
+    } else {
+      console.error(`[SPREAKER] Upload returned error: ${result.error}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`[SPREAKER] Upload exception:`, error);
+    return false;
   }
 }
 
@@ -591,6 +625,15 @@ async function processPodcastEpisode(episode: AudioContent, geminiApiKey: string
     await updatePodcastStatus(episode.id, 'completed', audioUrl);
 
     console.log(`[AUDIO] Successfully processed podcast episode ${episode.id}`);
+
+    // Auto-upload to Spreaker now that audio is ready
+    console.log(`[AUDIO] Triggering Spreaker upload for episode ${episode.id}...`);
+    const spreakSuccess = await uploadToSpreaker(episode.id);
+    if (spreakSuccess) {
+      console.log(`[AUDIO] ✅ Episode ${episode.id} fully published to Vultr + Spreaker`);
+    } else {
+      console.log(`[AUDIO] ⚠️ Episode ${episode.id} audio ready but Spreaker upload failed (can be retried via backfill)`);
+    }
 
   } catch (error) {
     console.error('[AUDIO] Podcast audio generation error:', error);
