@@ -37,6 +37,63 @@ const STATE_NAMES: Record<string, string> = Object.fromEntries(
 );
 
 /**
+ * Query expansion for common legislative topics
+ * Maps colloquial terms to formal legislative language
+ */
+const QUERY_SYNONYMS: Record<string, string[]> = {
+  // Drug-related - include all common legislative terms
+  "thc": ["cannabis", "marijuana", "marihuana", "medical cannabis", "recreational cannabis"],
+  "weed": ["cannabis", "marijuana", "marihuana", "medical cannabis"],
+  "pot": ["cannabis", "marijuana", "marihuana", "medical cannabis"],
+  "marijuana": ["cannabis", "marihuana", "medical cannabis", "recreational cannabis"],
+  "cannabis": ["marijuana", "marihuana", "medical cannabis", "recreational cannabis"],
+  "cbd": ["cannabidiol", "hemp", "cannabis", "medical cannabis"],
+  "medical marijuana": ["medical cannabis", "cannabis", "marijuana"],
+
+  // Healthcare
+  "obamacare": ["affordable care act", "ACA", "health insurance"],
+  "abortion": ["reproductive health", "pregnancy termination", "reproductive rights"],
+
+  // Immigration
+  "illegal immigration": ["undocumented", "immigration enforcement", "border security"],
+  "dreamers": ["DACA", "deferred action"],
+
+  // Guns
+  "gun control": ["firearms", "second amendment", "weapons"],
+  "guns": ["firearms", "weapons", "second amendment"],
+  "ar-15": ["assault weapons", "semiautomatic", "firearms"],
+
+  // Environment
+  "climate change": ["greenhouse gas", "emissions", "carbon"],
+  "global warming": ["climate", "greenhouse gas", "carbon emissions"],
+
+  // Education
+  "student loans": ["higher education", "student debt", "financial aid"],
+
+  // LGBTQ+
+  "gay marriage": ["same-sex marriage", "marriage equality"],
+  "transgender": ["gender identity", "gender affirming"],
+};
+
+/**
+ * Get all search terms for a query (original + synonyms)
+ * Returns array of terms to search for
+ */
+function getSearchTerms(query: string): string[] {
+  const lowerQuery = query.toLowerCase().trim();
+
+  // Check if query matches any synonym key
+  for (const [term, synonyms] of Object.entries(QUERY_SYNONYMS)) {
+    if (lowerQuery === term || lowerQuery.includes(term)) {
+      // Return original + all synonyms as separate terms
+      return [query, ...synonyms];
+    }
+  }
+
+  return [query];
+}
+
+/**
  * Normalize state input to 2-letter abbreviation
  */
 function normalizeState(state: string): string | null {
@@ -130,47 +187,80 @@ Returns bill identifier, title, subjects, and latest action.`,
     }
 
     try {
-      const params = new URLSearchParams({
-        state: stateCode,
-        limit: String(Math.min(limit, 100)),
-        offset: String(offset),
-        sort: "latest_action_date",
-        order: "desc",
-      });
+      // Get search terms (original + synonyms for better coverage)
+      const searchTerms = query ? getSearchTerms(query) : [null];
+      const wasExpanded = searchTerms.length > 1;
 
-      if (query) params.set("query", query);
-      if (subject) params.set("subject", subject);
-      if (session) params.set("session", session);
-      if (status) params.set("status", status);
+      // Deduplicate bills by ID
+      const billMap = new Map<string, StateBill>();
+      const searchedTerms: string[] = [];
 
-      const response = await fetch(`${BILLS_SERVICE}/state-bills?${params.toString()}`);
+      // Search for each term and merge results
+      for (const term of searchTerms) {
+        const params = new URLSearchParams({
+          state: stateCode,
+          limit: String(Math.min(limit, 100)),
+          offset: String(offset),
+          sort: "latest_action_date",
+          order: "desc",
+        });
 
-      if (!response.ok) {
-        throw new Error(`State bills search failed: ${response.statusText}`);
+        if (term) {
+          params.set("query", term);
+          searchedTerms.push(term);
+        }
+        if (subject) params.set("subject", subject);
+        if (session) params.set("session", session);
+        if (status) params.set("status", status);
+
+        const response = await fetch(`${BILLS_SERVICE}/state-bills?${params.toString()}`);
+
+        if (!response.ok) {
+          // Continue to next term if one fails
+          console.warn(`Search for "${term}" failed: ${response.statusText}`);
+          continue;
+        }
+
+        const result = await response.json();
+
+        // Add bills to map (deduplicates by ID)
+        for (const bill of result.bills || []) {
+          if (!billMap.has(bill.id)) {
+            billMap.set(bill.id, {
+              id: bill.id,
+              state: bill.state,
+              stateName: STATE_NAMES[bill.state as string] || bill.state,
+              identifier: bill.identifier,
+              title: bill.title,
+              session: bill.session,
+              subjects: bill.subjects || [],
+              chamber: bill.chamber,
+              latestAction: bill.latestAction,
+              openstatesUrl: bill.openstatesUrl,
+            });
+          }
+        }
       }
 
-      const result = await response.json();
-
-      const bills: StateBill[] = (result.bills || []).map((bill: Record<string, unknown>) => ({
-        id: bill.id,
-        state: bill.state,
-        stateName: STATE_NAMES[bill.state as string] || bill.state,
-        identifier: bill.identifier,
-        title: bill.title,
-        session: bill.session,
-        subjects: bill.subjects || [],
-        chamber: bill.chamber,
-        latestAction: bill.latestAction,
-        openstatesUrl: bill.openstatesUrl,
-      }));
+      // Convert map to array and sort by latest action date
+      const bills = Array.from(billMap.values()).sort((a, b) => {
+        const dateA = a.latestAction?.date ? new Date(a.latestAction.date).getTime() : 0;
+        const dateB = b.latestAction?.date ? new Date(b.latestAction.date).getTime() : 0;
+        return dateB - dateA;
+      });
 
       return {
         success: true,
-        bills,
-        count: bills.length,
-        total: result.pagination?.total || bills.length,
+        bills: bills.slice(0, limit), // Respect limit after merging
+        count: Math.min(bills.length, limit),
+        total: bills.length,
         state: stateCode,
         stateName: STATE_NAMES[stateCode] || stateCode,
+        searchQuery: query || null,
+        searchedTerms: wasExpanded ? searchedTerms : null,
+        searchNote: wasExpanded
+          ? `Expanded search to include related terms: ${searchedTerms.join(", ")}`
+          : null,
       };
     } catch (error) {
       return {
