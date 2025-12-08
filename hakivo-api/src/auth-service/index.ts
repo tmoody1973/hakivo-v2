@@ -1492,6 +1492,8 @@ app.post('/auth/onboarding', async (c) => {
           let synced = 0;
           for (const bill of bills) {
             try {
+              // Cast bill to any since service binding types may not include all properties
+              const b = bill as any;
               await db
                 .prepare(`
                   INSERT INTO state_bills (
@@ -1509,17 +1511,17 @@ app.post('/auth/onboarding', async (c) => {
                     updated_at = excluded.updated_at
                 `)
                 .bind(
-                  bill.id,
-                  bill.state,
-                  bill.sessionIdentifier,
-                  bill.identifier,
-                  bill.title,
-                  bill.abstract || null,
-                  bill.subjects ? JSON.stringify(bill.subjects) : null,
-                  bill.classification ? JSON.stringify(bill.classification) : null,
-                  bill.chamber || null,
-                  bill.latestActionDate || null,
-                  bill.latestActionDescription || null,
+                  b.id,
+                  b.state || stateCode.toUpperCase(),
+                  b.sessionIdentifier || b.session,
+                  b.identifier,
+                  b.title,
+                  b.abstract || null,
+                  b.subjects ? JSON.stringify(b.subjects) : null,
+                  b.classification ? JSON.stringify(b.classification) : null,
+                  b.chamber || null,
+                  b.latestActionDate || null,
+                  b.latestActionDescription || null,
                   Date.now(),
                   Date.now()
                 )
@@ -1527,7 +1529,7 @@ app.post('/auth/onboarding', async (c) => {
               synced++;
             } catch (billError) {
               // Skip individual bill errors
-              console.error(`  ⚠️ Failed to sync bill ${bill.identifier}:`, billError);
+              console.error(`  ⚠️ Failed to sync bill ${(bill as any).identifier}:`, billError);
             }
           }
           console.log(`✓ Synced ${synced}/${bills.length} state bills for ${stateCode}`);
