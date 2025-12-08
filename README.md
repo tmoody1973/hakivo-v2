@@ -1,20 +1,21 @@
-# Hakivo - Civic Engagement Platform
+# Hakivo - Civic Intelligence Platform
 
-> Empowering citizens to stay informed and engaged with their government through personalized news, bill tracking, AI-powered insights, and representative discovery.
+> Empowering citizens to stay informed and engaged with their government through personalized briefings, AI-powered analysis, and the 100 Laws That Shaped America podcast.
 
 **Live Demo**: [https://hakivo-v2.netlify.app](https://hakivo-v2.netlify.app)
 
 ## What is Hakivo?
 
-Hakivo is a comprehensive civic engagement platform that connects citizens with their government at both federal and state levels. The platform provides:
+Hakivo is a comprehensive civic intelligence platform that connects citizens with their government at both federal and state levels. The platform provides:
 
+- **Personalized Daily Briefings** - AI-generated audio briefings tailored to your policy interests
+- **100 Laws That Shaped America Podcast** - Weekly AI-generated episodes exploring landmark legislation, auto-published to Spreaker
 - **Federal & State Bill Tracking** - Monitor legislation from Congress and your state legislature
 - **AI-Powered Bill Analysis** - Deep forensic analysis of bills using Claude AI with extended thinking
 - **Personalized News Feed** - News aggregated from Perplexity AI based on your policy interests
 - **Find Your Representatives** - Discover your federal and state legislators based on your location
-- **Audio Daily Briefings** - AI-generated audio summaries using Gemini TTS
 - **AI Chat** - Ask questions about bills and policies with Claude AI
-- **State Legislature Support** - Track state bills and legislators via OpenStates API
+- **Hakivo Pro Subscription** - Premium features with Stripe billing integration
 
 ## Tech Stack
 
@@ -25,14 +26,33 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 | **Backend** | Raindrop Framework (Cloudflare Workers) |
 | **Database** | Cloudflare D1 (SQLite) |
 | **Authentication** | WorkOS AuthKit |
+| **Payments** | Stripe (subscriptions, customer portal) |
 | **AI** | Claude (Anthropic), Gemini (Google), Cerebras |
 | **Text-to-Speech** | Google Gemini TTS, ElevenLabs |
+| **Podcast Distribution** | Spreaker (auto-upload via OAuth) |
 | **APIs** | Congress.gov, OpenStates, Geocodio, Perplexity |
+| **Storage** | Vultr Object Storage, Cloudflare R2 |
 | **Hosting** | Netlify (Frontend), LiquidMetal (Backend) |
 
 ## Key Features
 
-### 1. Bill Tracking & Analysis
+### 1. Personalized Daily & Weekly Briefings
+
+- AI-generated audio briefings using Gemini TTS
+- Personalized based on your policy interests and tracked bills
+- Visual featured images generated with Gemini AI
+- Congressional trivia while briefs generate (via Cerebras)
+- Welcome banner with real-time generation progress for new users
+
+### 2. 100 Laws That Shaped America Podcast
+
+- Weekly AI-generated podcast episodes exploring landmark U.S. legislation
+- Automated pipeline: script generation, TTS audio, artwork creation
+- Auto-upload to Spreaker via OAuth integration
+- Episodes distributed to major podcast platforms
+- AI-generated episode artwork using Gemini image generation
+
+### 3. Bill Tracking & Analysis
 
 **Federal Bills**
 - Real-time sync from Congress.gov API (119th Congress)
@@ -50,7 +70,7 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 - State bill analysis with the same AI-powered insights
 - Filter by your home state from user preferences
 
-### 2. Find Your Representatives
+### 4. Find Your Representatives
 
 **Federal Representatives**
 - 2 U.S. Senators + 1 U.S. Representative per user
@@ -62,25 +82,27 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 - State Senator and State Representative for your exact district
 - 7,262 state legislators loaded across 49 states with photos
 
-### 3. Personalized News
+### 5. Personalized News
 
 - 12 policy interest categories: Environment, Healthcare, Economy, Education, Immigration, Civil Rights, Foreign Policy, Technology, Housing, Criminal Justice, Energy, Agriculture
 - News sourced via Perplexity AI with interest-specific prompts
 - Smart rotation system - unseen articles first, then viewed articles by recency
 - Bookmark articles for later reading
 
-### 4. Daily & Weekly Briefings
+### 6. Hakivo Pro Subscription
 
-- AI-generated audio briefings using Gemini TTS
-- Personalized based on your policy interests and tracked bills
-- Congressional trivia while briefs generate (via Cerebras)
-- Visual featured images for each brief
+- Stripe-powered subscription management at $12/month
+- Free tier: 3 briefs/month, 3 tracked bills, 3 followed members
+- Pro tier: Unlimited briefs, unlimited tracking, daily briefings, real-time alerts, audio digests
+- Customer portal for subscription management
+- Webhook integration for real-time subscription status
 
-### 5. Dashboard Widgets
+### 7. Dashboard Widgets
 
 | Widget | Description |
 |--------|-------------|
 | Daily Brief | Audio player with transcript and featured image |
+| 100 Laws Podcast | Latest episodes with Spreaker integration |
 | Your Representatives | Federal + State legislators with contact buttons |
 | Latest Actions | Recent congressional and state bill activity |
 | Personalized News | Interest-filtered news carousel |
@@ -88,7 +110,7 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 
 ## Architecture
 
-### Backend Services (30 Handlers)
+### Backend Services (36+ Handlers)
 
 **Public Services**
 - `auth-service` - JWT authentication with WorkOS
@@ -97,8 +119,10 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 - `chat-service` - AI chat about bills and policies
 - `dashboard-service` - Dashboard API, news, representatives
 - `user-service` - User profile and preferences
+- `subscription-api` - Stripe subscription management
+- `stripe-webhook` - Stripe webhook handler
 - `admin-dashboard` - Admin endpoints for data management
-- `db-admin` - Database administration
+- `db-admin` - Database administration, Spreaker OAuth
 
 **Private Services (Internal Clients)**
 - `congress-api-client` - Congress.gov API wrapper
@@ -109,24 +133,26 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 - `cerebras-client` - Fast inference for trivia
 - `gemini-tts-client` - Google TTS for audio briefs
 - `elevenlabs-client` - ElevenLabs TTS (fallback)
-- `exa-client` - Exa.ai search (legacy)
 - `vultr-storage-client` - Object storage for audio files
+- `fec-client` - FEC campaign finance data
 
 **Observers (Queue Processors)**
 - `enrichment-observer` - Bill enrichment and deep analysis queue
 - `congress-sync-observer` - Bill sync from Congress.gov
 - `bill-indexing-observer` - Search index updates
+- `brief-generator` - Brief content and audio generation
 
 **Schedulers (Cron Jobs)**
 - `daily-brief-scheduler` - Daily at 7 AM UTC
 - `weekly-brief-scheduler` - Mondays at 7 AM UTC
+- `podcast-scheduler` - Weekly podcast episode generation
 - `congress-sync-scheduler` - Daily at 2 AM UTC
 - `congress-actions-scheduler` - 6 AM & 6 PM UTC
 - `news-sync-scheduler` - 6 AM & 6 PM UTC
 - `state-sync-scheduler` - Weekly state legislator sync
 - `audio-retry-scheduler` - Retry failed TTS jobs
 
-### Database Schema (22 Migrations)
+### Database Schema (25+ Migrations)
 
 **Core Tables**
 - `users`, `user_preferences`, `refresh_tokens`
@@ -138,6 +164,8 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 - `news_articles`, `user_article_views`, `user_bookmarks`
 - `user_bill_views`, `user_bill_bookmarks`
 - `latest_bill_actions`, `indexing_progress`
+- `podcast_episodes` - Podcast with Spreaker integration
+- `subscriptions`, `user_alerts` - Stripe subscription tracking
 
 ### Frontend Pages
 
@@ -154,7 +182,7 @@ Hakivo is a comprehensive civic engagement platform that connects citizens with 
 | `/representatives/[id]` | Representative detail page |
 | `/briefs` | Browse generated briefs |
 | `/chat` | AI chat interface |
-| `/settings` | User preferences and state selection |
+| `/settings` | User preferences, subscription management |
 
 ## Quick Start
 
@@ -193,6 +221,11 @@ NEXT_PUBLIC_BACKEND_URL=https://your-deployed-backend.lmapp.run
 
 # JWT Secret (must match backend)
 JWT_SECRET=your_jwt_secret
+
+# Stripe
+STRIPE_SECRET_KEY=your_stripe_secret_key
+STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
 ```
 
 Backend environment variables (configured in Raindrop):
@@ -203,10 +236,18 @@ CONGRESS_API_KEY=       # Congress.gov API
 GEOCODIO_API_KEY=       # Address geocoding
 OPENSTATES_API_KEY=     # State legislature data
 ANTHROPIC_API_KEY=      # Claude AI
-GEMINI_API_KEY=         # Google Gemini TTS
+GEMINI_API_KEY=         # Google Gemini TTS & image generation
 PERPLEXITY_API_KEY=     # News aggregation
 CEREBRAS_API_KEY=       # Fast inference
-ELEVENLABS_API_KEY=     # ElevenLabs TTS (optional)
+
+# Stripe
+STRIPE_SECRET_KEY=      # Stripe API key
+STRIPE_WEBHOOK_SECRET=  # Stripe webhook signing secret
+
+# Spreaker (Podcast Distribution)
+SPREAKER_CLIENT_ID=     # Spreaker OAuth client ID
+SPREAKER_CLIENT_SECRET= # Spreaker OAuth client secret
+SPREAKER_SHOW_ID=       # Spreaker show ID
 
 # Storage
 VULTR_OBJECT_STORAGE_HOSTNAME=
@@ -229,33 +270,6 @@ npm run build
 npx raindrop build dev
 ```
 
-## Development
-
-### Frontend Commands
-
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run lint         # Run ESLint
-```
-
-### Backend Commands
-
-```bash
-cd hakivo-api
-npm run build                    # Compile TypeScript
-npx raindrop build validate      # Validate all services
-npx raindrop build deploy        # Deploy to cloud
-npx raindrop logs --tail         # View live logs
-```
-
-### Adding a New Feature
-
-1. **Database**: Add migration in `hakivo-api/db/app-db/`
-2. **Backend**: Create/update service in `hakivo-api/src/`
-3. **Frontend API**: Add route in `app/api/` if needed
-4. **Frontend UI**: Add page in `app/` or widget in `components/widgets/`
-
 ## Scheduled Jobs
 
 | Job | Schedule (UTC) | Purpose |
@@ -265,6 +279,7 @@ npx raindrop logs --tail         # View live logs
 | `news-sync-scheduler` | 6:00 AM, 6:00 PM | Fetch news via Perplexity |
 | `daily-brief-scheduler` | 7:00 AM | Generate daily audio briefs |
 | `weekly-brief-scheduler` | Monday 7:00 AM | Generate weekly summary briefs |
+| `podcast-scheduler` | Weekly | Generate 100 Laws podcast episode |
 | `state-sync-scheduler` | Weekly | Sync state legislators from OpenStates |
 | `audio-retry-scheduler` | Hourly | Retry failed TTS generation |
 
@@ -274,8 +289,9 @@ npx raindrop logs --tail         # View live logs
 |--------|------|------------------|
 | [Congress.gov API](https://api.congress.gov) | Federal bills, actions, members | Daily |
 | [OpenStates API](https://openstates.org) | State bills, legislators | Daily/Weekly |
-| [Geocodio](https://geocod.io) | Address → Congressional & State Districts | Real-time |
+| [Geocodio](https://geocod.io) | Address to Congressional & State Districts | Real-time |
 | [Perplexity AI](https://perplexity.ai) | News articles by policy interest | Twice daily |
+| [FEC API](https://api.open.fec.gov) | Campaign finance data | Real-time |
 
 ## API Overview
 
@@ -296,6 +312,9 @@ npx raindrop logs --tail         # View live logs
 | `/briefs-service/daily` | GET | Get daily brief |
 | `/briefs-service/generate` | POST | Generate on-demand brief |
 | `/chat-service/message` | POST | Send chat message |
+| `/subscription-api/status` | GET | Get subscription status |
+| `/subscription-api/checkout` | POST | Create Stripe checkout session |
+| `/subscription-api/portal` | POST | Create customer portal session |
 
 ## Contributing
 
@@ -307,7 +326,12 @@ npx raindrop logs --tail         # View live logs
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) for details.
+This project is dual-licensed:
+
+- **AGPL-3.0** for open source use by nonprofits, civic tech organizations, academic institutions, and government agencies
+- **Commercial License** for proprietary use by for-profit entities
+
+See [LICENSE](./LICENSE) for details. For commercial licensing inquiries, contact tarik@hakivo.app.
 
 ## Acknowledgments
 
@@ -316,7 +340,9 @@ MIT License - see [LICENSE](./LICENSE) for details.
 - **Congress.gov** - Federal legislative data
 - **OpenStates** - State legislative data
 - **Anthropic** - Claude AI
-- **Google** - Gemini TTS
+- **Google** - Gemini TTS & image generation
+- **Spreaker** - Podcast hosting & distribution
+- **Stripe** - Payment processing
 - **WorkOS** - Authentication
 
 ---

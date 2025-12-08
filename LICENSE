@@ -1,0 +1,107 @@
+# Commercial License for Hakivo
+
+## Overview
+
+Hakivo is dual-licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) for open source use and under a commercial license for proprietary use.
+
+If you wish to use Hakivo in a proprietary application or service **without** complying with the AGPL-3.0's copyleft requirements, you must obtain a commercial license.
+
+## Who Needs a Commercial License?
+
+You need a commercial license if you want to:
+
+- **Use Hakivo code in proprietary software** without open-sourcing your entire application
+- **Offer Hakivo as part of a SaaS product** without releasing your modifications under AGPL
+- **Integrate Hakivo into commercial products** sold to clients (e.g., government affairs platforms, legislative tracking services)
+- **Avoid the copyleft obligations** of the AGPL-3.0 license
+
+### Examples of Organizations That Need Commercial Licenses:
+
+- Government relations and public affairs platforms (e.g., Quorum, FiscalNote, Plural Policy, Bloomberg Government)
+- Legislative tracking and advocacy software vendors
+- Corporate government affairs departments using proprietary tools
+- Consulting firms building custom legislative tracking solutions for clients
+- Any for-profit entity that wants to use Hakivo without open-sourcing their platform
+
+## What's Included in a Commercial License?
+
+A commercial license grants you:
+
+- **Right to use** Hakivo source code in proprietary applications
+- **No copyleft obligations** - keep your code private
+- **Perpetual license** for the version purchased
+- **Technical support** options available
+- **Modification rights** without disclosure requirements
+- **Sublicensing rights** for your customers (with restrictions)
+
+## Commercial License Pricing
+
+Pricing is based on your organization's size, revenue, and use case. Contact us for a customized quote tailored to your specific needs.
+
+Pricing tiers available for:
+- **Startups** - Organizations with limited revenue
+- **Growth** - Mid-size organizations
+- **Enterprise** - Large organizations with extensive requirements
+- **OEM/Embedded** - For resale or embedding in products sold to end customers
+
+## How to Obtain a Commercial License
+
+1. **Contact us** at: **tarik@hakivo.app**
+2. **Describe your use case**: What are you building? How will you use Hakivo?
+3. **Provide organization details**: Company size, revenue range, number of users
+4. **Receive a quote** tailored to your needs
+5. **Sign the license agreement** and begin using Hakivo in your proprietary application
+
+## Frequently Asked Questions
+
+### Do I need a commercial license if I'm a nonprofit?
+No. Nonprofits, civic tech organizations, academic institutions, and government agencies can use Hakivo under the AGPL-3.0 license free of charge.
+
+### What if I want to contribute improvements back to Hakivo?
+Contributions are welcome! If you contribute code, you agree to license those contributions under both AGPL-3.0 (for the open source project) and grant us the right to relicense them commercially. This enables dual licensing to continue.
+
+### Can I try Hakivo before purchasing a commercial license?
+Yes! You can evaluate Hakivo under the AGPL-3.0 license. Just remember that if you deploy it in production as part of a proprietary service, you'll need to either open source your application or obtain a commercial license.
+
+### What happens if my company gets acquired or grows significantly?
+License terms are renegotiated upon significant changes in company size, revenue, or use case. We work with you to ensure fair pricing.
+
+### Do you offer source code escrow?
+Yes, source code escrow arrangements are available for Enterprise customers.
+
+## Why Dual Licensing?
+
+Hakivo is committed to civic technology and democratic access to legislative information. Dual licensing enables us to:
+
+- **Keep the core open source** for the civic tech community
+- **Prevent free-riding** by well-funded commercial competitors
+- **Generate revenue** to sustain development and improvements
+- **Ensure everyone benefits**: civic organizations get free access, commercial entities pay their fair share
+
+## Legal Notes
+
+- Commercial licenses are non-transferable
+- All commercial licenses include standard warranty disclaimers and liability limitations
+- Enterprise customers may negotiate custom terms
+- Pricing subject to change with 90 days' notice for existing customers
+
+---
+
+**Ready to get started?**
+
+Email: tarik@hakivo.app
+GitHub: https://github.com/tmoody1973/hakivo-v2
+
+*We typically respond to commercial licensing inquiries within 1-2 business days.*
+
+---
+
+## AGPL-3.0 License (For Open Source Use)
+
+Hakivo is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For the full AGPL-3.0 license text, see: https://www.gnu.org/licenses/agpl-3.0.en.html
