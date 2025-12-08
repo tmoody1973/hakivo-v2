@@ -108,7 +108,11 @@ export default class extends Service<Env> {
     identifier: string;
     title: string;
     session: string;
+    sessionIdentifier: string;
     chamber: string;
+    state: string;
+    abstract: string | null;
+    classification: string[];
     latestActionDate: string | null;
     latestActionDescription: string | null;
     subjects: string[];
@@ -139,7 +143,11 @@ export default class extends Service<Env> {
         identifier: bill.identifier,
         title: bill.title,
         session: bill.session || '',
+        sessionIdentifier: bill.session || '',
         chamber: bill.from_organization?.classification || '',
+        state: state.toUpperCase(),
+        abstract: bill.abstracts?.[0]?.abstract || null,
+        classification: bill.classification || [],
         latestActionDate: latestAction?.date || null,
         latestActionDescription: latestAction?.description || null,
         subjects: bill.subject || []

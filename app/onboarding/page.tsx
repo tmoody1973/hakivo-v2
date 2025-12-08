@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { saveOnboardingPreferences } from '@/lib/api/backend';
 import { useAuth } from '@/lib/auth/auth-context';
+import { markUserAsNew } from '@/components/welcome-banner';
 
 // US States list
 const US_STATES = [
@@ -183,6 +184,8 @@ export default function OnboardingPage() {
       if (hasReps || hasStateLegislators) {
         setStep(3);
       } else {
+        // Mark as new user so welcome banner shows on dashboard
+        markUserAsNew();
         router.push('/dashboard');
       }
     } catch (error) {
@@ -475,7 +478,10 @@ export default function OnboardingPage() {
               </div>
 
               <div className="flex justify-end pt-4">
-                <Button onClick={() => router.push('/dashboard')} size="lg">
+                <Button onClick={() => {
+                  markUserAsNew();
+                  router.push('/dashboard');
+                }} size="lg">
                   Go to Dashboard
                 </Button>
               </div>

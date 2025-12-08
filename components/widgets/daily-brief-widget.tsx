@@ -251,28 +251,55 @@ export function DailyBriefWidget() {
     }
   }, [accessToken]);
 
-  useEffect(() => {
-    if (authLoading) return;
-
-    if (!isAuthenticated || !accessToken) {
-      setIsLoading(false);
-      return;
-    }
-
-    fetchLatestBrief();
-  }, [isAuthenticated, accessToken, authLoading]);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
-    };
-  }, []);
-
-  const fetchLatestBrief = async () => {
+  // Fetch latest brief including in-progress ones
+  const fetchLatestBrief = useCallback(async () => {
     try {
+      // First, check for any in-progress briefs (pending, processing, content_gathered, script_ready)
+      const inProgressResponse = await fetch('/api/briefs?limit=1', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (inProgressResponse.ok) {
+        const inProgressData = await inProgressResponse.json();
+
+        if (inProgressData.success && inProgressData.briefs && inProgressData.briefs.length > 0) {
+          const latestBrief = inProgressData.briefs[0];
+          const briefDate = new Date(latestBrief.createdAt);
+          const today = new Date();
+          const isToday = briefDate.toDateString() === today.toDateString();
+
+          // Check if there's a brief being generated today
+          if (isToday && ['pending', 'processing', 'content_gathered', 'script_ready'].includes(latestBrief.status)) {
+            console.log('[DailyBriefWidget] Found in-progress brief:', latestBrief.id, latestBrief.status);
+            // Show the generating UI and start polling
+            setIsGenerating(true);
+            setGeneratingBriefId(latestBrief.id);
+            setGenerationStatus(latestBrief.status);
+
+            // Start fetching trivia
+            fetchTrivia();
+
+            // Poll for status updates
+            pollIntervalRef.current = setInterval(() => {
+              pollBriefStatus(latestBrief.id);
+            }, 3000);
+
+            setIsLoading(false);
+            return;
+          }
+
+          // If completed and from today, show it
+          if (isToday && latestBrief.status === 'completed' && latestBrief.audioUrl) {
+            setBrief(latestBrief);
+            setIsLoading(false);
+            return;
+          }
+        }
+      }
+
+      // Fallback: check for completed briefs
       const response = await fetch('/api/briefs?limit=1&status=completed', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -310,7 +337,27 @@ export function DailyBriefWidget() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [accessToken, fetchTrivia, pollBriefStatus]);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated || !accessToken) {
+      setIsLoading(false);
+      return;
+    }
+
+    fetchLatestBrief();
+  }, [isAuthenticated, accessToken, authLoading, fetchLatestBrief]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {

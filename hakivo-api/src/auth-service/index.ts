@@ -1476,6 +1476,70 @@ app.post('/auth/onboarding', async (c) => {
       console.error(`⚠️ Failed to enqueue first brief for ${user.userId}:`, briefError);
     }
 
+    // ==================== SYNC STATE BILLS FOR NEW USER ====================
+    // Immediately sync state bills so new users see state legislation right away
+    // This runs async and doesn't block the response
+    if (stateCode) {
+      try {
+        console.log(`🏛️  Triggering state bill sync for new user's state: ${stateCode}`);
+
+        const openStatesClient = c.env.OPENSTATES_CLIENT;
+        const bills = await openStatesClient.searchBillsByState(stateCode, undefined, 20);
+
+        if (bills && bills.length > 0) {
+          console.log(`📋 Found ${bills.length} state bills for ${stateCode}, syncing...`);
+
+          let synced = 0;
+          for (const bill of bills) {
+            try {
+              await db
+                .prepare(`
+                  INSERT INTO state_bills (
+                    id, state, session_identifier, identifier, title,
+                    abstract, subjects, classification, chamber,
+                    latest_action_date, latest_action_description,
+                    created_at, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    abstract = excluded.abstract,
+                    subjects = excluded.subjects,
+                    latest_action_date = excluded.latest_action_date,
+                    latest_action_description = excluded.latest_action_description,
+                    updated_at = excluded.updated_at
+                `)
+                .bind(
+                  bill.id,
+                  bill.state,
+                  bill.sessionIdentifier,
+                  bill.identifier,
+                  bill.title,
+                  bill.abstract || null,
+                  bill.subjects ? JSON.stringify(bill.subjects) : null,
+                  bill.classification ? JSON.stringify(bill.classification) : null,
+                  bill.chamber || null,
+                  bill.latestActionDate || null,
+                  bill.latestActionDescription || null,
+                  Date.now(),
+                  Date.now()
+                )
+                .run();
+              synced++;
+            } catch (billError) {
+              // Skip individual bill errors
+              console.error(`  ⚠️ Failed to sync bill ${bill.identifier}:`, billError);
+            }
+          }
+          console.log(`✓ Synced ${synced}/${bills.length} state bills for ${stateCode}`);
+        } else {
+          console.log(`ℹ️  No state bills found for ${stateCode}`);
+        }
+      } catch (syncError) {
+        // Non-fatal - state bills will sync on next scheduled run
+        console.error(`⚠️ Failed to sync state bills for ${stateCode}:`, syncError);
+      }
+    }
+
     return c.json({
       success: true,
       message: 'Onboarding completed successfully',

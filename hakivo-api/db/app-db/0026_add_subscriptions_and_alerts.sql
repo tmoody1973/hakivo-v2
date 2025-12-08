@@ -2,14 +2,10 @@
 -- Migration: 0026_add_subscriptions_and_alerts.sql
 -- Adds Stripe subscription tracking, notifications, and alert preferences
 
--- Add subscription columns to users table
-ALTER TABLE users ADD COLUMN subscription_status TEXT DEFAULT 'free';
-ALTER TABLE users ADD COLUMN stripe_customer_id TEXT;
-ALTER TABLE users ADD COLUMN stripe_subscription_id TEXT;
-ALTER TABLE users ADD COLUMN subscription_started_at INTEGER;
-ALTER TABLE users ADD COLUMN subscription_ends_at INTEGER;
-ALTER TABLE users ADD COLUMN briefs_used_this_month INTEGER DEFAULT 0;
-ALTER TABLE users ADD COLUMN briefs_reset_at INTEGER;
+-- NOTE: Subscription columns (subscription_status, stripe_customer_id, etc.)
+-- were already added to the users table in a previous deployment.
+-- ALTER TABLE statements are not idempotent in SQLite, so we skip them.
+-- The columns exist and the indexes are created with IF NOT EXISTS below.
 
 CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
 CREATE INDEX IF NOT EXISTS idx_users_subscription_status ON users(subscription_status);

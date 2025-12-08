@@ -8,6 +8,7 @@ import { PodcastWidget } from "@/components/widgets/podcast-widget"
 import { RepresentativesHorizontalWidget } from "@/components/widgets/representatives-horizontal-widget"
 import { LatestActionsWidget } from "@/components/widgets/latest-actions-widget"
 import { PersonalizedContentWidget } from "@/components/widgets/personalized-content-widget"
+import { WelcomeBanner } from "@/components/welcome-banner"
 import { getUserPreferences } from '@/lib/api/backend';
 
 export default function DashboardPage() {
@@ -68,6 +69,9 @@ export default function DashboardPage() {
 
   return (
     <div className="py-6 px-4 md:px-6">
+      {/* Welcome banner for new users - shows brief generation progress */}
+      <WelcomeBanner />
+
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Good morning, {user?.firstName || 'there'}</h1>
         <p className="text-muted-foreground mt-1">Here's your civic engagement dashboard for today</p>
