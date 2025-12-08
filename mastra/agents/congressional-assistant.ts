@@ -12,10 +12,11 @@ const cerebras = createOpenAICompatible({
 });
 
 // Model selection for latency optimization:
-// - zai-glm-4.6: Fast model optimized for tool calling (default)
+// - llama-3.3-70b: Best for tool calling and function execution (default)
 // - gpt-oss-120b: Deep reasoning model for complex analysis
-// Most queries are tool calls (DB lookups, news search) so we default to GLM-4.6
-const CEREBRAS_FAST_MODEL = "zai-glm-4.6";    // Tool calling, simple queries
+// - zai-glm-4.6: Fast but limited tool calling support
+// Most queries are tool calls (DB lookups, news search) so we use llama-3.3-70b
+const CEREBRAS_FAST_MODEL = "llama-3.3-70b";    // Tool calling, simple queries
 // Export deep model for future use in complex analysis scenarios
 export const CEREBRAS_DEEP_MODEL = "gpt-oss-120b";   // Complex analysis, synthesis
 
