@@ -6,7 +6,7 @@ import { PublicHeader } from "./public-header"
 import { useAuth } from "@/lib/auth/auth-context"
 
 // Routes that are publicly accessible without authentication
-const PUBLIC_ROUTES = ['/podcast']
+const PUBLIC_ROUTES = ['/podcast', '/pricing']
 
 export function ConditionalNav() {
   const pathname = usePathname()
