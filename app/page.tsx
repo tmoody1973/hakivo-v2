@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Play } from 'lucide-react'
+import { ArrowRight, Play, Mic, Headphones } from 'lucide-react'
 import { useState } from "react"
 
 export default function HomePage() {
@@ -20,6 +20,12 @@ export default function HomePage() {
             <span className="text-xl font-bold tracking-tight">Hakivo</span>
           </Link>
           <nav className="flex items-center gap-3">
+            <Link
+              href="/podcast"
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+            >
+              Podcast
+            </Link>
             <Link
               href="/about"
               className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
@@ -284,6 +290,101 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Podcast Section */}
+      <section className="bg-card border-y border-border">
+        <div className="max-w-7xl mx-auto px-6 md:px-8 py-20 md:py-28">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            {/* Podcast Artwork & Player */}
+            <div className="order-2 lg:order-1">
+              <div className="relative">
+                {/* Podcast Cover */}
+                <div className="aspect-square max-w-md mx-auto rounded-3xl overflow-hidden shadow-2xl shadow-black/30 ring-1 ring-white/10">
+                  <img
+                    src="/podcast-hakivo.png"
+                    alt="Signed Into Law - 100 Laws That Shaped America Podcast"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
+                {/* Floating Badge */}
+                <div className="absolute -top-4 -right-4 md:right-8 bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2 shadow-lg">
+                  <Mic className="w-4 h-4" />
+                  A Hakivo Original
+                </div>
+              </div>
+
+              {/* Spreaker Embed */}
+              <div className="mt-8 rounded-2xl overflow-hidden bg-background/50 border border-border">
+                <iframe
+                  src="https://widget.spreaker.com/player?show_id=6817395&theme=dark&playlist=show&playlist-continuous=true&chapters-image=true&episode_image_position=left&hide-logo=false&hide-likes=true&hide-comments=true&hide-sharing=true&hide-download=true"
+                  width="100%"
+                  height="200"
+                  frameBorder="0"
+                  allow="autoplay"
+                  title="Signed Into Law Podcast Player"
+                  className="w-full"
+                />
+              </div>
+            </div>
+
+            {/* Podcast Content */}
+            <div className="order-1 lg:order-2">
+              <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+                <Headphones className="w-4 h-4" />
+                New Episodes Daily
+              </div>
+
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 leading-tight">
+                Signed Into Law:{" "}
+                <span className="text-primary">The 100 Bills That Built Modern America</span>
+              </h2>
+
+              <p className="text-lg text-muted-foreground mb-4 leading-relaxed">
+                Every law tells a story — of movements that demanded change, crises that forced action,
+                and compromises that shaped a nation. <strong>Signed Into Law</strong> is a daily podcast
+                that unpacks the 100 most consequential pieces of U.S. legislation from 1900 to 2000.
+              </p>
+
+              <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
+                From the Antiquities Act to the Americans with Disabilities Act, each 10-12 minute episode
+                explores the debates behind the laws, the provisions within them, and the legacy they left.
+                AI-generated voices bring history to life in a format perfect for your commute.
+              </p>
+
+              {/* Platform Links */}
+              <div className="flex flex-wrap gap-3 mb-8">
+                <Button variant="outline" size="lg" asChild className="rounded-full gap-2">
+                  <a href="https://podcasts.apple.com/us/podcast/100-laws-that-change-america/id1859402488" target="_blank" rel="noopener noreferrer">
+                    <span className="text-lg">🎧</span>
+                    Apple Podcasts
+                  </a>
+                </Button>
+                <Button variant="outline" size="lg" asChild className="rounded-full gap-2">
+                  <a href="https://open.spotify.com/show/0uXNW7aFYmjsihiIDOgVuB" target="_blank" rel="noopener noreferrer">
+                    <span className="text-lg">🎵</span>
+                    Spotify
+                  </a>
+                </Button>
+                <Button variant="outline" size="lg" asChild className="rounded-full gap-2">
+                  <a href="https://www.spreaker.com/show/6817395/episodes/feed" target="_blank" rel="noopener noreferrer">
+                    <span className="text-lg">📡</span>
+                    RSS Feed
+                  </a>
+                </Button>
+              </div>
+
+              {/* CTA */}
+              <Button size="lg" asChild className="rounded-full px-8 h-14 text-base font-semibold">
+                <Link href="/podcast">
+                  Browse All Episodes
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Final CTA */}
       <section className="px-6 md:px-8 py-24 md:py-32 text-center relative">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-1 bg-gradient-to-r from-transparent via-primary to-transparent rounded-full" />
@@ -316,9 +417,9 @@ export default function HomePage() {
               <div className="text-sm text-muted-foreground">Civic engagement for the podcast generation.</div>
             </div>
             <div className="flex gap-6">
+              <Link href="/podcast" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Podcast</Link>
               <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</Link>
               <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
-              <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
               <Link href="mailto:info@hakivo.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
             </div>
           </div>

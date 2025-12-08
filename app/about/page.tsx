@@ -19,6 +19,12 @@ export default function AboutPage() {
           </Link>
           <nav className="flex items-center gap-3">
             <Link
+              href="/podcast"
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+            >
+              Podcast
+            </Link>
+            <Link
               href="/pricing"
               className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
             >

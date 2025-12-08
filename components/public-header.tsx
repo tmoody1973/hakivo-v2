@@ -18,6 +18,12 @@ export function PublicHeader() {
         {/* Navigation & Auth buttons */}
         <div className="flex items-center gap-3">
           <Link
+            href="/podcast"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
+          >
+            Podcast
+          </Link>
+          <Link
             href="/about"
             className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
           >
