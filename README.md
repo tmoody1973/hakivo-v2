@@ -46,7 +46,7 @@ Hakivo is a comprehensive civic intelligence platform that connects citizens wit
 
 ### 2. 100 Laws That Shaped America Podcast
 
-- Weekly AI-generated podcast episodes exploring landmark U.S. legislation
+- Daily AI-generated podcast episodes exploring landmark U.S. legislation
 - Automated pipeline: script generation, TTS audio, artwork creation
 - Auto-upload to Spreaker via OAuth integration
 - Episodes distributed to major podcast platforms
@@ -331,7 +331,7 @@ This project is dual-licensed:
 - **AGPL-3.0** for open source use by nonprofits, civic tech organizations, academic institutions, and government agencies
 - **Commercial License** for proprietary use by for-profit entities
 
-See [LICENSE](./LICENSE) for details. For commercial licensing inquiries, contact tarik@hakivo.app.
+See [LICENSE](./LICENSE) for details. For commercial licensing inquiries, contact info@hakivo.com.
 
 ## Acknowledgments
 
