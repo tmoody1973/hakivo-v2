@@ -729,7 +729,7 @@ Remember: Write like you're talking to a friend, not writing a government report
       }
 
       // Get bill text from database
-      const billText = (bill.full_text as string) || '';
+      let billText = (bill.full_text as string) || '';
       const billAbstract = (bill.abstract as string) || '';
       const pdfUrl = bill.full_text_url && bill.full_text_format?.includes('pdf') ? bill.full_text_url : null;
 
@@ -741,6 +741,55 @@ Remember: Write like you're talking to a friend, not writing a government report
         }
       } catch { /* ignore */ }
 
+      // If no text but we have a PDF URL, extract text using Gemini
+      if ((!billText || billText.length < 100) && pdfUrl) {
+        console.log(`  Extracting text from PDF: ${pdfUrl}`);
+        try {
+          // Fetch the PDF
+          const pdfResponse = await fetch(pdfUrl);
+          if (pdfResponse.ok) {
+            const pdfBuffer = await pdfResponse.arrayBuffer();
+            const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+
+            // Use Gemini to extract text from PDF
+            const gemini = this.getGeminiClient();
+            const extractionResult = await gemini.models.generateContent({
+              model: 'gemini-2.0-flash',
+              contents: [{
+                role: 'user',
+                parts: [
+                  {
+                    inlineData: {
+                      mimeType: 'application/pdf',
+                      data: pdfBase64
+                    }
+                  },
+                  {
+                    text: 'Extract and return the complete text content of this legislative bill PDF. Include all sections, provisions, and legal text. Return only the extracted text, no commentary.'
+                  }
+                ]
+              }]
+            });
+
+            const extractedText = extractionResult.text || '';
+
+            if (extractedText && extractedText.length >= 100) {
+              billText = extractedText;
+              console.log(`  Extracted ${billText.length} chars from PDF`);
+
+              // Store the extracted text for future use
+              await db
+                .prepare('UPDATE state_bills SET full_text = ?, text_extracted_at = ?, updated_at = ? WHERE id = ?')
+                .bind(billText, Date.now(), Date.now(), message.bill_id)
+                .run();
+              console.log(`  Stored extracted text in database`);
+            }
+          }
+        } catch (pdfError) {
+          console.error(`  Failed to extract PDF text:`, pdfError);
+        }
+      }
+
       // Build content for analysis
       let textSection = '';
       if (billText && billText.length >= 100) {
@@ -748,7 +797,7 @@ Remember: Write like you're talking to a friend, not writing a government report
       } else if (billAbstract) {
         textSection = `\nAbstract:\n${billAbstract}`;
       }
-      if (pdfUrl) {
+      if (pdfUrl && (!billText || billText.length < 100)) {
         textSection += `\n\nNote: PDF version available at: ${pdfUrl}`;
       }
 

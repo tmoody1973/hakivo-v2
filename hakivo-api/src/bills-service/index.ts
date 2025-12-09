@@ -2327,6 +2327,8 @@ app.post('/state-bills/:id/analyze', async (c) => {
 
     // Check if bill has text to analyze
     let billText = bill.full_text as string | null;
+    let pdfUrl = bill.full_text_url as string | null;
+    let pdfFormat = bill.full_text_format as string | null;
 
     // If no text, try to fetch it from OpenStates
     if (!billText || billText.length < 100) {
@@ -2359,6 +2361,25 @@ app.post('/state-bills/:id/analyze', async (c) => {
               console.log(`[StateBillAnalyze] Fetched and stored bill text (${billText.length} chars)`);
             }
           }
+
+          // If no HTML text found, check for PDF version and store URL for analysis
+          if ((!billText || billText.length < 100) && !pdfUrl) {
+            const pdfVersion = details.textVersions.find((v: any) =>
+              v.mediaType?.includes('pdf') || v.url?.includes('.pdf')
+            );
+
+            if (pdfVersion && pdfVersion.url) {
+              pdfUrl = pdfVersion.url;
+              pdfFormat = pdfVersion.mediaType || 'application/pdf';
+
+              // Store the PDF URL for future use
+              await db
+                .prepare('UPDATE state_bills SET full_text_url = ?, full_text_format = ?, updated_at = ? WHERE id = ?')
+                .bind(pdfUrl, pdfFormat, Date.now(), billId)
+                .run();
+              console.log(`[StateBillAnalyze] Stored PDF URL for bill: ${pdfUrl}`);
+            }
+          }
         }
       } catch (textError) {
         console.error(`[StateBillAnalyze] Failed to fetch bill text:`, textError);
@@ -2367,7 +2388,7 @@ app.post('/state-bills/:id/analyze', async (c) => {
 
     // For state bills, we can analyze even with just abstract + title (AI can fetch PDF)
     // Include full_text_url for PDF if available
-    const hasPdfUrl = bill.full_text_url && bill.full_text_format?.includes('pdf');
+    const hasPdfUrl = pdfUrl && pdfFormat?.includes('pdf');
     const hasContent = (billText && billText.length >= 100) || bill.abstract || hasPdfUrl;
 
     if (!hasContent) {

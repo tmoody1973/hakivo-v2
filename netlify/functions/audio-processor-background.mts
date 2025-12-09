@@ -64,7 +64,9 @@ function selectVoicePair(briefId: string): typeof VOICE_PAIRS[0] {
 }
 
 /**
- * Convert HOST A/HOST B script format to Gemini's named speaker format
+ * Convert brief script format to Gemini's named speaker format
+ * Supports both old format (HOST A:/HOST B:) and new format (ARABELLA:/MARK:)
+ * Removes emotional cues like [warmly] or [with urgency] for cleaner TTS
  */
 function convertToDialoguePrompt(script: string, voiceA: string, voiceB: string): string {
   const lines = script.split('\n');
@@ -74,12 +76,21 @@ function convertToDialoguePrompt(script: string, voiceA: string, voiceB: string)
     const trimmed = line.trim();
     if (!trimmed) continue;
 
+    // Remove emotional cues in brackets like [warmly], [with urgency], etc.
+    const cleanLine = (content: string) => content.replace(/^\[[^\]]*\]\s*/, '').trim();
+
+    // Support both old format (HOST A/HOST B) and new format (ARABELLA/MARK)
     if (trimmed.startsWith('HOST A:')) {
-      convertedLines.push(`${voiceA}: ${trimmed.substring(7).trim()}`);
+      convertedLines.push(`${voiceA}: ${cleanLine(trimmed.substring(7))}`);
     } else if (trimmed.startsWith('HOST B:')) {
-      convertedLines.push(`${voiceB}: ${trimmed.substring(7).trim()}`);
+      convertedLines.push(`${voiceB}: ${cleanLine(trimmed.substring(7))}`);
+    } else if (trimmed.startsWith('ARABELLA:')) {
+      convertedLines.push(`${voiceA}: ${cleanLine(trimmed.substring(9))}`);
+    } else if (trimmed.startsWith('MARK:')) {
+      convertedLines.push(`${voiceB}: ${cleanLine(trimmed.substring(5))}`);
     } else {
-      convertedLines.push(trimmed);
+      // Skip non-dialogue lines (headers, stage directions, etc.)
+      continue;
     }
   }
 
@@ -378,6 +389,16 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 
     // Convert script to dialogue format
     const dialoguePrompt = convertToDialoguePrompt(brief.script, voicePair.hostA, voicePair.hostB);
+    console.log(`[AUDIO] Dialogue prompt length: ${dialoguePrompt.length} chars`);
+    console.log(`[AUDIO] Dialogue preview: ${dialoguePrompt.substring(0, 300)}...`);
+
+    // Verify we have dialogue lines
+    if (dialoguePrompt.length < 100) {
+      console.error(`[AUDIO] Dialogue prompt too short (${dialoguePrompt.length} chars), script format may not match expected pattern`);
+      console.log(`[AUDIO] Script preview: ${brief.script.substring(0, 500)}`);
+      await updateBriefStatus(brief.id, 'audio_failed', null);
+      return;
+    }
 
     // Call Gemini TTS API
     console.log('[AUDIO] Calling Gemini TTS API...');

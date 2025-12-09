@@ -8,10 +8,11 @@ import { Env } from './raindrop.gen';
  * - Stage 1-4: Content gathering (user prefs, bills, actions, news)
  * - Stage 5: Script generation (Cerebras AI)
  * - Stage 6: Article generation (Cerebras AI)
- * - Stage 7: Set status to 'script_ready' for Netlify scheduled function
+ * - Stage 7: Set status to 'script_ready' and trigger immediate audio processing
  *
- * Audio generation is handled by Netlify Scheduled Function (audio-processor):
- * - Runs every 2 minutes, polls for briefs with status='script_ready'
+ * Audio generation is handled by Netlify Background Function (audio-processor):
+ * - Immediately triggered after script generation completes (for fast new user experience)
+ * - Also polled every 5 minutes by audio-retry-scheduler (for retries and cron briefs)
  * - 15-minute timeout (vs 30s observer limit)
  * - Uses Gemini TTS with multi-speaker dialogue
  * - Updates brief status to 'completed' or 'audio_failed' when done
@@ -367,8 +368,27 @@ export default class extends Each<Body, Env> {
     const featuredBillIds = billsWithActions.map((b: any) => b.id);
     await this.saveFeaturedBills(briefId, featuredBillIds);
 
-    // Brief generation complete - audio will be processed by Netlify scheduled function
-    console.log(`✅ [BRIEF-GEN] Script saved with status='script_ready'. Audio will be processed by Netlify scheduler.`);
+    // Trigger Netlify audio processor immediately (don't wait for 5-minute scheduler)
+    // This ensures new users don't have to wait for their first brief
+    console.log(`🎧 [BRIEF-GEN] Triggering immediate audio processing for brief ${briefId}`);
+    try {
+      const audioResponse = await fetch('https://hakivo-v2.netlify.app/.netlify/functions/audio-processor-background', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trigger: 'brief-generator-immediate', briefId }),
+      });
+      if (audioResponse.ok || audioResponse.status === 202) {
+        console.log(`✅ [BRIEF-GEN] Audio processor triggered successfully (${audioResponse.status})`);
+      } else {
+        console.warn(`⚠️ [BRIEF-GEN] Audio processor trigger returned ${audioResponse.status} - scheduler will retry`);
+      }
+    } catch (audioError) {
+      // Non-fatal: scheduler will pick up the brief within 5 minutes
+      console.warn(`⚠️ [BRIEF-GEN] Failed to trigger audio processor immediately:`, audioError);
+    }
+
+    // Brief generation complete
+    console.log(`✅ [BRIEF-GEN] Script saved with status='script_ready'. Audio processing initiated.`);
     console.log(`✅ [BRIEF-GEN] Total time: ${Date.now() - startTime}ms`);
   }
 
