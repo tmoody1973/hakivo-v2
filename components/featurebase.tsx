@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Script from "next/script"
-import { useAuth } from "@workos-inc/authkit-nextjs/components"
+import { useAuth } from "@/lib/auth/auth-context"
 
 declare global {
   interface Window {
@@ -16,20 +16,29 @@ declare global {
  * @see https://help.featurebase.app/articles/5257986-creating-and-signing-a-jwt
  */
 export function FeaturebaseWidget() {
-  const { loading, user } = useAuth()
+  const { isLoading, isAuthenticated, user } = useAuth()
   const [jwtToken, setJwtToken] = useState<string | null>(null)
 
   // Fetch signed JWT from server when user is authenticated
   useEffect(() => {
-    if (loading) return
-    if (!user) {
+    if (isLoading) return
+    if (!isAuthenticated || !user) {
       setJwtToken(null)
       return
     }
 
     const fetchJwt = async () => {
       try {
-        const response = await fetch("/api/featurebase")
+        const response = await fetch("/api/featurebase", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+          }),
+        })
         if (response.ok) {
           const data = await response.json()
           setJwtToken(data.jwtToken)
@@ -40,7 +49,7 @@ export function FeaturebaseWidget() {
     }
 
     fetchJwt()
-  }, [user, loading])
+  }, [isAuthenticated, user, isLoading])
 
   useEffect(() => {
     const win = window
@@ -55,7 +64,7 @@ export function FeaturebaseWidget() {
     }
 
     // Don't boot until we have JWT for authenticated users
-    if (user && !jwtToken) {
+    if (isAuthenticated && !jwtToken) {
       return
     }
 
@@ -72,7 +81,7 @@ export function FeaturebaseWidget() {
     }
 
     win.Featurebase("boot", bootConfig)
-  }, [user, jwtToken])
+  }, [isAuthenticated, jwtToken])
 
   return (
     <Script

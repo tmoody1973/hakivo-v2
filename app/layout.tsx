@@ -63,10 +63,10 @@ export default function RootLayout({
 
                 <ConditionalPlayer />
               </div>
+              <FeaturebaseWidget />
             </AudioPlayerProvider>
           </AuthProvider>
         </C1Provider>
-        <FeaturebaseWidget />
       </body>
     </html>
   )
