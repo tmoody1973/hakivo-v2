@@ -1,12 +1,28 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/auth-context';
 import { getUserPreferences, updateUserProfile, updateUserPreferences } from '@/lib/api/backend';
 import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
 import { subscriptionApi, SubscriptionStatus } from '@/lib/raindrop-client';
+
+// Artifact type from API
+interface UserArtifact {
+  id: string;
+  user_id: string;
+  type: 'report' | 'slides';
+  template: string;
+  title: string;
+  subject_type?: string;
+  subject_id?: string;
+  audience?: string;
+  is_public: boolean;
+  share_token?: string;
+  view_count: number;
+  created_at: string;
+}
 
 const POLICY_INTERESTS = [
   { name: 'Environment & Energy', icon: '🌱' },
@@ -121,6 +137,18 @@ function SettingsPageContent() {
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
 
+  // Documents/Artifacts state
+  const [artifacts, setArtifacts] = useState<UserArtifact[]>([]);
+  const [artifactsLoading, setArtifactsLoading] = useState(false);
+  const [artifactsPagination, setArtifactsPagination] = useState({
+    page: 1,
+    limit: 10,
+    totalCount: 0,
+    totalPages: 0,
+  });
+  const [deletingArtifactId, setDeletingArtifactId] = useState<string | null>(null);
+  const [sharingArtifactId, setSharingArtifactId] = useState<string | null>(null);
+
   // Load subscription status
   useEffect(() => {
     const loadSubscription = async () => {
@@ -139,6 +167,131 @@ function SettingsPageContent() {
 
     loadSubscription();
   }, [user?.id]);
+
+  // Load user artifacts
+  const loadArtifacts = useCallback(async (page = 1) => {
+    if (!accessToken) return;
+
+    setArtifactsLoading(true);
+    try {
+      const response = await fetch(`/api/artifacts?page=${page}&limit=10`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setArtifacts(data.artifacts || []);
+        setArtifactsPagination(data.pagination || {
+          page: 1,
+          limit: 10,
+          totalCount: 0,
+          totalPages: 0,
+        });
+      }
+    } catch (error) {
+      console.error('[Settings] Error loading artifacts:', error);
+    } finally {
+      setArtifactsLoading(false);
+    }
+  }, [accessToken]);
+
+  // Load artifacts when documents tab is active
+  useEffect(() => {
+    if (activeTab === 'documents' && accessToken) {
+      loadArtifacts(1);
+    }
+  }, [activeTab, accessToken, loadArtifacts]);
+
+  // Handle artifact deletion
+  const handleDeleteArtifact = async (artifactId: string) => {
+    if (!accessToken) return;
+    if (!confirm('Are you sure you want to delete this document? This cannot be undone.')) return;
+
+    setDeletingArtifactId(artifactId);
+    try {
+      const response = await fetch(`/api/artifacts?id=${artifactId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        setArtifacts(prev => prev.filter(a => a.id !== artifactId));
+        setArtifactsPagination(prev => ({
+          ...prev,
+          totalCount: prev.totalCount - 1,
+        }));
+      } else {
+        alert('Failed to delete document. Please try again.');
+      }
+    } catch (error) {
+      console.error('[Settings] Error deleting artifact:', error);
+      alert('Failed to delete document. Please try again.');
+    } finally {
+      setDeletingArtifactId(null);
+    }
+  };
+
+  // Handle artifact share toggle
+  const handleToggleShare = async (artifactId: string, currentlyPublic: boolean) => {
+    if (!accessToken) return;
+
+    setSharingArtifactId(artifactId);
+    try {
+      const response = await fetch('/api/artifacts', {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          artifactId,
+          isPublic: !currentlyPublic,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setArtifacts(prev => prev.map(a =>
+          a.id === artifactId
+            ? { ...a, is_public: data.artifact.is_public, share_token: data.artifact.share_token }
+            : a
+        ));
+        if (data.shareUrl) {
+          await navigator.clipboard.writeText(data.shareUrl);
+          alert('Share link copied to clipboard!');
+        }
+      } else {
+        alert('Failed to update sharing status. Please try again.');
+      }
+    } catch (error) {
+      console.error('[Settings] Error toggling share:', error);
+      alert('Failed to update sharing status. Please try again.');
+    } finally {
+      setSharingArtifactId(null);
+    }
+  };
+
+  // Get template display label
+  const getTemplateLabel = (template: string) => {
+    const labels: Record<string, string> = {
+      bill_analysis: 'Bill Analysis',
+      rep_scorecard: 'Rep Scorecard',
+      vote_breakdown: 'Vote Breakdown',
+      policy_brief: 'Policy Brief',
+      lesson_deck: 'Lesson Deck',
+      advocacy_deck: 'Advocacy Deck',
+      news_brief: 'News Brief',
+      district_briefing: 'District Briefing',
+      week_in_congress: 'Week in Congress',
+      bill_comparison: 'Bill Comparison',
+      voting_analysis: 'Voting Analysis',
+    };
+    return labels[template] || template;
+  };
 
   // Handle upgrade to Pro
   const handleUpgrade = async () => {
@@ -408,6 +561,21 @@ function SettingsPageContent() {
             {counts && counts.total > 0 && (
               <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded">
                 {counts.total}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`px-3 py-2 text-sm font-medium rounded-md text-left ${
+              activeTab === 'documents'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            Documents
+            {artifactsPagination.totalCount > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded">
+                {artifactsPagination.totalCount}
               </span>
             )}
           </button>
@@ -937,6 +1105,212 @@ function SettingsPageContent() {
             </div>
           )}
 
+          {/* Documents Tab */}
+          {activeTab === 'documents' && (
+            <div className="rounded-lg border bg-card p-6 space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold mb-1">Your Documents</h2>
+                <p className="text-sm text-muted-foreground">
+                  Manage reports, slide decks, and other documents generated in chat
+                </p>
+              </div>
+
+              {artifactsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : artifacts.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
+                    <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium mb-2">No documents yet</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Generate reports and slides in chat to see them here
+                  </p>
+                  <Link
+                    href="/chat"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    Start a Chat
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Document List */}
+                  <div className="space-y-3">
+                    {artifacts.map((artifact) => (
+                      <div
+                        key={artifact.id}
+                        className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            {/* Type Icon */}
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                              artifact.type === 'slides'
+                                ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                                : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                            }`}>
+                              {artifact.type === 'slides' ? (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              )}
+                            </div>
+
+                            {/* Document Info */}
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium truncate">{artifact.title}</h4>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+                                <span className="px-2 py-0.5 bg-muted rounded text-xs">
+                                  {getTemplateLabel(artifact.template)}
+                                </span>
+                                <span>
+                                  {new Date(artifact.created_at).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  })}
+                                </span>
+                                {artifact.view_count > 0 && (
+                                  <span>{artifact.view_count} view{artifact.view_count !== 1 ? 's' : ''}</span>
+                                )}
+                                {artifact.is_public && (
+                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs">
+                                    Public
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* View */}
+                            <Link
+                              href={`/artifacts/${artifact.share_token || artifact.id}`}
+                              className="p-2 hover:bg-accent rounded-md"
+                              title="View document"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </Link>
+
+                            {/* Download PDF */}
+                            <a
+                              href={`/api/artifacts/export?id=${artifact.id}&format=pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 hover:bg-accent rounded-md"
+                              title="Download PDF"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                            </a>
+
+                            {/* Download PPTX (slides only) */}
+                            {artifact.type === 'slides' && (
+                              <a
+                                href={`/api/artifacts/export?id=${artifact.id}&format=pptx`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2 hover:bg-accent rounded-md"
+                                title="Download PowerPoint"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                              </a>
+                            )}
+
+                            {/* Share Toggle */}
+                            <button
+                              onClick={() => handleToggleShare(artifact.id, artifact.is_public)}
+                              disabled={sharingArtifactId === artifact.id}
+                              className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
+                              title={artifact.is_public ? 'Make private' : 'Share document'}
+                            >
+                              {sharingArtifactId === artifact.id ? (
+                                <div className="w-4 h-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                              ) : (
+                                <svg className={`w-4 h-4 ${artifact.is_public ? 'text-green-600' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                </svg>
+                              )}
+                            </button>
+
+                            {/* Delete */}
+                            <button
+                              onClick={() => handleDeleteArtifact(artifact.id)}
+                              disabled={deletingArtifactId === artifact.id}
+                              className="p-2 hover:bg-destructive/10 text-destructive rounded-md disabled:opacity-50"
+                              title="Delete document"
+                            >
+                              {deletingArtifactId === artifact.id ? (
+                                <div className="w-4 h-4 animate-spin rounded-full border-2 border-destructive border-t-transparent"></div>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Pagination */}
+                  {artifactsPagination.totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {((artifactsPagination.page - 1) * artifactsPagination.limit) + 1} to{' '}
+                        {Math.min(artifactsPagination.page * artifactsPagination.limit, artifactsPagination.totalCount)} of{' '}
+                        {artifactsPagination.totalCount} documents
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => loadArtifacts(artifactsPagination.page - 1)}
+                          disabled={artifactsPagination.page === 1 || artifactsLoading}
+                          className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          onClick={() => loadArtifacts(artifactsPagination.page + 1)}
+                          disabled={artifactsPagination.page >= artifactsPagination.totalPages || artifactsLoading}
+                          className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  <div className="bg-muted p-4 rounded-lg">
+                    <p className="text-sm">
+                      <strong>{artifactsPagination.totalCount}</strong> document{artifactsPagination.totalCount !== 1 ? 's' : ''} total
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Subscription Tab */}
           {activeTab === 'subscription' && (
             <div className="space-y-6">
@@ -1056,7 +1430,7 @@ function SettingsPageContent() {
                 <div className="rounded-lg border bg-card p-6 space-y-4">
                   <h3 className="font-semibold">Your Usage</h3>
 
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-4">
                     {/* Briefs Usage */}
                     <div className="p-4 border rounded-lg">
                       <div className="text-sm text-muted-foreground mb-1">Audio Briefs</div>
@@ -1142,6 +1516,41 @@ function SettingsPageContent() {
                         </div>
                       )}
                     </div>
+
+                    {/* Documents Usage */}
+                    <div className="p-4 border rounded-lg">
+                      <div className="text-sm text-muted-foreground mb-1">Documents</div>
+                      <div className="text-2xl font-bold">
+                        {subscriptionStatus.usage.artifacts?.limit === 'unlimited'
+                          ? 'Unlimited'
+                          : `${subscriptionStatus.usage.artifacts?.used || 0} / ${subscriptionStatus.usage.artifacts?.limit || 3}`
+                        }
+                      </div>
+                      {subscriptionStatus.usage.artifacts && subscriptionStatus.usage.artifacts.limit !== 'unlimited' && (
+                        <div className="mt-2">
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                subscriptionStatus.usage.artifacts.canCreateMore ? 'bg-primary' : 'bg-destructive'
+                              }`}
+                              style={{
+                                width: `${Math.min(100, (subscriptionStatus.usage.artifacts.used / (subscriptionStatus.usage.artifacts.limit as number)) * 100)}%`
+                              }}
+                            />
+                          </div>
+                          {subscriptionStatus.usage.artifacts.remaining !== 'unlimited' && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {subscriptionStatus.usage.artifacts.remaining} remaining this month
+                            </p>
+                          )}
+                          {!subscriptionStatus.usage.artifacts.canCreateMore && (
+                            <p className="text-xs text-destructive mt-1">
+                              Limit reached - upgrade for more
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Features Status */}
@@ -1202,6 +1611,20 @@ function SettingsPageContent() {
                         )}
                         <span className={subscriptionStatus.features.unlimitedTracking ? '' : 'text-muted-foreground'}>
                           Unlimited Tracking
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {subscriptionStatus.features.unlimitedArtifacts ? (
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        <span className={subscriptionStatus.features.unlimitedArtifacts ? '' : 'text-muted-foreground'}>
+                          Unlimited Documents
                         </span>
                       </div>
                     </div>

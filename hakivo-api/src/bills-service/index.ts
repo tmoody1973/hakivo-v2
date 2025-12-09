@@ -276,6 +276,111 @@ app.post('/bills/semantic-search', async (c) => {
 });
 
 /**
+ * POST /bills/smart-query
+ * Natural language to SQL query using SmartSQL AI translation
+ *
+ * Body: {
+ *   query: string,           // Natural language query (e.g., "show me healthcare bills from 2024")
+ *   format: 'json' | 'csv'   // Response format (default: 'json')
+ * }
+ *
+ * Architecture: SmartSQL handles AI translation, app-db stores the actual data.
+ * 1. SmartSQL translates natural language to SQL using schema metadata
+ * 2. The generated SQL is executed against app-db where bills data lives
+ */
+app.post('/bills/smart-query', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { query, format = 'json' } = body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return c.json({ error: 'Query is required' }, 400);
+    }
+
+    const smartSql = c.env.CONGRESSIONAL_DB;
+    const appDb = c.env.APP_DB;
+
+    // Ensure SmartSQL knows about our schema using 'replace' mode
+    // This fully overrides any pre-existing metadata
+    // NOTE: Schema matches actual deployed database (congress not congress_id)
+    await smartSql.updateMetadata([
+      {
+        tableName: 'bills',
+        columns: [
+          { columnName: 'id', dataType: 'TEXT', isPrimaryKey: true, nullable: false, sampleData: 'hr-119-1234' },
+          { columnName: 'congress', dataType: 'INTEGER', sampleData: '119', nullable: false, isPrimaryKey: false },
+          { columnName: 'bill_type', dataType: 'TEXT', sampleData: 'hr', nullable: false, isPrimaryKey: false },
+          { columnName: 'bill_number', dataType: 'INTEGER', sampleData: '1234', nullable: false, isPrimaryKey: false },
+          { columnName: 'title', dataType: 'TEXT', sampleData: 'To provide healthcare coverage', nullable: true, isPrimaryKey: false },
+          { columnName: 'origin_chamber', dataType: 'TEXT', sampleData: 'House', nullable: true, isPrimaryKey: false },
+          { columnName: 'introduced_date', dataType: 'TEXT', sampleData: '2025-01-15', nullable: true, isPrimaryKey: false },
+          { columnName: 'latest_action_date', dataType: 'TEXT', sampleData: '2025-02-01', nullable: true, isPrimaryKey: false },
+          { columnName: 'latest_action_text', dataType: 'TEXT', sampleData: 'Referred to committee', nullable: true, isPrimaryKey: false },
+          { columnName: 'sponsor_bioguide_id', dataType: 'TEXT', sampleData: 'P000197', nullable: true, isPrimaryKey: false },
+          { columnName: 'policy_area', dataType: 'TEXT', sampleData: 'Health', nullable: true, isPrimaryKey: false },
+        ]
+      },
+      {
+        tableName: 'members',
+        columns: [
+          { columnName: 'bioguide_id', dataType: 'TEXT', isPrimaryKey: true, nullable: false },
+          { columnName: 'first_name', dataType: 'TEXT', sampleData: 'Nancy', nullable: true, isPrimaryKey: false },
+          { columnName: 'last_name', dataType: 'TEXT', sampleData: 'Pelosi', nullable: true, isPrimaryKey: false },
+          { columnName: 'party', dataType: 'TEXT', sampleData: 'Democrat', nullable: true, isPrimaryKey: false },
+          { columnName: 'state', dataType: 'TEXT', sampleData: 'CA', nullable: true, isPrimaryKey: false },
+          { columnName: 'district', dataType: 'INTEGER', sampleData: '11', nullable: true, isPrimaryKey: false },
+          { columnName: 'current_member', dataType: 'INTEGER', sampleData: '1', nullable: true, isPrimaryKey: false },
+        ]
+      }
+    ], 'replace');
+
+    // Use SmartSQL to translate natural language to SQL
+    const translationResult = await smartSql.executeQuery({
+      textQuery: query,
+      format: 'json'
+    });
+
+    let generatedSql = translationResult.queryExecuted;
+    const aiReasoning = translationResult.aiReasoning;
+
+    if (!generatedSql) {
+      return c.json({
+        success: false,
+        error: 'Failed to translate query to SQL',
+        query,
+        aiReasoning
+      }, 400);
+    }
+
+    // Post-process SQL to fix any column name mismatches
+    // SmartSQL AI may still use outdated column names from cached model
+    generatedSql = generatedSql
+      .replace(/\bcongress_id\b/gi, 'congress')
+      .replace(/\bbill_id\b/gi, 'id');
+
+    // Execute the corrected SQL against app-db where actual data lives
+    const dbResult = await appDb.prepare(generatedSql).all();
+
+    return c.json({
+      success: true,
+      query,
+      queryExecuted: generatedSql,
+      aiReasoning,
+      results: dbResult.results || [],
+      count: dbResult.results?.length || 0,
+      message: `Found ${dbResult.results?.length || 0} results`
+    });
+
+  } catch (error) {
+    console.error('SmartSQL query error:', error);
+    return c.json({
+      error: 'SmartSQL query failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * GET /bills/:id
  * Get bill by database ID (simpler endpoint than congress/type/number)
  */
@@ -283,7 +388,7 @@ app.get('/bills/:id', async (c, next) => {
   const billId = c.req.param('id');
 
   // Skip reserved paths that should be handled by later routes
-  const reservedPaths = ['search', 'interests', 'tracked', 'by-interests', 'semantic-search'];
+  const reservedPaths = ['search', 'interests', 'tracked', 'by-interests', 'semantic-search', 'smart-query'];
   if (reservedPaths.includes(billId.toLowerCase())) {
     return next();
   }

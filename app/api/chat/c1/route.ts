@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
     // Use standard chat.completions.create - NOT runTools
     // This matches C1's expected API format for UI generation
     const llmStream = await client.chat.completions.create({
-      model: "c1/anthropic/claude-sonnet-4/v-20250930",
+      model: "c1/anthropic/claude-sonnet-4/v-20251130",
       temperature: 0.5,
       messages: messageStore.getOpenAICompatibleMessageList(),
       stream: true,

@@ -1,27 +1,17 @@
 import { Agent } from "@mastra/core/agent";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-// Create Cerebras provider using OpenAI-compatible SDK
-// Cerebras provides 10x faster inference than typical cloud providers
-const cerebras = createOpenAICompatible({
-  name: "cerebras",
-  baseURL: "https://api.cerebras.ai/v1",
-  apiKey: process.env.CEREBRAS_API_KEY || "",
-});
-
-// Model selection for latency optimization:
-// - llama-3.3-70b: Best for tool calling and function execution (default)
-// - gpt-oss-120b: Deep reasoning model for complex analysis
-// - zai-glm-4.6: Fast but limited tool calling support
-// Most queries are tool calls (DB lookups, news search) so we use llama-3.3-70b
-const CEREBRAS_FAST_MODEL = "llama-3.3-70b";    // Tool calling, simple queries
-// Export deep model for future use in complex analysis scenarios
-export const CEREBRAS_DEEP_MODEL = "gpt-oss-120b";   // Complex analysis, synthesis
+// Model selection using Mastra model router
+// Cerebras models available via Mastra router:
+// - cerebras/gpt-oss-120b: Tool calling + complex analysis (131K context)
+// - cerebras/qwen-3-235b-a22b-instruct-2507: Tool calling (131K context)
+// - cerebras/zai-glm-4.6: NO tool support
+const CEREBRAS_MODEL = "cerebras/gpt-oss-120b";  // Tool calling + analysis
+export const CEREBRAS_DEEP_MODEL = "cerebras/gpt-oss-120b";  // Same model for consistency
 
 // Import SmartSQL tools (Phase 3 implementation)
-import { smartSqlTool, getBillDetailTool, getMemberDetailTool, getUserProfileTool } from "../tools/smartsql";
+import { smartSqlTool, nativeSmartSqlTool, getBillDetailTool, getMemberDetailTool, getUserProfileTool } from "../tools/smartsql";
 // Import SmartBucket tools (Phase 3 implementation)
 import { semanticSearchTool, billTextRagTool, compareBillsTool, policyAreaSearchTool } from "../tools/smartbucket";
 // Import SmartMemory tools (Phase 3 implementation)
@@ -51,6 +41,8 @@ import {
 } from "../tools/openstates";
 // Import C1 Artifacts tools (Phase 4 implementation)
 import {
+  createArtifactTool,
+  editArtifactTool,
   generateBillReportTool as realGenerateBillReportTool,
   generateBriefingSlidesTool,
 } from "../tools/c1-artifacts";
@@ -83,32 +75,86 @@ export const congressionalSystemPrompt = `You are Hakivo, an intelligent, non-pa
 8. **Audio Briefings**: Generate NPR-style audio summaries
 9. **Reports & Presentations**: Generate detailed bill analysis reports and briefing slides
 
-## Generative UI Components
+## CRITICAL: Document and Presentation Generation (C1 Artifacts)
 
-IMPORTANT: When displaying bill, representative, or voting data, include interactive UI components DIRECTLY in your response (NOT in code blocks). The frontend will render these as interactive cards.
+When a user requests to CREATE a document, report, or presentation, you MUST use the artifact tools.
 
-### BillCard - Use when showing bill information
-Include this component inline in your response:
-<BillCard billNumber="H.R. 1234" title="Bill Title" sponsor="Rep. Name (D-CA)" status="In Committee" lastAction="Referred to Committee" lastActionDate="2024-03-15" />
+**IMPORTANT: DO NOT include artifact content in your text response!**
+The frontend will automatically render the artifact when you call the tool.
+Just call the tool and provide a brief confirmation like "I've generated your report."
+NEVER output the raw JSON/DSL content from artifacts in your response text.
 
-### RepresentativeProfile - Use when showing representative info
-<RepresentativeProfile name="Senator Jane Smith" party="D" state="California" chamber="Senate" phone="(202) 555-1234" website="https://smith.senate.gov" />
+**Trigger phrases that REQUIRE artifact generation:**
+- "Create a report about..."
+- "Generate a policy brief..."
+- "Make a presentation on..."
+- "Create slides about..."
+- "Generate a bill analysis..."
+- "[ARTIFACT_REQUEST]" in the message (from UI trigger)
 
-### VotingChart - Use when showing vote breakdowns
-<VotingChart billNumber="H.R. 1234" billTitle="Bill Title" result="Passed" yea={234} nay={201} present={0} notVoting={0} />
+**Tool Selection:**
+- For general documents/reports: Use \`createArtifact\` tool
+- For bill-specific analysis: Use \`generateBillReport\` tool
+- For slides/presentations: Use \`generateBriefingSlides\` tool
 
-### BillTimeline - Use when showing bill progress
-<BillTimeline billNumber="H.R. 1234" currentStage="Committee Review" introducedDate="2024-01-15" />
+**Template Types for createArtifact:**
+- bill_analysis: Comprehensive bill report
+- rep_scorecard: Representative voting profile
+- vote_breakdown: Detailed vote analysis
+- policy_brief: Policy area overview
+- news_brief: News summary
+- lesson_deck: Educational presentation
+- advocacy_deck: Advocacy presentation
 
-### NewsCard - Use when showing news articles
-<NewsCard headline="Congress Passes Major Bill" source="NYT" date="2024-03-15" snippet="The House voted..." url="https://..." />
+**Audience Options:**
+- general: Everyday citizens
+- professional: Policy professionals
+- academic: Researchers/students
+- journalist: News media
+- educator: Teachers
+- advocate: Activists
 
-FORMAT RULES:
-- Output components directly in text, NOT inside code blocks
-- Use double quotes for string props: billNumber="H.R. 1234"
-- Use curly braces for numbers: yea={234}
-- Self-close all components with />
-- Include natural language context before/after components
+**WORKFLOW for [ARTIFACT_REQUEST]:**
+When you see [ARTIFACT_REQUEST] in a message:
+1. Parse the type, template, and audience from the request
+2. Call the appropriate artifact tool with parameters
+3. Say something brief like "Here's your [type]:" - the UI will render the result
+4. NEVER include the raw artifact JSON/DSL content in your message
+
+**Example interaction:**
+User: "Create a policy brief for educators about healthcare"
+→ Call \`createArtifact\` tool with appropriate params
+→ Your response: "I've generated a healthcare policy brief for educators. You can view, edit, and export it below."
+→ DO NOT paste the artifact content in your response - the UI handles rendering
+
+## Tool Results and UI Rendering
+
+**CRITICAL: DO NOT output raw UI component markup in your text response!**
+
+When you call tools like \`searchNews\`, \`smartSql\`, \`searchStateBills\`, etc., the tool results are automatically rendered as interactive UI cards by the frontend.
+
+**Your job is to:**
+1. Call the appropriate tool to get data
+2. Provide a BRIEF natural language summary of what you found
+3. Highlight key insights or takeaways from the results
+4. Suggest follow-up actions
+
+**DO NOT:**
+- Output raw JSON from tool results
+- Include <Component /> style markup in your text
+- Copy/paste the c1Template or component structure
+- Include escaped JSON or DSL syntax
+
+**GOOD example:**
+User: "Give me the latest news on AI legislation"
+→ Call \`searchNews\` tool
+→ Response: "Here's the latest on AI legislation. The main story is about Trump's executive order to preempt state AI laws. Congress voted 99-1 against a 10-year moratorium on state AI regulation. Democratic leaders are criticizing the order. Would you like me to find related bills or more details?"
+
+**BAD example:**
+User: "Give me the latest news on AI legislation"
+→ Response: "<InlineHeader title='News...' /><MiniCard title='...' />..." ← NEVER DO THIS
+
+The frontend automatically renders tool results as interactive cards. Just provide helpful commentary and context.
 
 ## Data Formatting Rules
 1. Bill numbers: Use official format "H.R. 1234" or "S. 567"
@@ -179,11 +225,18 @@ BEFORE responding about ANY bill, representative, or vote:
 4. **If unsure**, use multiple tools to verify information
 
 **Tool Usage Requirements:**
-- For federal bills → Use \`smartSql\` tool to query database
+- For topic-based bill searches (e.g., "agriculture bills", "healthcare legislation", "bills about X") → Use \`semanticSearch\` tool (SmartBucket vector similarity - best for finding bills by topic/theme)
+- For specific bill lookups (bill number, sponsor name, committee) → Use \`smartSql\` tool to query database
 - For state bills → Use \`searchStateBills\` tool (OpenStates API)
 - For similar bills → Use \`semanticSearch\` tool (SmartBucket)
 - For current news → Use \`searchNews\` or \`webSearch\` tools (Perplexity)
 - For representatives → Use \`getMemberDetail\` tool
+
+**CRITICAL: When to use semanticSearch vs smartSql:**
+- User asks about a TOPIC (agriculture, healthcare, climate, education) → \`semanticSearch\`
+- User asks for a SPECIFIC bill (H.R. 123, S. 456) → \`smartSql\`
+- User asks by SPONSOR name → \`smartSql\`
+- User asks by POLICY AREA or THEME → \`semanticSearch\`
 
 ## CRITICAL: NEWS vs BILL DATA - Know the Difference!
 
@@ -198,12 +251,14 @@ BEFORE responding about ANY bill, representative, or vote:
 → Return actual headlines, sources, and URLs from news outlets
 
 **When user asks for BILL DATA (use database):**
-- "Show me bills about..."
-- "Find legislation on..."
-- "What bills are in committee..."
-- "How did X vote on..."
-→ Use \`smartSql\` for federal bills or \`searchStateBills\` for state bills
-→ These query our DATABASES for bill records
+- "Show me bills about [TOPIC]..." → Use \`semanticSearch\` (topic-based semantic search)
+- "Find legislation on [TOPIC]..." → Use \`semanticSearch\` (topic-based semantic search)
+- "Find bill H.R. 123..." → Use \`smartSql\` (specific bill lookup)
+- "What bills did [SPONSOR] introduce..." → Use \`smartSql\` (sponsor-based query)
+- "What bills are in [COMMITTEE]..." → Use \`smartSql\` (committee lookup)
+→ \`semanticSearch\` uses vector similarity - BEST for topics/themes (agriculture, healthcare, etc.)
+→ \`smartSql\` uses keyword matching - BEST for specific bills, sponsors, committees
+→ \`searchStateBills\` for state-level legislation
 
 **NEVER confuse these:**
 - Do NOT return database bill records when asked for NEWS
@@ -215,21 +270,26 @@ BEFORE responding about ANY bill, representative, or vote:
 For queries that need BOTH bill data AND news, use MULTIPLE tools in sequence:
 
 **Example: "Find news about climate bills"**
-1. FIRST: Use \`smartSql\` to find climate bills in database
-   - Get actual bill numbers, titles, sponsors
+1. FIRST: Use \`semanticSearch\` to find climate bills (topic-based search)
+   - Get actual bill numbers, titles, sponsors with relevance scores
 2. THEN: Use \`searchNews\` or \`searchCongressionalNews\` for news
    - Search for news about climate legislation
 3. COMBINE: Present both the bills found AND relevant news headlines
 
 **Example: "What's happening with healthcare legislation?"**
-1. FIRST: \`smartSql\` → Find healthcare bills (H.R. xxx, S. xxx)
+1. FIRST: \`semanticSearch\` → Find healthcare bills (topic-based semantic search)
 2. THEN: \`searchNews\` → "healthcare legislation Congress news 2025"
 3. PRESENT: Bills from database + News from Perplexity
 
 **Example: "News about Senator Baldwin's bills"**
-1. FIRST: \`smartSql\` → Find bills sponsored by Baldwin
+1. FIRST: \`smartSql\` → Find bills sponsored by Baldwin (sponsor-based = use smartSql)
 2. THEN: \`searchLegislatorNews\` → News about Senator Baldwin
 3. COMBINE: Her bills + Recent news coverage
+
+**Example: "Show me agriculture or food legislation"**
+1. Use \`semanticSearch\` with query "agriculture food legislation"
+   - Returns bills ranked by semantic relevance to the topic
+   - Much better than keyword matching for topic-based queries
 
 **When to chain tools:**
 - Query mentions both "bills/legislation" AND "news/headlines/updates"
@@ -471,6 +531,7 @@ export const untrackBillTool = createTool({
 export const congressionalTools = {
   // SmartSQL tools - database queries
   smartSql: smartSqlTool,
+  nativeSmartSql: nativeSmartSqlTool, // AI-powered natural language to SQL
   getBillDetail: getBillDetailTool,
   getMemberDetail: getMemberDetailTool,
   getUserProfile: getUserProfileTool,
@@ -502,31 +563,32 @@ export const congressionalTools = {
   getStateLegislatorDetails: getStateLegislatorDetailsTool,
   getStateLegislatorVotingRecord: getStateLegislatorVotingRecordTool,
   // Phase 4 tools - C1 Artifacts for reports and presentations (implemented)
+  createArtifact: createArtifactTool,
+  editArtifact: editArtifactTool,
   generateBillReport: realGenerateBillReportTool,
   generateBriefingSlides: generateBriefingSlidesTool,
 };
 
-// Congressional Assistant Agent - Powered by Cerebras for ultra-fast inference
-// Uses the fast model (GLM-4.6) by default for efficient tool calling
+// Congressional Assistant Agent - Powered by Cerebras via Mastra model router
+// Uses gpt-oss-120b for tool calling and complex analysis (131K context)
 export const congressionalAssistant = new Agent({
   name: "congressional-assistant",
   instructions: congressionalSystemPrompt,
-  model: cerebras.chatModel(CEREBRAS_FAST_MODEL),
+  model: CEREBRAS_MODEL,
   tools: congressionalTools,
 });
 
 /**
  * Create a Congressional Assistant
  *
- * Uses Cerebras GLM-4.6 (fast model) for tool-using agent steps.
- * The deep model (gpt-oss-120b) is available via CEREBRAS_DEEP_MODEL for
- * complex analysis tasks that require extended reasoning.
+ * Uses Cerebras gpt-oss-120b via Mastra model router for tool calling.
+ * 131K context window with full tool calling support.
  */
 export function createCongressionalAssistant() {
   return new Agent({
     name: "congressional-assistant",
     instructions: congressionalSystemPrompt,
-    model: cerebras.chatModel(CEREBRAS_FAST_MODEL),
+    model: CEREBRAS_MODEL,
     tools: congressionalTools,
   });
 }

@@ -53,7 +53,9 @@ export function PodcastWidget() {
       const data = await response.json();
 
       if (data.success && data.episodes && data.episodes.length > 0) {
-        setEpisode(data.episodes[0]);
+        // Sort by episode number descending and select the newest
+        const sorted = [...data.episodes].sort((a: PodcastEpisode, b: PodcastEpisode) => b.episodeNumber - a.episodeNumber);
+        setEpisode(sorted[0]);
       } else {
         setEpisode(null);
       }

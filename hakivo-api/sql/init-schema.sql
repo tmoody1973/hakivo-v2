@@ -504,3 +504,39 @@ CREATE INDEX IF NOT EXISTS idx_congressional_record_articles_issue ON congressio
 CREATE INDEX IF NOT EXISTS idx_members_state ON members(state);
 CREATE INDEX IF NOT EXISTS idx_members_party ON members(party);
 CREATE INDEX IF NOT EXISTS idx_members_current ON members(current_member);
+
+-- ============================================================================
+-- CONGRESSIONAL ARTIFACTS (AI-Generated Documents)
+-- ============================================================================
+-- User-generated documents created via Thesys.dev Artifacts API
+-- Supports reports, slide decks, and other document types
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,           -- 'report', 'slides', 'brief', 'comparison'
+  template TEXT NOT NULL,       -- 'bill_analysis', 'rep_profile', 'vote_breakdown', 'policy_brief'
+  title TEXT NOT NULL,
+  content TEXT,                 -- C1 DSL JSON from Thesys
+  subject_type TEXT,            -- 'bill', 'member', 'vote', 'committee', 'custom'
+  subject_id TEXT,              -- ID of the subject (bill_id, bioguide_id, etc.)
+  subject_context TEXT,         -- JSON with additional context (bill title, member name, etc.)
+  audience TEXT DEFAULT 'general', -- 'general', 'professional', 'academic', 'media'
+  vultr_key TEXT,               -- Storage key for exported files (PDF/PPTX)
+  vultr_pdf_key TEXT,           -- PDF export storage key
+  vultr_pptx_key TEXT,          -- PPTX export storage key
+  is_public INTEGER DEFAULT 0,  -- Whether artifact is publicly shareable
+  share_token TEXT UNIQUE,      -- Unique token for public sharing URL
+  view_count INTEGER DEFAULT 0, -- Number of public views
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Indexes for artifacts
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_id ON artifacts(user_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(type);
+CREATE INDEX IF NOT EXISTS idx_artifacts_subject ON artifacts(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_share_token ON artifacts(share_token);
+CREATE INDEX IF NOT EXISTS idx_artifacts_created_at ON artifacts(created_at);
+CREATE INDEX IF NOT EXISTS idx_artifacts_is_public ON artifacts(is_public);

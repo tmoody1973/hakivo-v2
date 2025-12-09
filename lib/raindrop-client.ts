@@ -346,6 +346,12 @@ export interface SubscriptionStatus {
       remaining: number | "unlimited";
       resetAt: string | null;
     };
+    artifacts: {
+      used: number;
+      limit: number | "unlimited";
+      remaining: number | "unlimited";
+      canCreateMore: boolean;
+    };
     trackedBills: {
       count: number;
       limit: number | "unlimited";
@@ -363,6 +369,7 @@ export interface SubscriptionStatus {
     audioDigests: boolean;
     unlimitedBriefs: boolean;
     unlimitedTracking: boolean;
+    unlimitedArtifacts: boolean;
   };
 }
 
@@ -449,7 +456,7 @@ export const subscriptionApi = {
   // Check if user can perform an action based on their subscription
   async checkLimit(
     userId: string,
-    action: "track_bill" | "follow_member" | "generate_brief" | "daily_briefing" | "realtime_alerts"
+    action: "track_bill" | "follow_member" | "generate_brief" | "generate_artifact" | "daily_briefing" | "realtime_alerts"
   ): Promise<LimitCheckResult> {
     return fetchFromService("SUBSCRIPTION", `/api/subscription/check-limit/${userId}`, {
       method: "POST",

@@ -1276,6 +1276,319 @@ app.get('/spreaker/episodes', async (c) => {
   }
 });
 
+// ============================================================================
+// ARTIFACT CRUD ENDPOINTS
+// ============================================================================
+
+/**
+ * POST /artifacts
+ * Create a new artifact
+ */
+app.post('/artifacts', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const body = await c.req.json();
+
+    const {
+      id,
+      user_id,
+      type,
+      template,
+      title,
+      content,
+      subject_type,
+      subject_id,
+      subject_context,
+      audience = 'general',
+    } = body;
+
+    if (!id || !user_id || !type || !template || !title) {
+      return c.json({
+        success: false,
+        error: 'Missing required fields: id, user_id, type, template, title',
+      }, 400);
+    }
+
+    const now = Date.now();
+
+    await db
+      .prepare(`
+        INSERT INTO artifacts (
+          id, user_id, type, template, title, content,
+          subject_type, subject_id, subject_context, audience,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        id, user_id, type, template, title, content || null,
+        subject_type || null, subject_id || null, subject_context || null, audience,
+        now, now
+      )
+      .run();
+
+    return c.json({
+      success: true,
+      artifact: {
+        id,
+        user_id,
+        type,
+        template,
+        title,
+        content,
+        subject_type,
+        subject_id,
+        subject_context,
+        audience,
+        created_at: now,
+        updated_at: now,
+      },
+    });
+
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * GET /artifacts/:id
+ * Get a single artifact by ID
+ */
+app.get('/artifacts/:id', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const { id } = c.req.param();
+
+    const result = await db
+      .prepare('SELECT * FROM artifacts WHERE id = ?')
+      .bind(id)
+      .first();
+
+    if (!result) {
+      return c.json({
+        success: false,
+        error: 'Artifact not found',
+      }, 404);
+    }
+
+    return c.json({
+      success: true,
+      artifact: result,
+    });
+
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * GET /artifacts/user/:userId
+ * Get all artifacts for a user
+ */
+app.get('/artifacts/user/:userId', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const { userId } = c.req.param();
+    const limit = parseInt(c.req.query('limit') || '50');
+    const offset = parseInt(c.req.query('offset') || '0');
+    const type = c.req.query('type');
+
+    let query = `
+      SELECT * FROM artifacts
+      WHERE user_id = ?
+    `;
+    const params: any[] = [userId];
+
+    if (type) {
+      query += ' AND type = ?';
+      params.push(type);
+    }
+
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const result = await db.prepare(query).bind(...params).all();
+
+    return c.json({
+      success: true,
+      artifacts: result.results || [],
+      count: (result.results || []).length,
+    });
+
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * GET /artifacts/share/:token
+ * Get a publicly shared artifact
+ */
+app.get('/artifacts/share/:token', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const { token } = c.req.param();
+
+    const result = await db
+      .prepare('SELECT * FROM artifacts WHERE share_token = ? AND is_public = 1')
+      .bind(token)
+      .first();
+
+    if (!result) {
+      return c.json({
+        success: false,
+        error: 'Artifact not found or not public',
+      }, 404);
+    }
+
+    // Increment view count
+    await db
+      .prepare('UPDATE artifacts SET view_count = view_count + 1 WHERE id = ?')
+      .bind((result as any).id)
+      .run();
+
+    return c.json({
+      success: true,
+      artifact: result,
+    });
+
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * PUT /artifacts/:id
+ * Update an artifact
+ */
+app.put('/artifacts/:id', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const { id } = c.req.param();
+    const body = await c.req.json();
+
+    // Check artifact exists
+    const existing = await db
+      .prepare('SELECT id FROM artifacts WHERE id = ?')
+      .bind(id)
+      .first();
+
+    if (!existing) {
+      return c.json({
+        success: false,
+        error: 'Artifact not found',
+      }, 404);
+    }
+
+    // Build update query dynamically based on provided fields
+    const updates: string[] = [];
+    const values: any[] = [];
+
+    const allowedFields = [
+      'title', 'content', 'audience',
+      'vultr_key', 'vultr_pdf_key', 'vultr_pptx_key',
+      'is_public', 'share_token'
+    ];
+
+    for (const field of allowedFields) {
+      if (body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        values.push(body[field]);
+      }
+    }
+
+    if (updates.length === 0) {
+      return c.json({
+        success: false,
+        error: 'No valid fields to update',
+      }, 400);
+    }
+
+    updates.push('updated_at = ?');
+    values.push(Date.now());
+    values.push(id);
+
+    await db
+      .prepare(`UPDATE artifacts SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...values)
+      .run();
+
+    // Return updated artifact
+    const updated = await db
+      .prepare('SELECT * FROM artifacts WHERE id = ?')
+      .bind(id)
+      .first();
+
+    return c.json({
+      success: true,
+      artifact: updated,
+    });
+
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /artifacts/:id
+ * Delete an artifact
+ */
+app.delete('/artifacts/:id', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const { id } = c.req.param();
+
+    // Check artifact exists
+    const existing = await db
+      .prepare('SELECT id, vultr_key, vultr_pdf_key, vultr_pptx_key FROM artifacts WHERE id = ?')
+      .bind(id)
+      .first();
+
+    if (!existing) {
+      return c.json({
+        success: false,
+        error: 'Artifact not found',
+      }, 404);
+    }
+
+    await db
+      .prepare('DELETE FROM artifacts WHERE id = ?')
+      .bind(id)
+      .run();
+
+    return c.json({
+      success: true,
+      message: 'Artifact deleted',
+      // Return storage keys so caller can clean up Vultr storage if needed
+      vultr_keys: {
+        vultr_key: (existing as any).vultr_key,
+        vultr_pdf_key: (existing as any).vultr_pdf_key,
+        vultr_pptx_key: (existing as any).vultr_pptx_key,
+      },
+    });
+
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

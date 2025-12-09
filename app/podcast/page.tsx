@@ -86,7 +86,9 @@ export default function PodcastPage() {
       const data = await response.json();
 
       if (data.success && data.episodes) {
-        setEpisodes(data.episodes);
+        // Sort by episode number descending (newest first)
+        const sorted = [...data.episodes].sort((a, b) => b.episodeNumber - a.episodeNumber);
+        setEpisodes(sorted);
       } else {
         setEpisodes([]);
       }

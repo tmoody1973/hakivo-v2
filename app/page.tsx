@@ -164,6 +164,127 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Your Personal Legislative Aide */}
+      <section className="px-6 md:px-8 py-20 md:py-28 bg-gradient-to-b from-background to-primary/5">
+        <div className="max-w-7xl mx-auto">
+          {/* Section Header */}
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+              <span className="text-base">🏛️</span>
+              Congressional-level support for everyone
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Your personal <span className="text-primary">legislative aide</span>
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Members of Congress rely on legislative aides to track bills, research policy, and keep them informed.
+              Now you have the same advantage.
+            </p>
+          </div>
+
+          {/* What Legislative Aides Do */}
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            {/* Left: What aides do */}
+            <div className="space-y-6">
+              <h3 className="text-2xl font-bold">What does a legislative aide do?</h3>
+              <p className="text-muted-foreground leading-relaxed">
+                On Capitol Hill, every member of Congress has a team of legislative aides — skilled professionals who
+                spend their days monitoring thousands of bills, researching policy implications, tracking committee
+                actions, and distilling complex legislation into clear briefings their boss can act on.
+              </p>
+              <div className="space-y-4">
+                <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-lg">
+                    📋
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Monitor legislation</h4>
+                    <p className="text-sm text-muted-foreground">Track bills through committee, amendments, and floor votes</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-lg">
+                    🔍
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Research policy</h4>
+                    <p className="text-sm text-muted-foreground">Analyze provisions, identify impacts, and summarize key points</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-lg">
+                    📝
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Brief their boss</h4>
+                    <p className="text-sm text-muted-foreground">Deliver daily updates on what matters and what's changed</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-lg">
+                    🎯
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Filter the noise</h4>
+                    <p className="text-sm text-muted-foreground">Surface only what's relevant based on priorities and interests</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: How Hakivo does it */}
+            <div className="bg-card rounded-3xl p-8 border border-border shadow-xl">
+              <div className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm font-medium mb-6">
+                <span className="text-base">✨</span>
+                How Hakivo works for you
+              </div>
+              <h3 className="text-2xl font-bold mb-6">Same service. Powered by AI.</h3>
+              <div className="space-y-5">
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-primary/5 border border-primary/20">
+                  <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shrink-0 text-xl text-primary-foreground">
+                    🤖
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">AI reads every bill for you</h4>
+                    <p className="text-sm text-muted-foreground">Our AI analyzes the full text of legislation, not just summaries — catching details human aides might miss</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-primary/5 border border-primary/20">
+                  <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shrink-0 text-xl text-primary-foreground">
+                    🎧
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Daily audio briefings</h4>
+                    <p className="text-sm text-muted-foreground">Like having an aide brief you each morning — personalized to your policy interests and representatives</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-primary/5 border border-primary/20">
+                  <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shrink-0 text-xl text-primary-foreground">
+                    💬
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Ask anything, get answers</h4>
+                    <p className="text-sm text-muted-foreground">Questions about a bill? Just ask. Hakivo explains legislation in plain English, instantly</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 items-start p-4 rounded-2xl bg-primary/5 border border-primary/20">
+                  <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shrink-0 text-xl text-primary-foreground">
+                    ⚡
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-1">Real-time tracking</h4>
+                    <p className="text-sm text-muted-foreground">Bills move fast. Hakivo monitors Congress.gov 24/7 and alerts you when things change</p>
+                  </div>
+                </div>
+              </div>
+              <p className="text-center text-sm text-muted-foreground mt-6 pt-6 border-t border-border">
+                Typical congressional staff costs <span className="font-semibold text-foreground">$75,000+/year</span>. Hakivo starts at <span className="font-semibold text-primary">$12/month</span>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works */}
       <section id="how-it-works" className="px-6 md:px-8 py-20 md:py-28">
         <div className="max-w-7xl mx-auto">

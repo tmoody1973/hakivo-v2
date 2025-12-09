@@ -15,6 +15,14 @@ import {
   componentRegistry,
   type ComponentName,
 } from "@/components/generative-ui"
+import { RepresentativeProfile } from "@/components/generative-ui/representative-profile"
+import { BillCard } from "@/components/generative-ui/bill-card"
+import { NewsCarousel } from "@/components/generative-ui/news-carousel"
+import { BillsCarousel } from "@/components/generative-ui/bills-carousel"
+import { ArtifactTrigger } from "@/components/chat/artifact-trigger"
+import { ArtifactViewer, type Artifact } from "@/components/artifacts/artifact-viewer"
+import { ShareThread } from "@/components/chat/share-thread"
+import { type CustomActionEvent } from "@/components/c1/C1Artifact"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,12 +31,42 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/lib/auth/auth-context"
 
+// Tool result types for structured rendering
+interface ToolResult {
+  toolName: string
+  result: Record<string, unknown>
+}
+
+// Tool descriptions for thinking states (friendly user-facing messages)
+const TOOL_DESCRIPTIONS: Record<string, { title: string; description: string }> = {
+  smartSql: { title: "Searching legislation database", description: "Querying congressional bills and voting records..." },
+  getBillDetail: { title: "Fetching bill details", description: "Retrieving comprehensive bill information..." },
+  getMemberDetail: { title: "Looking up representative", description: "Finding congressional member details..." },
+  getUserProfile: { title: "Loading your profile", description: "Retrieving your preferences and interests..." },
+  semanticSearch: { title: "Searching legislation", description: "Finding related bills using AI..." },
+  billTextRag: { title: "Analyzing bill text", description: "Reading and analyzing bill language..." },
+  compareBills: { title: "Comparing legislation", description: "Analyzing similarities between bills..." },
+  policyAreaSearch: { title: "Policy area search", description: "Finding bills by policy category..." },
+  searchNews: { title: "Searching the news", description: "Finding latest news coverage..." },
+  searchCongressionalNews: { title: "Congressional news", description: "Finding latest Capitol Hill news..." },
+  searchLegislatorNews: { title: "Legislator news", description: "Finding news about representatives..." },
+  geminiSearch: { title: "Searching with Google", description: "Finding latest information..." },
+  webSearch: { title: "Web search", description: "Searching the internet..." },
+  searchStateBills: { title: "State legislation search", description: "Searching state-level bills..." },
+  getStateBillDetails: { title: "State bill details", description: "Fetching state legislation details..." },
+  getStateLegislatorsByLocation: { title: "Finding state legislators", description: "Looking up your state representatives..." },
+  createArtifact: { title: "Creating document", description: "Generating your report..." },
+  generateBillReport: { title: "Generating bill report", description: "Creating comprehensive bill analysis..." },
+  generateBriefingSlides: { title: "Creating slides", description: "Building your presentation deck..." },
+}
+
 // Message types
 interface Message {
   id: string
   role: "user" | "assistant"
   content: string
   timestamp: Date
+  toolResults?: ToolResult[]  // Tool results for component rendering
 }
 
 // Session types for persistence
@@ -276,6 +314,314 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+/**
+ * Helper: Get member name with field mapping (camelCase + snake_case support)
+ */
+function getMemberName(member: Record<string, unknown>): string {
+  return (member.fullName as string) ||
+    (member.full_name as string) ||
+    (member.name as string) ||
+    (member.firstName && member.lastName
+      ? `${member.firstName} ${member.lastName}`
+      : member.first_name && member.last_name
+        ? `${member.first_name} ${member.last_name}`
+        : "Unknown")
+}
+
+/**
+ * Render tool results as UI components with proper field mapping
+ * Priority: C1 templates (if available) > Custom components (fallback)
+ */
+function ToolResultsRenderer({
+  toolResults,
+  onCustomAction,
+  onSendMessage,
+}: {
+  toolResults: ToolResult[]
+  onCustomAction?: (action: CustomActionEvent) => void
+  onSendMessage?: (message: string) => void
+}) {
+  if (!toolResults || toolResults.length === 0) return null
+
+  return (
+    <div className="space-y-3 my-4">
+      {toolResults.map((tr, trIdx) => {
+        const { toolName, result } = tr
+        if (!result) return null
+
+        // NOTE: c1Template rendering disabled - our custom templates use a format
+        // that the C1Component SDK doesn't fully support. The C1 SDK is designed
+        // for streaming C1 API responses, not pre-generated JSON templates.
+        // Our custom components (NewsCard, BillCard, etc.) provide better UX.
+
+        // Use custom components for all tool results
+        // smartSql - database queries for bills or members
+        if (toolName === "smartSql") {
+          const data = (result as { data?: unknown[] }).data
+          const queryType = (result as { query_type?: string }).query_type || ""
+          if (!data || !Array.isArray(data) || data.length === 0) return null
+
+          // Render members
+          if (queryType.includes("members") || (data[0] && ((data[0] as Record<string, unknown>).bioguideId || (data[0] as Record<string, unknown>).bioguide_id))) {
+            return (
+              <div key={trIdx} className="space-y-3">
+                {data.slice(0, 5).map((member: unknown, idx: number) => {
+                  const m = member as Record<string, unknown>
+                  return (
+                    <RepresentativeProfile
+                      key={(m.bioguideId as string) || (m.bioguide_id as string) || idx}
+                      name={getMemberName(m)}
+                      party={(m.party as string) || "Unknown"}
+                      state={(m.state as string) || "Unknown"}
+                      chamber={(m.chamber as string) || (m.type as string) || "Congress"}
+                      phone={(m.phone as string) || undefined}
+                      website={(m.website as string) || (m.url as string) || undefined}
+                    />
+                  )
+                })}
+                {data.length > 5 && (
+                  <p className="text-sm text-muted-foreground">Showing 5 of {data.length} results</p>
+                )}
+              </div>
+            )
+          }
+
+          // Render bills
+          if (queryType.includes("bills") || queryType.includes("sponsor") || (data[0] && (data[0] as Record<string, unknown>).bill_type)) {
+            return (
+              <div key={trIdx} className="space-y-3">
+                {data.slice(0, 5).map((bill: unknown, idx: number) => {
+                  const b = bill as Record<string, unknown>
+                  return (
+                    <BillCard
+                      key={(b.id as string) || idx}
+                      billNumber={`${((b.bill_type as string) || "").toUpperCase()} ${b.bill_number || ""}`}
+                      title={(b.title as string) || (b.short_title as string) || "Untitled Bill"}
+                      sponsor={(b.sponsor_name as string) || (b.sponsor as string) || "Unknown Sponsor"}
+                      status={(b.status as string) || (b.latest_action_text as string) || "Status Unknown"}
+                      lastAction={(b.latest_action_text as string) || undefined}
+                      lastActionDate={(b.latest_action_date as string) || undefined}
+                    />
+                  )
+                })}
+                {data.length > 5 && (
+                  <p className="text-sm text-muted-foreground">Showing 5 of {data.length} results</p>
+                )}
+              </div>
+            )
+          }
+        }
+
+        // semanticSearch - SmartBucket vector search for bills (carousel view)
+        if (toolName === "semanticSearch") {
+          const bills = (result as { bills?: unknown[] }).bills
+          const query = (result as { query?: string }).query
+          const summary = (result as { summary?: string }).summary
+          if (!bills || !Array.isArray(bills) || bills.length === 0) return null
+
+          // Map bills to expected interface format
+          const normalizedBills = bills.map((bill: unknown) => {
+            const b = bill as Record<string, unknown>
+            return {
+              id: (b.id as string) || (b.bill_id as string),
+              bill_id: (b.bill_id as string) || (b.id as string),
+              congress: (b.congress as number) || 119,
+              bill_type: (b.bill_type as string) || (b.type as string),
+              bill_number: (b.bill_number as number) || (b.number as number),
+              title: (b.title as string) || (b.short_title as string) || "Untitled Bill",
+              short_title: b.short_title as string,
+              sponsor_name: (b.sponsor_name as string) || (b.sponsor as string),
+              sponsor_party: b.sponsor_party as string,
+              sponsor_state: b.sponsor_state as string,
+              policy_area: (b.policy_area as string) || (b.policyArea as string),
+              latest_action_text: b.latest_action_text as string,
+              latest_action_date: b.latest_action_date as string,
+              similarity_score: (b.similarity_score as number) || (b.relevanceScore as number),
+              matched_content: (b.matched_content as string) || (b.matchedChunk as string),
+              cosponsors_count: b.cosponsors_count as number,
+            }
+          })
+
+          return (
+            <BillsCarousel
+              key={trIdx}
+              bills={normalizedBills}
+              query={query}
+              summary={summary}
+            />
+          )
+        }
+
+        // getMemberDetail - single member
+        if (toolName === "getMemberDetail") {
+          const member = (result as { member?: Record<string, unknown> }).member
+          if (!member) return null
+          return (
+            <RepresentativeProfile
+              key={trIdx}
+              name={getMemberName(member)}
+              party={(member.party as string) || "Unknown"}
+              state={(member.state as string) || "Unknown"}
+              chamber={(member.chamber as string) || "Congress"}
+              phone={(member.phone as string) || undefined}
+              website={(member.website as string) || (member.url as string) || undefined}
+            />
+          )
+        }
+
+        // getBillDetail - single bill
+        if (toolName === "getBillDetail") {
+          const bill = (result as { bill?: Record<string, unknown> }).bill
+          if (!bill) return null
+          return (
+            <BillCard
+              key={trIdx}
+              billNumber={`${((bill.bill_type as string) || "").toUpperCase()} ${bill.bill_number || ""}`}
+              title={(bill.title as string) || (bill.short_title as string) || "Untitled Bill"}
+              sponsor={(bill.sponsor_name as string) || (bill.sponsor as string) || "Unknown Sponsor"}
+              status={(bill.status as string) || (bill.latest_action_text as string) || "Status Unknown"}
+              lastAction={(bill.latest_action_text as string) || undefined}
+              lastActionDate={(bill.latest_action_date as string) || undefined}
+            />
+          )
+        }
+
+        // searchNews, searchCongressionalNews, searchLegislatorNews, geminiSearch, webSearch
+        if (toolName === "searchNews" || toolName === "searchCongressionalNews" || toolName === "searchLegislatorNews" || toolName === "geminiSearch" || toolName === "webSearch") {
+          const articles = (result as { articles?: unknown[] }).articles
+          const summary = (result as { summary?: string }).summary
+          const query = (result as { query?: string }).query
+          if (!articles || articles.length === 0) return null
+          return (
+            <NewsCarousel
+              key={trIdx}
+              articles={articles.map((article: unknown) => {
+                const a = article as Record<string, unknown>
+                return {
+                  title: (a.title as string) || "News Article",
+                  source: (a.source as string) || "News",
+                  date: (a.date as string) || null,
+                  snippet: (a.snippet as string) || "",
+                  url: (a.url as string) || "#",
+                  image: (a.image as string) || (a.imageUrl as string) || undefined,
+                }
+              })}
+              title={query ? `News: ${query}` : "Latest News"}
+              summary={summary}
+            />
+          )
+        }
+
+        // searchStateBills
+        if (toolName === "searchStateBills") {
+          const bills = (result as { bills?: unknown[] }).bills
+          if (!bills || bills.length === 0) return null
+          return (
+            <div key={trIdx} className="space-y-3">
+              {bills.slice(0, 5).map((bill: unknown, idx: number) => {
+                const b = bill as Record<string, unknown>
+                const latestAction = b.latest_action as Record<string, unknown> | undefined
+                return (
+                  <BillCard
+                    key={(b.id as string) || idx}
+                    billNumber={(b.identifier as string) || (b.id as string) || ""}
+                    title={(b.title as string) || "Untitled State Bill"}
+                    sponsor={(b.sponsor as string) || "Unknown Sponsor"}
+                    status={(latestAction?.description as string) || "Status Unknown"}
+                    lastAction={(latestAction?.description as string) || undefined}
+                    lastActionDate={(latestAction?.date as string) || undefined}
+                  />
+                )
+              })}
+            </div>
+          )
+        }
+
+        // getStateLegislatorsByLocation
+        if (toolName === "getStateLegislatorsByLocation") {
+          const legislators = (result as { legislators?: unknown[] }).legislators
+          if (!legislators || legislators.length === 0) return null
+          return (
+            <div key={trIdx} className="space-y-3">
+              {legislators.map((leg: unknown, idx: number) => {
+                const l = leg as Record<string, unknown>
+                return (
+                  <RepresentativeProfile
+                    key={(l.id as string) || idx}
+                    name={getMemberName(l)}
+                    party={(l.party as string) || "Unknown"}
+                    state={(l.state as string) || "Unknown"}
+                    chamber={(l.chamber as string) || "State Legislature"}
+                    phone={(l.phone as string) || undefined}
+                    website={(l.url as string) || undefined}
+                  />
+                )
+              })}
+            </div>
+          )
+        }
+
+        // getUserRepresentatives
+        if (toolName === "getUserRepresentatives") {
+          const reps = (result as { representatives?: Record<string, unknown> }).representatives
+          if (!reps) return null
+          const allReps = [
+            ...((reps.senators as unknown[]) || []),
+            ...(reps.representative ? [reps.representative] : []),
+            ...((reps.stateLegislators as unknown[]) || []),
+          ]
+          if (allReps.length === 0) return null
+          return (
+            <div key={trIdx} className="space-y-3">
+              {allReps.map((rep: unknown, idx: number) => {
+                const r = rep as Record<string, unknown>
+                return (
+                  <RepresentativeProfile
+                    key={(r.bioguideId as string) || (r.bioguide_id as string) || (r.id as string) || idx}
+                    name={getMemberName(r)}
+                    party={(r.party as string) || "Unknown"}
+                    state={(r.state as string) || "Unknown"}
+                    chamber={(r.chamber as string) || "Congress"}
+                    phone={(r.phone as string) || undefined}
+                    website={(r.website as string) || (r.url as string) || undefined}
+                  />
+                )
+              })}
+            </div>
+          )
+        }
+
+        // getTrackedBills
+        if (toolName === "getTrackedBills") {
+          const trackedBills = (result as { trackedBills?: unknown[] }).trackedBills
+          if (!trackedBills || trackedBills.length === 0) return null
+          return (
+            <div key={trIdx} className="space-y-3">
+              {trackedBills.map((item: unknown, idx: number) => {
+                const i = item as Record<string, unknown>
+                const bill = i.bill as Record<string, unknown> | undefined
+                return (
+                  <BillCard
+                    key={bill?.id as string || idx}
+                    billNumber={(bill?.bill_number as string) || (i.identifier as string) || ""}
+                    title={(bill?.title as string) || "Tracked Bill"}
+                    sponsor={(bill?.sponsor as string) || "Unknown Sponsor"}
+                    status={(bill?.status as string) || "Tracked"}
+                    lastAction={(bill?.latest_action_text as string) || undefined}
+                    lastActionDate={(bill?.latest_action_date as string) || undefined}
+                  />
+                )
+              })}
+            </div>
+          )
+        }
+
+        return null
+      })}
+    </div>
+  )
+}
+
 export default function ChatPage() {
   const { user } = useAuth()
   const userId = user?.id || null
@@ -284,6 +630,13 @@ export default function ChatPage() {
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
+
+  // Thinking state - shows what tool is currently being called
+  const [thinkingState, setThinkingState] = useState<{ title: string; description: string } | null>(null)
+
+  // Artifact state
+  const [currentArtifact, setCurrentArtifact] = useState<Artifact | null>(null)
+  const [isGeneratingArtifact, setIsGeneratingArtifact] = useState(false)
 
   // Session state
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -479,6 +832,7 @@ export default function ChatPage() {
       const decoder = new TextDecoder()
       let streamedContent = ""
       let buffer = ""
+      const collectedToolResults: ToolResult[] = []
 
       while (true) {
         const { done, value } = await reader.read()
@@ -498,15 +852,97 @@ export default function ChatPage() {
 
             try {
               const parsed = JSON.parse(data)
-              if (parsed.content) {
+
+              // Handle text content streaming - but NOT for artifact events
+              // Artifact events have content field but it should go to artifact viewer, not chat text
+              if (parsed.content && !parsed.type) {
+                // Only stream plain content events (no type field = chat text)
                 streamedContent += parsed.content
                 setMessages(prev =>
                   prev.map(m =>
                     m.id === assistantMessageId
-                      ? { ...m, content: streamedContent }
+                      ? { ...m, content: streamedContent, toolResults: [...collectedToolResults] }
                       : m
                   )
                 )
+              }
+
+              // Handle error events
+              if (parsed.error && !parsed.type) {
+                console.error("[Chat] Stream error:", parsed.error)
+                // Don't append error to content, just log it
+              }
+
+              // Handle tool-result events for custom component rendering
+              if (parsed.type === "tool-result" && parsed.toolName && parsed.result) {
+                console.log("[Chat] Received tool-result:", parsed.toolName, "articles:", (parsed.result as any)?.articles?.length || 0)
+                const newToolResult: ToolResult = {
+                  toolName: parsed.toolName,
+                  result: parsed.result,
+                }
+                collectedToolResults.push(newToolResult)
+                console.log("[Chat] Tool results collected:", collectedToolResults.length)
+
+                setMessages(prev =>
+                  prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: streamedContent, toolResults: [...collectedToolResults] }
+                      : m
+                  )
+                )
+              }
+
+              // Handle streaming artifact events (progressive rendering)
+              if (parsed.type === "artifact-stream" && parsed.content) {
+                console.log("[Chat] Streaming artifact:", {
+                  id: parsed.artifactId,
+                  contentLength: parsed.content?.length,
+                })
+                // Update artifact progressively as it streams in
+                setCurrentArtifact({
+                  id: parsed.artifactId || `artifact-${Date.now()}`,
+                  type: parsed.artifactType || "report",
+                  template: parsed.template || "policy_brief",
+                  title: parsed.title || "Generated Document",
+                  content: parsed.content,
+                })
+              }
+
+              // Handle final artifact events
+              if (parsed.type === "artifact" && parsed.content) {
+                console.log("[Chat] Received complete artifact:", {
+                  id: parsed.artifactId,
+                  type: parsed.artifactType,
+                  template: parsed.template,
+                  contentLength: parsed.content?.length,
+                  isComplete: parsed.isComplete,
+                })
+                setIsGeneratingArtifact(false)
+                setCurrentArtifact({
+                  id: parsed.artifactId || `artifact-${Date.now()}`,
+                  type: parsed.artifactType || "report",
+                  template: parsed.template || "policy_brief",
+                  title: parsed.title || "Generated Document",
+                  content: parsed.content,
+                })
+              }
+
+              // Handle thinking states - show what tool is being called
+              if (parsed.type === "thinking") {
+                const artifactTools = ["createArtifact", "generateBillReport", "generateBriefingSlides"];
+                // Show artifact spinner for artifact tools
+                if (!parsed.toolName || artifactTools.includes(parsed.toolName)) {
+                  setIsGeneratingArtifact(true)
+                }
+                // Always show thinking state for user feedback
+                const toolInfo = parsed.toolName
+                  ? TOOL_DESCRIPTIONS[parsed.toolName] || { title: parsed.title || "Processing", description: parsed.description || "Working on your request..." }
+                  : { title: parsed.title || "Processing", description: parsed.description || "Working on your request..." }
+                setThinkingState(toolInfo)
+              }
+              if (parsed.type === "thinking-complete") {
+                setIsGeneratingArtifact(false)
+                setThinkingState(null)
               }
             } catch {
               // Ignore parse errors
@@ -526,7 +962,7 @@ export default function ChatPage() {
               setMessages(prev =>
                 prev.map(m =>
                   m.id === assistantMessageId
-                    ? { ...m, content: streamedContent }
+                    ? { ...m, content: streamedContent, toolResults: [...collectedToolResults] }
                     : m
                 )
               )
@@ -549,6 +985,7 @@ export default function ChatPage() {
       ])
     } finally {
       setIsLoading(false)
+      setThinkingState(null)
     }
   }
 
@@ -559,6 +996,244 @@ export default function ChatPage() {
       handleSend()
     }
   }
+
+  // Send message programmatically from actions (follow-up queries, explore actions)
+  const sendMessageFromAction = useCallback(async (content: string) => {
+    if (!content.trim() || isLoading) return
+
+    const userMessage: Message = {
+      id: generateId(),
+      role: "user",
+      content: content.trim(),
+      timestamp: new Date(),
+    }
+
+    // Create a new session if this is the first message
+    if (!currentSessionId) {
+      createNewSession(content.trim())
+    }
+
+    const newMessages = [...messages, userMessage]
+    setMessages(newMessages)
+    setIsLoading(true)
+
+    // Create placeholder for streaming response
+    const assistantMessageId = generateId()
+    const assistantMessage: Message = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    }
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`)
+      }
+
+      if (!response.body) {
+        throw new Error("No response body")
+      }
+
+      // Add empty assistant message for streaming
+      setMessages(prev => [...prev, assistantMessage])
+
+      // Read the SSE stream
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let streamedContent = ""
+      let buffer = ""
+      const collectedToolResults: ToolResult[] = []
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const decoded = decoder.decode(value, { stream: true })
+        buffer += decoded
+
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (trimmedLine.startsWith("data: ")) {
+            const data = trimmedLine.slice(6)
+            if (data === "[DONE]") continue
+
+            try {
+              const parsed = JSON.parse(data)
+
+              if (parsed.content && parsed.type !== "artifact") {
+                streamedContent += parsed.content
+                setMessages(prev =>
+                  prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: streamedContent, toolResults: [...collectedToolResults] }
+                      : m
+                  )
+                )
+              }
+
+              if (parsed.type === "tool-result" && parsed.toolName && parsed.result) {
+                console.log("[Chat] Received tool-result:", parsed.toolName, "articles:", (parsed.result as { articles?: unknown[] })?.articles?.length || 0)
+                const newToolResult: ToolResult = {
+                  toolName: parsed.toolName,
+                  result: parsed.result,
+                }
+                collectedToolResults.push(newToolResult)
+                console.log("[Chat] Tool results collected:", collectedToolResults.length)
+                setMessages(prev =>
+                  prev.map(m =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: streamedContent, toolResults: [...collectedToolResults] }
+                      : m
+                  )
+                )
+              }
+
+              // Handle streaming artifacts
+              if (parsed.type === "artifact-stream" && parsed.content) {
+                setCurrentArtifact({
+                  id: parsed.artifactId || `artifact-${Date.now()}`,
+                  type: parsed.artifactType || "report",
+                  template: parsed.template || "policy_brief",
+                  title: parsed.title || "Generated Document",
+                  content: parsed.content,
+                })
+              }
+
+              if (parsed.type === "artifact" && parsed.content) {
+                setIsGeneratingArtifact(false)
+                setCurrentArtifact({
+                  id: parsed.artifactId || `artifact-${Date.now()}`,
+                  type: parsed.artifactType || "report",
+                  template: parsed.template || "policy_brief",
+                  title: parsed.title || "Generated Document",
+                  content: parsed.content,
+                })
+              }
+
+              if (parsed.type === "thinking") {
+                const artifactTools = ["createArtifact", "generateBillReport", "generateBriefingSlides"];
+                if (!parsed.toolName || artifactTools.includes(parsed.toolName)) {
+                  setIsGeneratingArtifact(true)
+                }
+                // Always show thinking state for user feedback
+                const toolInfo = parsed.toolName
+                  ? TOOL_DESCRIPTIONS[parsed.toolName] || { title: parsed.title || "Processing", description: parsed.description || "Working on your request..." }
+                  : { title: parsed.title || "Processing", description: parsed.description || "Working on your request..." }
+                setThinkingState(toolInfo)
+              }
+              if (parsed.type === "thinking-complete") {
+                setIsGeneratingArtifact(false)
+                setThinkingState(null)
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[Chat] Error from action:", error)
+      setMessages(prev => [
+        ...prev.filter(m => m.id !== assistantMessageId),
+        {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "I apologize, but I encountered an error processing your request. Please try again.",
+          timestamp: new Date(),
+        },
+      ])
+    } finally {
+      setIsLoading(false)
+      setThinkingState(null)
+    }
+  }, [messages, isLoading, currentSessionId, createNewSession])
+
+  // Handle custom actions from C1 artifacts (track bill, share, explore, etc.)
+  const handleCustomAction = useCallback((action: CustomActionEvent) => {
+    console.log("[Chat] Custom action:", action.type, action.params)
+
+    switch (action.type) {
+      case "track_bill": {
+        // TODO: Implement bill tracking via API
+        const { billId, billTitle } = action.params
+        console.log("[Chat] Track bill:", billId, billTitle)
+        // Could open a modal or send to an API endpoint
+        alert(`Bill "${billTitle}" (${billId}) would be added to your tracked legislation.`)
+        break
+      }
+
+      case "view_bill_details": {
+        // Send a follow-up query to get more details
+        const { billId } = action.params
+        sendMessageFromAction(`Tell me more details about bill ${billId}`)
+        break
+      }
+
+      case "view_sponsor": {
+        // Send a follow-up query about the sponsor
+        const { bioguideId, name } = action.params
+        sendMessageFromAction(`Tell me about ${name || "this representative"} (bioguide: ${bioguideId})`)
+        break
+      }
+
+      case "share_result": {
+        // Handle sharing - could open share dialog
+        const { shareType, content } = action.params
+        console.log("[Chat] Share:", shareType, content)
+        if (shareType === "link") {
+          // Copy link to clipboard
+          navigator.clipboard.writeText(window.location.href)
+          alert("Link copied to clipboard!")
+        } else if (shareType === "twitter") {
+          window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(String(content || "Check this out!"))}`, "_blank")
+        } else if (shareType === "email") {
+          window.location.href = `mailto:?subject=Hakivo Congressional Insight&body=${encodeURIComponent(String(content || ""))}`
+        }
+        break
+      }
+
+      case "explore_related": {
+        // Send a follow-up query to explore related content
+        const { query, type } = action.params
+        const searchQuery = type === "bills"
+          ? `Find bills related to: ${query}`
+          : type === "news"
+          ? `What's the latest news about ${query}?`
+          : type === "members"
+          ? `Show me Congress members related to ${query}`
+          : String(query)
+        sendMessageFromAction(searchQuery)
+        break
+      }
+
+      case "download_report": {
+        // TODO: Implement report download
+        const { format } = action.params
+        console.log("[Chat] Download report as:", format)
+        alert(`Report download as ${format} is coming soon!`)
+        break
+      }
+
+      default:
+        // For any other actions, try sending as a follow-up message
+        console.log("[Chat] Unknown action type:", action.type)
+        if (action.params.query) {
+          sendMessageFromAction(String(action.params.query))
+        }
+    }
+  }, [sendMessageFromAction])
 
   // Start new chat
   const startNewChat = () => {
@@ -778,15 +1453,23 @@ export default function ChatPage() {
               <span className="font-medium">Congressional Assistant</span>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={startNewChat}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            New Chat
-          </Button>
+          <div className="flex items-center gap-2">
+            <ShareThread
+              sessionId={currentSessionId || ""}
+              title={sessions.find(s => s.id === currentSessionId)?.title || "Shared Conversation"}
+              messages={messages.map(m => ({ role: m.role, content: m.content }))}
+              disabled={messages.length === 0}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={startNewChat}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              New Chat
+            </Button>
+          </div>
         </header>
 
         {/* Messages Area */}
@@ -833,6 +1516,14 @@ export default function ChatPage() {
                         </div>
                         <div className="flex-1 min-w-0 pt-1">
                           <MessageContent content={message.content} />
+                          {/* Render tool results as UI components */}
+                          {message.toolResults && message.toolResults.length > 0 && (
+                            <ToolResultsRenderer
+                              toolResults={message.toolResults}
+                              onCustomAction={handleCustomAction}
+                              onSendMessage={sendMessageFromAction}
+                            />
+                          )}
                         </div>
                       </div>
                       {/* Action buttons */}
@@ -855,19 +1546,58 @@ export default function ChatPage() {
                 </div>
               ))}
 
-              {/* Loading indicator */}
+              {/* Loading indicator with thinking state */}
               {isLoading && messages[messages.length - 1]?.role === "user" && (
-                <div className="flex items-start gap-4">
+                <div className="flex items-start gap-4 animate-message-in">
                   <div className="shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
                     <CongressIcon className="h-4 w-4 text-white" />
                   </div>
-                  <div className="pt-2">
-                    <div className="flex gap-1.5">
-                      <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "300ms" }} />
-                    </div>
+                  <div className="pt-1.5">
+                    {thinkingState ? (
+                      <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-muted/50 border border-border">
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{thinkingState.title}</p>
+                          <p className="text-xs text-muted-foreground">{thinkingState.description}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-muted/50 border border-border">
+                        <div className="flex gap-1.5">
+                          <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <div className="h-2 w-2 rounded-full bg-foreground/40 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                        <span className="text-sm text-muted-foreground">Thinking...</span>
+                      </div>
+                    )}
                   </div>
+                </div>
+              )}
+
+              {/* Artifact Viewer - display generated documents */}
+              {(currentArtifact || isGeneratingArtifact) && (
+                <div className="mt-6">
+                  {currentArtifact ? (
+                    <ArtifactViewer
+                      artifact={currentArtifact}
+                      isStreaming={isGeneratingArtifact}
+                      showHeader={true}
+                      showActions={true}
+                      onDelete={() => setCurrentArtifact(null)}
+                    />
+                  ) : (
+                    // Loading state while generating
+                    <div className="p-6 border border-border rounded-lg bg-card">
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        <div>
+                          <p className="font-medium">Generating your document...</p>
+                          <p className="text-sm text-muted-foreground">This may take a moment</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -930,6 +1660,17 @@ export default function ChatPage() {
                   </DropdownMenu>
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Artifact/Document trigger dropdown */}
+                  <ArtifactTrigger
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onSelect={(message) => {
+                      setInput(message)
+                      // Auto-submit after a brief delay to show the input
+                      setTimeout(() => {
+                        handleSend()
+                      }, 100)
+                    }}
+                  />
                   <Button
                     variant="ghost"
                     size="icon"

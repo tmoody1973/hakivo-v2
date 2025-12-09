@@ -1,5 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { stateBillResultsTemplate } from "./c1-templates";
 
 /**
  * OpenStates Tools for Hakivo Congressional Assistant
@@ -249,6 +250,21 @@ Returns bill identifier, title, subjects, and latest action.`,
         return dateB - dateA;
       });
 
+      // Generate C1 template for rich UI rendering
+      const c1Template = stateBillResultsTemplate(
+        bills.slice(0, limit).map((bill) => ({
+          bill_id: bill.id,
+          state: bill.state,
+          session: bill.session,
+          identifier: bill.identifier,
+          title: bill.title,
+          subject: bill.subjects,
+          latest_action: bill.latestAction?.description || undefined,
+          latest_action_date: bill.latestAction?.date || undefined,
+        })),
+        { query: query || undefined, state: STATE_NAMES[stateCode] || stateCode }
+      );
+
       return {
         success: true,
         bills: bills.slice(0, limit), // Respect limit after merging
@@ -261,6 +277,8 @@ Returns bill identifier, title, subjects, and latest action.`,
         searchNote: wasExpanded
           ? `Expanded search to include related terms: ${searchedTerms.join(", ")}`
           : null,
+        c1Template,
+        templateType: "stateBillResults",
       };
     } catch (error) {
       return {

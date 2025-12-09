@@ -3,9 +3,59 @@
 import { C1Component } from "@thesysai/genui-sdk";
 import { useCallback, useState } from "react";
 
+/**
+ * Standard C1 action event structure
+ */
 interface Action {
   humanFriendlyMessage: string;
   llmFriendlyMessage: string;
+}
+
+/**
+ * Custom action event with typed parameters
+ * Matches Hakivo custom actions defined in thesys.ts
+ */
+export interface CustomActionEvent {
+  type: "track_bill" | "view_bill_details" | "view_sponsor" | "share_result" | "explore_related" | "download_report" | string;
+  params: Record<string, string | number | boolean>;
+}
+
+/**
+ * Parse action events to extract custom action type and parameters
+ */
+function parseCustomAction(action: Action): CustomActionEvent | null {
+  const message = action.llmFriendlyMessage;
+
+  // Parse custom action patterns from C1 responses
+  // Format: "ACTION_TYPE: param1=value1, param2=value2"
+  const actionMatch = message.match(/^(\w+):\s*(.+)$/);
+  if (actionMatch) {
+    const type = actionMatch[1].toLowerCase();
+    const paramsStr = actionMatch[2];
+    const params: Record<string, string> = {};
+
+    // Parse key=value pairs
+    const paramPairs = paramsStr.split(",").map(p => p.trim());
+    for (const pair of paramPairs) {
+      const [key, value] = pair.split("=").map(s => s.trim());
+      if (key && value) {
+        params[key] = value;
+      }
+    }
+
+    return { type, params };
+  }
+
+  // Try JSON parse if the message looks like JSON
+  if (message.startsWith("{")) {
+    try {
+      return JSON.parse(message) as CustomActionEvent;
+    } catch {
+      // Not valid JSON
+    }
+  }
+
+  return null;
 }
 
 interface C1ArtifactProps {
@@ -17,6 +67,8 @@ interface C1ArtifactProps {
   onUpdate?: (content: string) => void;
   /** Callback when user interacts with the UI (button clicks, form submissions, etc.) */
   onAction?: (action: Action) => void;
+  /** Callback for custom actions (track bill, share, explore, etc.) */
+  onCustomAction?: (action: CustomActionEvent) => void;
   /** Additional CSS classes */
   className?: string;
 }
@@ -45,6 +97,7 @@ export function C1Artifact({
   isStreaming = false,
   onUpdate,
   onAction,
+  onCustomAction,
   className,
 }: C1ArtifactProps) {
   const [currentResponse, setCurrentResponse] = useState(response);
@@ -62,14 +115,31 @@ export function C1Artifact({
   const handleAction = useCallback(
     (action: Action) => {
       console.log("[C1Artifact] User action:", action.humanFriendlyMessage);
+
+      // Try to parse as custom action first
+      const customAction = parseCustomAction(action);
+      if (customAction && onCustomAction) {
+        console.log("[C1Artifact] Custom action detected:", customAction.type, customAction.params);
+        onCustomAction(customAction);
+        return;
+      }
+
+      // Fallback to standard action handler
       onAction?.(action);
     },
-    [onAction]
+    [onAction, onCustomAction]
   );
 
   if (!response) {
+    console.log("[C1Artifact] No response provided, returning null");
     return null;
   }
+
+  console.log("[C1Artifact] Rendering with response:", {
+    length: response.length,
+    preview: response.slice(0, 150),
+    isStreaming
+  });
 
   return (
     <div className={className}>
@@ -85,25 +155,23 @@ export function C1Artifact({
 
 /**
  * Check if a response contains C1 generative UI markup
- * C1 responses typically contain React-like component syntax
+ * Thesys Artifacts API returns JSON component structures
  */
 export function isC1Response(response: string): boolean {
-  // C1 generates markup that looks like React JSX
-  // Check for common C1 component patterns
-  const c1Patterns = [
-    /<C1Card/i,
-    /<C1Button/i,
-    /<C1Form/i,
-    /<C1Chart/i,
-    /<C1Table/i,
-    /<C1List/i,
-    /<C1Timeline/i,
-    /<C1Progress/i,
-    // Also check for common HTML-like structures from C1
-    /<div class="c1-/i,
-    /<section class="c1-/i,
-    /data-c1-/i,
+  if (!response || typeof response !== "string") return false;
+
+  // Thesys Artifacts API returns JSON with specific patterns:
+  // - Array of objects with "op" (operations like "append")
+  // - Objects with "component" keys (List, TextContent, InlineHeader, etc.)
+  // - Objects with "variant" keys (ContentPage, etc.)
+  // - Objects with "children" arrays containing nested components
+  const artifactPatterns = [
+    /"op"\s*:\s*"(append|replace|remove)"/i,
+    /"component"\s*:\s*"(List|TextContent|InlineHeader|MiniCard|DataTile|Tag|Icon|MiniCardBlock|Hero|StatBlock|Chart|Table|Timeline|Progress|Card|Button|Form)"/i,
+    /"variant"\s*:\s*"(ContentPage|CoverPage|TitlePage)"/i,
+    /\[\s*\{\s*"op"\s*:/,  // Starts with array of operations
+    /"children"\s*:\s*\[/,  // Has children array
   ];
 
-  return c1Patterns.some((pattern) => pattern.test(response));
+  return artifactPatterns.some((pattern) => pattern.test(response));
 }

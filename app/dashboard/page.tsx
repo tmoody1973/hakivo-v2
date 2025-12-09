@@ -74,7 +74,7 @@ export default function DashboardPage() {
 
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">Good morning, {user?.firstName || 'there'}</h1>
-        <p className="text-muted-foreground mt-1">Here's your civic engagement dashboard for today</p>
+        <p className="text-muted-foreground mt-1">Your personal legislative aide is ready with today's briefing</p>
       </div>
 
       <div className="space-y-6">

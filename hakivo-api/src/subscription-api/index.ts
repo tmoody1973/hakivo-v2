@@ -11,6 +11,7 @@ const HAKIVO_PRO_PRICE_ID = 'price_1SbrvvCpozUWtHfyCFE5Lyur';
 const FREE_TIER_BRIEFS_PER_MONTH = 3;
 const FREE_TIER_TRACKED_BILLS = 3;
 const FREE_TIER_FOLLOWED_MEMBERS = 3;
+const FREE_TIER_ARTIFACTS_PER_MONTH = 3;
 
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -89,6 +90,14 @@ app.get('/api/subscription/status/:userId', async (c) => {
       .bind(userId)
       .first();
 
+    // Get artifacts created this month
+    const currentDate = new Date();
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+    const artifactsThisMonth = await db
+      .prepare('SELECT COUNT(*) as count FROM artifacts WHERE user_id = ? AND created_at >= ?')
+      .bind(userId, monthStart)
+      .first();
+
     // Calculate briefs remaining
     const briefsUsed = user.briefs_used_this_month as number || 0;
     const briefsLimit = isPro ? Infinity : FREE_TIER_BRIEFS_PER_MONTH;
@@ -97,6 +106,8 @@ app.get('/api/subscription/status/:userId', async (c) => {
     // Calculate limits
     const trackedBillsCount = (trackedBills?.count as number) || 0;
     const followedMembersCount = (followedMembers?.count as number) || 0;
+    const artifactsUsed = (artifactsThisMonth?.count as number) || 0;
+    const artifactsRemaining = isPro ? 'unlimited' : Math.max(0, FREE_TIER_ARTIFACTS_PER_MONTH - artifactsUsed);
 
     return c.json({
       userId,
@@ -114,6 +125,12 @@ app.get('/api/subscription/status/:userId', async (c) => {
           remaining: briefsRemaining,
           resetAt: user.briefs_reset_at ? new Date(user.briefs_reset_at as number).toISOString() : null
         },
+        artifacts: {
+          used: artifactsUsed,
+          limit: isPro ? 'unlimited' : FREE_TIER_ARTIFACTS_PER_MONTH,
+          remaining: artifactsRemaining,
+          canCreateMore: isPro || artifactsUsed < FREE_TIER_ARTIFACTS_PER_MONTH
+        },
         trackedBills: {
           count: trackedBillsCount,
           limit: isPro ? 'unlimited' : FREE_TIER_TRACKED_BILLS,
@@ -130,7 +147,8 @@ app.get('/api/subscription/status/:userId', async (c) => {
         realtimeAlerts: isPro,
         audioDigests: isPro,
         unlimitedBriefs: isPro,
-        unlimitedTracking: isPro
+        unlimitedTracking: isPro,
+        unlimitedArtifacts: isPro
       }
     });
   } catch (error) {
@@ -478,6 +496,21 @@ app.post('/api/subscription/check-limit/:userId', async (c) => {
         limit = FREE_TIER_BRIEFS_PER_MONTH;
         allowed = currentCount < limit;
         reason = allowed ? null : `Free tier limited to ${limit} briefs per month. Upgrade to Pro for unlimited.`;
+        break;
+      }
+
+      case 'generate_artifact': {
+        // Count artifacts created this month
+        const currentDate = new Date();
+        const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+        const result = await db
+          .prepare('SELECT COUNT(*) as count FROM artifacts WHERE user_id = ? AND created_at >= ?')
+          .bind(userId, monthStart)
+          .first();
+        currentCount = (result?.count as number) || 0;
+        limit = FREE_TIER_ARTIFACTS_PER_MONTH;
+        allowed = currentCount < limit;
+        reason = allowed ? null : `Free tier limited to ${limit} documents per month. Upgrade to Pro for unlimited.`;
         break;
       }
 

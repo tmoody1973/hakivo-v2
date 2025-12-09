@@ -57,7 +57,7 @@ You have access to C1's component generation capabilities. Use these component t
 export const c1CongressionalAssistant = new Agent({
   name: "c1-congressional-assistant",
   instructions: c1SystemPrompt,
-  model: thesysC1.chat("c1/anthropic/claude-sonnet-4/v-20250617"),
+  model: thesysC1.chat("c1/anthropic/claude-sonnet-4/v-20251130"),
   tools: congressionalTools,
 });
 
@@ -71,7 +71,7 @@ export function createC1CongressionalAssistant(options?: {
   return new Agent({
     name: "c1-congressional-assistant",
     instructions: c1SystemPrompt,
-    model: thesysC1.chat("c1/anthropic/claude-sonnet-4/v-20250617"),
+    model: thesysC1.chat("c1/anthropic/claude-sonnet-4/v-20251130"),
     tools: congressionalTools,
   });
 }

@@ -61,10 +61,44 @@ export {
 
 // C1 Artifacts Tools - Reports and presentations
 export {
+  createArtifactTool,
+  editArtifactTool,
   generateBillReportTool,
   generateBriefingSlidesTool,
   c1ArtifactsTools,
 } from "./c1-artifacts";
+
+// Thesys API - Low-level artifact generation
+export {
+  generateArtifact,
+  generateArtifactStream,
+  editArtifact,
+  editArtifactStream,
+  generateArtifactId,
+  type ArtifactType,
+  type ArtifactGenerationOptions,
+  type ArtifactEditOptions,
+  type ArtifactResult,
+} from "./thesys";
+
+// Gemini Search - Google Search with grounding and citations
+export {
+  geminiSearchTool,
+  searchWithGemini,
+  searchNewsWithGemini,
+} from "./gemini-search";
+
+// C1 Templates - UI templates for tool results
+export {
+  billSearchResultsTemplate,
+  billDetailTemplate,
+  memberProfileTemplate,
+  newsResultsTemplate,
+  stateBillResultsTemplate,
+  errorTemplate,
+  loadingTemplate,
+  c1Templates,
+} from "./c1-templates";
 
 // Audio Briefing Tools - Text-to-speech briefings
 export {

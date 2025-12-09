@@ -13,11 +13,12 @@ export const c1ArtifactsClient = new OpenAI({
 });
 
 // Available C1 models (from https://docs.thesys.dev/api-reference/models-and-compatibility)
+// Updated: December 2025 - using latest stable versions
 export const C1_MODELS = {
-  // Stable models (production-recommended)
-  CLAUDE_SONNET_4_EMBED: "c1/anthropic/claude-sonnet-4/v-20250930",
+  // Stable models (production-recommended) - December 2025
+  CLAUDE_SONNET_4_EMBED: "c1/anthropic/claude-sonnet-4/v-20251130",
   CLAUDE_SONNET_4_VISUALIZE: "c1/anthropic/claude-sonnet-4/v-20250915",
-  GPT5: "c1/openai/gpt-5/v-20250930",
+  GPT5: "c1/openai/gpt-5/v-20251130",
 
   // Artifacts model
   ARTIFACT: "c1/artifact/v-20251030",
@@ -26,8 +27,8 @@ export const C1_MODELS = {
   CLAUDE_HAIKU_EXP: "c1-exp/anthropic/claude-3.5-haiku/v-20250709",
   GPT4_1_EXP: "c1-exp/openai/gpt-4.1/v-20250617",
 
-  // Default for chat
-  DEFAULT: "c1/openai/gpt-5/v-20250930",
+  // Default for chat - using latest Claude Sonnet 4 for embed
+  DEFAULT: "c1/anthropic/claude-sonnet-4/v-20251130",
 } as const;
 
 // Artifact types

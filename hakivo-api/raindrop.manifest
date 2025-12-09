@@ -316,6 +316,10 @@ application "hakivo-new" {
   // SQL database for application data
   sql_database "app-db" {}
 
+  // SmartSQL for AI-powered natural language to SQL translation
+  // Enables direct textQuery for user questions like "show me healthcare bills"
+  smartsql "congressional-db" {}
+
   // KV caches for performance
   kv_cache "news-cache" {}
 

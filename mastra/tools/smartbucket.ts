@@ -1,5 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { billSearchResultsTemplate } from "./c1-templates";
 
 /**
  * SmartBucket Tool for Hakivo Congressional Assistant
@@ -67,6 +68,29 @@ interface ChunkSearchResult {
 }
 
 /**
+ * Normalize bill data from API response to expected interface
+ * API returns: type, number, policyArea, sponsor (nested)
+ * Template expects: bill_type, bill_number, policy_area, sponsor_name, sponsor_party, sponsor_state
+ */
+function normalizeBill(bill: Record<string, unknown>): Record<string, unknown> {
+  const sponsor = bill.sponsor as Record<string, unknown> | undefined;
+  const latestAction = bill.latestAction as Record<string, unknown> | undefined;
+  return {
+    ...bill,
+    bill_type: bill.type || bill.bill_type,
+    bill_number: bill.number || bill.bill_number,
+    policy_area: bill.policyArea || bill.policy_area,
+    sponsor_name: sponsor ? `${sponsor.firstName} ${sponsor.lastName}` : (bill.sponsor_name || undefined),
+    sponsor_party: sponsor?.party || bill.sponsor_party,
+    sponsor_state: sponsor?.state || bill.sponsor_state,
+    latest_action_text: latestAction?.text || bill.latest_action_text,
+    latest_action_date: latestAction?.date || bill.latest_action_date,
+    similarity_score: bill.relevanceScore || bill.similarity_score,
+    matched_content: bill.matchedChunk || bill.matched_content,
+  };
+}
+
+/**
  * Semantic Search Tool - Search bill text using natural language
  *
  * Uses SmartBucket vector search to find relevant bill content
@@ -74,15 +98,25 @@ interface ChunkSearchResult {
  */
 export const semanticSearchTool = createTool({
   id: "semanticSearch",
-  description: `Search through bill text documents using natural language queries.
-This tool uses semantic similarity (meaning-based matching) rather than keyword matching,
-so it can find relevant content even when exact words don't match.
+  description: `PREFERRED TOOL for searching bills by TOPIC or THEME.
+
+USE THIS TOOL when user asks about:
+- Topic-based searches: "agriculture bills", "healthcare legislation", "climate change bills"
+- Theme searches: "bills about food safety", "legislation on renewable energy"
+- Concept searches: "immigration reform", "tax incentives", "veteran benefits"
+
+This tool uses AI-powered semantic similarity (meaning-based matching) which finds
+relevant bills even when exact keywords don't match. It searches the full bill text,
+not just titles.
 
 Example queries:
-- "legislation about protecting endangered species"
+- "agriculture or food legislation"
+- "bills about protecting endangered species"
 - "tax incentives for renewable energy"
 - "healthcare coverage for veterans"
-- "immigration reform pathways"`,
+- "immigration reform pathways"
+
+DO NOT use smartSql for topic searches - it uses keyword matching and will return no results.`,
   inputSchema: z.object({
     query: z
       .string()
@@ -124,11 +158,83 @@ Example queries:
       }
 
       const result = await response.json();
+      const rawBills = result.bills || [];
+      const bills = rawBills.map(normalizeBill);
+
+      // Generate legislative aide-style summary
+      const generateBriefingSummary = (bills: Array<Record<string, unknown>>, searchQuery: string): string => {
+        if (bills.length === 0) {
+          return `No legislation found matching "${searchQuery}".`;
+        }
+
+        // Analyze the bills to create a helpful summary
+        const billTypes = new Map<string, number>();
+        const sponsors = new Map<string, number>();
+        const policyAreas = new Map<string, number>();
+
+        for (const bill of bills) {
+          // Count bill types (use normalized bill_type)
+          const type = ((bill.bill_type || bill.type) as string)?.toUpperCase() || 'Unknown';
+          billTypes.set(type, (billTypes.get(type) || 0) + 1);
+
+          // Count sponsors by party (use normalized sponsor_party)
+          const party = (bill.sponsor_party as string) || '';
+          if (party) sponsors.set(party, (sponsors.get(party) || 0) + 1);
+
+          // Count policy areas (use normalized policy_area)
+          const area = (bill.policy_area as string) || '';
+          if (area) policyAreas.set(area, (policyAreas.get(area) || 0) + 1);
+        }
+
+        // Build summary
+        const parts: string[] = [];
+        parts.push(`Found ${bills.length} bill${bills.length !== 1 ? 's' : ''} related to "${searchQuery}".`);
+
+        // Bill type breakdown
+        const typeBreakdown = Array.from(billTypes.entries())
+          .map(([type, count]) => `${count} ${type}`)
+          .join(', ');
+        if (typeBreakdown) {
+          parts.push(`Includes ${typeBreakdown}.`);
+        }
+
+        // Party breakdown if available
+        const dems = sponsors.get('Democratic') || sponsors.get('Democrat') || sponsors.get('D') || 0;
+        const reps = sponsors.get('Republican') || sponsors.get('R') || 0;
+        if (dems > 0 || reps > 0) {
+          const partyParts = [];
+          if (dems > 0) partyParts.push(`${dems} Democratic`);
+          if (reps > 0) partyParts.push(`${reps} Republican`);
+          parts.push(`Sponsored by ${partyParts.join(' and ')} member${dems + reps > 1 ? 's' : ''}.`);
+        }
+
+        // Top policy area
+        const topArea = Array.from(policyAreas.entries()).sort((a, b) => b[1] - a[1])[0];
+        if (topArea && topArea[0]) {
+          parts.push(`Primary policy focus: ${topArea[0]}.`);
+        }
+
+        return parts.join(' ');
+      };
+
+      const summary = generateBriefingSummary(bills, query);
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = billSearchResultsTemplate(bills, {
+        query,
+        count: bills.length,
+        source: "semantic",
+      });
+
       return {
         success: true,
         query,
-        bills: result.bills || [],
-        count: result.bills?.length || 0,
+        bills,
+        count: bills.length,
+        summary, // Legislative aide-style briefing
+        // C1 template for frontend rendering
+        c1Template,
+        templateType: "billSearchResults",
       };
     } catch (error) {
       return {
@@ -221,7 +327,8 @@ Best for questions like:
       }
 
       const result = await response.json();
-      const bills = result.bills || [];
+      const rawBills = result.bills || [];
+      const bills = rawBills.map(normalizeBill);
 
       // Format the retrieved content as context
       const contextParts: string[] = [];
@@ -238,8 +345,8 @@ Best for questions like:
         );
         sources.push({
           bill_id: billId,
-          title: bill.title,
-          similarity: bill.similarity_score,
+          title: bill.title as string,
+          similarity: bill.similarity_score as number,
         });
       }
 
@@ -312,9 +419,10 @@ Useful for:
       }
 
       const result = await response.json();
-      const bills = result.bills || [];
+      const rawBills = result.bills || [];
+      const bills = rawBills.map(normalizeBill);
 
-      const similarBills = bills.map((bill: BillTextSearchResult["bills"][0]) => ({
+      const similarBills = bills.map((bill: Record<string, unknown>) => ({
         bill_id: `${bill.congress}-${bill.bill_type}-${bill.bill_number}`,
         title: bill.title,
         short_title: bill.short_title,
@@ -327,11 +435,20 @@ Useful for:
         latest_action_date: bill.latest_action_date,
       }));
 
+      // Generate C1 template for rich UI rendering
+      const c1Template = billSearchResultsTemplate(bills, {
+        query: topic,
+        count: similarBills.length,
+        source: "comparison",
+      });
+
       return {
         success: true,
         topic,
         similar_bills: similarBills,
         count: similarBills.length,
+        c1Template,
+        templateType: "billSearchResults",
       };
     } catch (error) {
       return {
@@ -406,13 +523,24 @@ Social Welfare, Agriculture, Energy, Transportation, Housing`,
       }
 
       const result = await response.json();
+      const rawBills = result.bills || [];
+      const bills = rawBills.map(normalizeBill);
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = billSearchResultsTemplate(bills, {
+        query: query || policyArea,
+        count: bills.length,
+        source: "policyArea",
+      });
 
       return {
         success: true,
         policyArea,
         query,
-        bills: result.bills || [],
-        count: result.bills?.length || 0,
+        bills,
+        count: bills.length,
+        c1Template,
+        templateType: "billSearchResults",
       };
     } catch (error) {
       return {

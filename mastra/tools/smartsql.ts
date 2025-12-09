@@ -7,6 +7,11 @@ import {
   measure,
   withErrorHandling,
 } from "../../lib/api-utils";
+import {
+  billSearchResultsTemplate,
+  billDetailTemplate,
+  memberProfileTemplate,
+} from "./c1-templates";
 
 /**
  * SmartSQL Tool for Hakivo Congressional Assistant
@@ -96,6 +101,8 @@ interface QueryResult {
   query_type: string;
   sql_executed?: string;
   error?: string;
+  c1Template?: string;
+  templateType?: string;
 }
 
 /**
@@ -429,11 +436,19 @@ async function searchBills(
     const result = await response.json();
     const bills = result.bills || [];
 
-    const queryResult: QueryResult = {
+    // Generate C1 template for rich UI rendering
+    const c1Template = billSearchResultsTemplate(bills, {
+      count: bills.length,
+      source: "database",
+    });
+
+    const queryResult = {
       success: true,
       data: bills,
       count: bills.length,
       query_type: "bills_search",
+      c1Template,
+      templateType: "billSearchResults",
     };
 
     // Cache the result
@@ -548,12 +563,21 @@ async function searchBillsBySponsor(
       sponsor_state: member.state,
     }));
 
+    // Generate C1 template for rich UI rendering
+    const c1Template = billSearchResultsTemplate(enrichedBills, {
+      query: `bills sponsored by ${memberName}`,
+      count: enrichedBills.length,
+      source: "sponsor_search",
+    });
+
     return {
       success: true,
       data: enrichedBills,
       count: enrichedBills.length,
       query_type: "sponsor_bills_search",
       sql_executed: sql,
+      c1Template,
+      templateType: "billSearchResults",
     };
   } catch (error) {
     return {
@@ -738,14 +762,19 @@ async function executeCustomQuery(sql: string): Promise<QueryResult> {
  */
 export const smartSqlTool = createTool({
   id: "smartSql",
-  description: `Search the Hakivo database using natural language. Supports queries about:
-- Federal bills: "Show me healthcare bills from the 119th Congress"
-- Bills by sponsor: "What bills has Ted Cruz sponsored", "bills sponsored by Tammy Baldwin", "what is AOC working on"
-- Members: "Find Democratic senators from California"
-- State bills: "Texas education legislation"
-- Votes: "How did my representative vote on H.R. 1234"
+  description: `Search the Hakivo database for SPECIFIC bill lookups and member queries.
 
-The tool automatically parses your query to determine the best search approach.`,
+IMPORTANT: This tool uses keyword matching and is NOT suitable for topic-based searches like "agriculture bills" or "healthcare legislation".
+For topic-based searches, use the semanticSearch tool instead.
+
+Best for:
+- Bills by SPONSOR name: "What bills has Ted Cruz sponsored", "bills sponsored by Tammy Baldwin"
+- Bills by SPECIFIC bill number: "Find H.R. 1234", "Show me S. 456"
+- Bills by POLICY AREA filter: "Bills in the Armed Forces and National Security policy area"
+- Members by name/state: "Find Democratic senators from California", "Who represents Texas"
+- Votes on specific bills: "How did my representative vote on H.R. 1234"
+
+DO NOT use for topic searches like "agriculture bills" or "climate legislation" - use semanticSearch instead.`,
   inputSchema: z.object({
     query: z
       .string()
@@ -889,10 +918,35 @@ export const getMemberDetailTool = createTool({
       }
 
       const member = await response.json();
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = memberProfileTemplate({
+        bioguide_id: member.bioguide_id || bioguideId,
+        name: member.name || `${member.first_name} ${member.last_name}`,
+        party: member.party,
+        state: member.state,
+        district: member.district,
+        chamber: member.chamber,
+        title: member.title,
+        office: member.office_address || member.office,
+        phone: member.phone,
+        website: member.url || member.website,
+        twitter: member.twitter,
+        photo_url: member.image_url || member.photo_url,
+        next_election: member.next_election,
+        leadership_role: member.leadership_role,
+        committees: member.committees,
+        sponsored_bills_count: member.sponsored_bills_count,
+        cosponsored_bills_count: member.cosponsored_bills_count,
+        votes_with_party_pct: member.votes_with_party_pct,
+      });
+
       const result = {
         success: true,
         member,
         error: null,
+        c1Template,
+        templateType: "memberProfile",
       };
 
       // Cache for 10 minutes
@@ -1052,9 +1106,106 @@ If no email is provided, inform the user you need their email to look up their p
   },
 });
 
+/**
+ * Native SmartSQL Tool - Uses Raindrop's AI-powered natural language to SQL translation
+ *
+ * This tool uses the native SmartSQL textQuery API which automatically translates
+ * natural language into SQL queries using AI. This eliminates the need for custom
+ * regex parsing and provides more accurate query translation.
+ *
+ * Benefits over the legacy smartSqlTool:
+ * - AI-powered query understanding
+ * - No custom regex parsing needed
+ * - Handles complex queries automatically
+ * - Returns the actual SQL executed for transparency
+ */
+export const nativeSmartSqlTool = createTool({
+  id: "nativeSmartSql",
+  description: `Advanced AI-powered natural language database queries. Uses Raindrop SmartSQL to automatically translate questions into SQL.
+
+Examples:
+- "Show me all healthcare bills from the 119th Congress"
+- "How many bills have been introduced about climate change?"
+- "List the top 10 sponsors by number of bills"
+- "Find bills with more than 50 cosponsors"
+- "What bills passed the House in the last month?"
+
+Returns the actual SQL executed and AI reasoning for transparency.`,
+  inputSchema: z.object({
+    query: z
+      .string()
+      .describe(
+        "Natural language question about congressional data (bills, members, votes)"
+      ),
+  }),
+  execute: async ({ context }) => {
+    const { query } = context;
+
+    try {
+      const fetchResponse = await robustFetch(
+        `${RAINDROP_SERVICES.BILLS}/bills/smart-query`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query,
+            format: "json",
+          }),
+        }
+      );
+
+      const response = await fetchResponse.json() as {
+        success: boolean;
+        query: string;
+        queryExecuted: string;
+        aiReasoning?: string;
+        results: unknown;
+        status: number;
+        message: string;
+        error?: string;
+      };
+
+      if (!response.success) {
+        return {
+          success: false,
+          error: response.error || response.message || "Query failed",
+          query,
+        };
+      }
+
+      // Format results for display
+      const results = Array.isArray(response.results) ? response.results : [];
+      const count = results.length;
+
+      return {
+        success: true,
+        query,
+        sqlExecuted: response.queryExecuted,
+        aiReasoning: response.aiReasoning,
+        count,
+        results: results.slice(0, 20), // Limit to 20 results for display
+        message:
+          count > 0
+            ? `Found ${count} result${count !== 1 ? "s" : ""}`
+            : "No results found for your query",
+      };
+    } catch (error) {
+      console.error("[SmartSQL Native] Error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        query,
+      };
+    }
+  },
+});
+
 // Export all SmartSQL tools
 export const smartSqlTools = {
   smartSql: smartSqlTool,
+  nativeSmartSql: nativeSmartSqlTool,
   getBillDetail: getBillDetailTool,
   getMemberDetail: getMemberDetailTool,
   getUserProfile: getUserProfileTool,

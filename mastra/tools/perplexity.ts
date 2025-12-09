@@ -1,5 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { newsResultsTemplate, webSearchResultsTemplate } from "./c1-templates";
 
 /**
  * Perplexity Search Tool for Hakivo Congressional Assistant
@@ -11,6 +12,7 @@ import { z } from "zod";
  */
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
+const LINKPREVIEW_API_URL = "https://api.linkpreview.net";
 
 // Get API key from environment
 function getPerplexityApiKey(): string | undefined {
@@ -20,10 +22,106 @@ function getPerplexityApiKey(): string | undefined {
   );
 }
 
+// Get LinkPreview API key from environment
+function getLinkPreviewApiKey(): string | undefined {
+  return process.env.LINKPREVIEW_API_KEY;
+}
+
+/**
+ * Fetch og:image and metadata from a URL using LinkPreview API
+ */
+interface LinkPreviewResult {
+  title: string;
+  description: string;
+  image: string;
+  url: string;
+}
+
+async function fetchLinkPreview(url: string): Promise<LinkPreviewResult | null> {
+  const apiKey = getLinkPreviewApiKey();
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch(LINKPREVIEW_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Linkpreview-Api-Key": apiKey,
+      },
+      body: `q=${encodeURIComponent(url)}`,
+    });
+
+    if (!response.ok) {
+      console.warn(`LinkPreview API error for ${url}: ${response.status}`);
+      return null;
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.warn(`LinkPreview fetch error for ${url}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Enrich articles with images from LinkPreview API (for articles missing images)
+ * This is done in parallel to minimize latency
+ */
+async function enrichArticlesWithImages(articles: NewsArticle[]): Promise<NewsArticle[]> {
+  // Only fetch images for articles that don't have one (max 5 to avoid rate limits)
+  const articlesNeedingImages = articles.filter(a => !a.image).slice(0, 5);
+
+  console.log(`[LinkPreview] Articles needing images: ${articlesNeedingImages.length} of ${articles.length}`);
+
+  if (articlesNeedingImages.length === 0) {
+    console.log(`[LinkPreview] All articles have images, skipping enrichment`);
+    return articles;
+  }
+
+  const apiKey = getLinkPreviewApiKey();
+  if (!apiKey) {
+    console.log(`[LinkPreview] No API key configured, skipping enrichment`);
+    return articles;
+  }
+
+  // Fetch all previews in parallel
+  const previewPromises = articlesNeedingImages.map(article =>
+    fetchLinkPreview(article.url)
+  );
+
+  const previews = await Promise.all(previewPromises);
+
+  // Create a map of URL -> image
+  const imageMap = new Map<string, string>();
+  articlesNeedingImages.forEach((article, index) => {
+    const preview = previews[index];
+    if (preview?.image) {
+      imageMap.set(article.url, preview.image);
+      console.log(`[LinkPreview] Got image for ${article.url}: ${preview.image.substring(0, 50)}...`);
+    }
+  });
+
+  console.log(`[LinkPreview] Successfully fetched ${imageMap.size} images`);
+
+  // Update articles with images
+  return articles.map(article => {
+    if (!article.image && imageMap.has(article.url)) {
+      return { ...article, image: imageMap.get(article.url) };
+    }
+    return article;
+  });
+}
+
 // Result types
 interface PerplexityCitation {
   url: string;
   title?: string;
+}
+
+interface PerplexitySearchResult {
+  title: string;
+  url: string;
+  date?: string; // Format: "2023-12-25"
 }
 
 interface PerplexityResponse {
@@ -38,6 +136,8 @@ interface PerplexityResponse {
     finish_reason: string;
   }>;
   citations?: string[];
+  search_results?: PerplexitySearchResult[];
+  images?: string[]; // URLs to images when return_images is true
   usage: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -51,6 +151,7 @@ interface NewsArticle {
   snippet: string;
   source: string;
   date: string | null;
+  image?: string;
   relevanceScore: number;
 }
 
@@ -60,6 +161,8 @@ interface SearchResult {
   citations: PerplexityCitation[];
   query: string;
   error?: string;
+  c1Template?: string;
+  templateType?: string;
 }
 
 interface NewsSearchResult {
@@ -69,6 +172,8 @@ interface NewsSearchResult {
   query: string;
   summary?: string;
   error?: string;
+  c1Template?: string;
+  templateType?: string;
 }
 
 /**
@@ -179,6 +284,7 @@ async function searchWithProgressiveRecency(
         max_tokens: 1024,
         temperature: 0.2,
         return_citations: true,
+        return_images: true,
         search_recency_filter: currentRecency,
       }),
     });
@@ -229,6 +335,7 @@ async function searchWithProgressiveRecency(
       max_tokens: 1024,
       temperature: 0.2,
       return_citations: true,
+      return_images: true,
       search_recency_filter: currentRecency,
     }),
   });
@@ -238,22 +345,71 @@ async function searchWithProgressiveRecency(
 }
 
 /**
- * Search News Tool - Search for current news using Perplexity
+ * Helper to build articles from Perplexity response
+ * Uses search_results for metadata when available, falls back to citations
+ */
+function buildArticlesFromResponse(data: PerplexityResponse): NewsArticle[] {
+  const searchResults = data.search_results || [];
+  const citations = data.citations || [];
+  const images = data.images || [];
+
+  console.log(`[Perplexity] Building articles: searchResults=${searchResults.length}, citations=${citations.length}, images=${images.length}`);
+  if (images.length > 0) {
+    console.log(`[Perplexity] Images received:`, images.slice(0, 3));
+  }
+
+  // Helper to extract image URL from Perplexity's image response
+  // Images can be either strings or objects like {image_url: "...", height: ..., width: ...}
+  const getImageUrl = (img: unknown): string | undefined => {
+    if (!img) return undefined;
+    if (typeof img === "string") return img;
+    if (typeof img === "object" && img !== null && "image_url" in img) {
+      return (img as { image_url: string }).image_url;
+    }
+    return undefined;
+  };
+
+  // If we have search_results, use them for metadata
+  if (searchResults.length > 0) {
+    return searchResults.map((result, index) => ({
+      title: result.title || extractSource(result.url),
+      url: result.url,
+      snippet: "",
+      source: extractSource(result.url),
+      date: result.date || null,
+      image: getImageUrl(images[index]),
+      relevanceScore: 1 - index * 0.1,
+    }));
+  }
+
+  // Fall back to citations (just URLs)
+  return citations.map((url, index) => ({
+    title: extractSource(url),
+    url,
+    snippet: "",
+    source: extractSource(url),
+    date: null,
+    image: getImageUrl(images[index]),
+    relevanceScore: 1 - index * 0.1,
+  }));
+}
+
+/**
+ * Search News Tool - Search for current news using Gemini with Google Search grounding
  *
  * Searches for recent news articles about congressional topics,
- * bills, legislators, and policy areas using Perplexity's AI-powered search.
+ * bills, legislators, and policy areas using Google's Gemini AI with real-time search.
  */
 export const searchNewsTool = createTool({
   id: "searchNews",
-  description: `Search for current news about legislation, representatives, or political topics using Perplexity AI.
+  description: `Search for current news about legislation, representatives, or political topics using Google Gemini AI with real-time search grounding.
 Use this tool to:
 - Find recent news about specific bills or legislation
 - Get updates on congressional actions
 - Find news about specific legislators
 - Search for policy-related news coverage
 
-IMPORTANT: For "latest" or "recent" queries, always use recency="day" to get the most current news.
-Returns an AI-summarized answer with citations to source articles.`,
+Returns an AI-summarized answer with inline citations and source articles with thumbnails.`,
   inputSchema: z.object({
     query: z
       .string()
@@ -262,26 +418,14 @@ Returns an AI-summarized answer with citations to source articles.`,
       .enum(["bills", "legislators", "votes", "policy", "state"])
       .optional()
       .describe("Focus area to improve search relevance"),
-    recency: z
-      .enum(["day", "week", "month"])
+    focus: z
+      .enum(["news", "general", "policy"])
       .optional()
-      .default("day")
-      .describe("How recent the news should be - use 'day' for 'latest' queries"),
+      .default("news")
+      .describe("Search focus: news (recent articles), general (comprehensive), policy (government sources)"),
   }),
   execute: async ({ context }): Promise<NewsSearchResult> => {
-    const { query, topic, recency = "day" } = context;
-
-    const apiKey = getPerplexityApiKey();
-
-    if (!apiKey) {
-      return {
-        success: false,
-        articles: [],
-        count: 0,
-        query,
-        error: "Perplexity API key not configured. Please set PERPLEXITY_API_KEY environment variable.",
-      };
-    }
+    const { query, topic, focus = "news" } = context;
 
     try {
       // Build context-aware query
@@ -297,44 +441,58 @@ Returns an AI-summarized answer with citations to source articles.`,
         searchQuery = `${query} ${topicContext[topic] || ""}`;
       }
 
-      // Build system prompt with date context
-      const today = getTodayFormatted();
-      const systemPrompt = `You are a congressional news research assistant. Today's date is ${today.readable}. Search for the most recent news about the following topic. Focus on factual, non-partisan reporting from reputable news sources. Provide a brief summary of the key developments and cite your sources. Prioritize the most recent articles first.`;
+      // Use Gemini search with Google Search grounding
+      const { searchWithGemini } = await import("./gemini-search");
+      const result = await searchWithGemini(searchQuery, {
+        focus: focus as "news" | "general" | "policy",
+        maxArticles: 10,
+      });
 
-      // Use progressive search - starts with requested recency, expands if no results
-      const { data, finalRecency, expanded } = await searchWithProgressiveRecency(
-        apiKey,
-        systemPrompt,
-        searchQuery,
-        recency
-      );
+      if (!result.success) {
+        // Fallback to Perplexity if Gemini fails
+        console.log("[searchNews] Gemini failed, falling back to Perplexity");
+        return await searchWithPerplexityFallback(searchQuery, topic);
+      }
 
-      // Extract the answer
-      const answer = data.choices[0]?.message?.content || "";
-
-      // Transform citations to articles format
-      const articles: NewsArticle[] = (data.citations || []).map((url, index) => ({
-        title: `Source ${index + 1}`,
-        url,
-        snippet: "",
-        source: extractSource(url),
-        date: null,
-        relevanceScore: 1 - index * 0.1, // Higher rank = higher score
+      // Transform Gemini results to match expected format
+      // Use imageUrl from Gemini if available, otherwise will be enriched by LinkPreview
+      let articles: NewsArticle[] = result.articles.map((article, index) => ({
+        title: article.title,
+        url: article.url,
+        snippet: article.snippet || "",
+        source: article.source,
+        date: article.date || null,
+        image: article.imageUrl, // Use Gemini's image if available, LinkPreview will fill gaps
+        relevanceScore: 1 - index * 0.1,
       }));
 
-      // Add note if search was expanded
-      const expandedNote = expanded
-        ? `\n\n(Note: No news found for "${recency}" timeframe, expanded search to "${finalRecency}")`
-        : "";
+      // Enrich articles with images from LinkPreview
+      articles = await enrichArticlesWithImages(articles);
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = newsResultsTemplate(
+        articles.map((a) => ({
+          title: a.title,
+          url: a.url,
+          source: a.source,
+          published_date: a.date || undefined,
+          snippet: a.snippet || undefined,
+          image: a.image,
+        })),
+        { query: searchQuery }
+      );
 
       return {
         success: true,
         articles,
         count: articles.length,
         query: searchQuery,
-        summary: answer + expandedNote,
+        summary: result.summaryWithCitations || result.summary,
+        c1Template,
+        templateType: "newsResults",
       };
     } catch (error) {
+      console.error("[searchNews] Error:", error);
       return {
         success: false,
         articles: [],
@@ -345,6 +503,66 @@ Returns an AI-summarized answer with citations to source articles.`,
     }
   },
 });
+
+/**
+ * Fallback to Perplexity search if Gemini fails
+ */
+async function searchWithPerplexityFallback(
+  searchQuery: string,
+  topic?: string
+): Promise<NewsSearchResult> {
+  const apiKey = getPerplexityApiKey();
+
+  if (!apiKey) {
+    return {
+      success: false,
+      articles: [],
+      count: 0,
+      query: searchQuery,
+      error: "Both Gemini and Perplexity search failed. Please check API keys.",
+    };
+  }
+
+  const today = getTodayFormatted();
+  const systemPrompt = `You are a congressional news research assistant. Today's date is ${today.readable}. Search for the most recent news about the following topic. Focus on factual, non-partisan reporting from reputable news sources. Provide a brief summary of the key developments and cite your sources. Prioritize the most recent articles first.`;
+
+  const { data, finalRecency, expanded } = await searchWithProgressiveRecency(
+    apiKey,
+    systemPrompt,
+    searchQuery,
+    "day"
+  );
+
+  const answer = data.choices[0]?.message?.content || "";
+  let articles = buildArticlesFromResponse(data);
+  articles = await enrichArticlesWithImages(articles);
+
+  const expandedNote = expanded
+    ? `\n\n(Note: Expanded search to "${finalRecency}" timeframe)`
+    : "";
+
+  const c1Template = newsResultsTemplate(
+    articles.map((a) => ({
+      title: a.title,
+      url: a.url,
+      source: a.source,
+      published_date: a.date || undefined,
+      snippet: a.snippet || undefined,
+      image: a.image,
+    })),
+    { query: searchQuery }
+  );
+
+  return {
+    success: true,
+    articles,
+    count: articles.length,
+    query: searchQuery,
+    summary: answer + expandedNote,
+    c1Template,
+    templateType: "newsResults",
+  };
+}
 
 /**
  * Search Congressional News Tool - Specialized for Congress.gov and official sources
@@ -410,19 +628,29 @@ Use this for reliable, factual updates on congressional activities.`,
 
       const answer = data.choices[0]?.message?.content || "";
 
-      const articles: NewsArticle[] = (data.citations || []).map((url, index) => ({
-        title: `Source ${index + 1}`,
-        url,
-        snippet: "",
-        source: extractSource(url),
-        date: null,
-        relevanceScore: 1 - index * 0.1,
-      }));
+      // Transform response to articles format using search_results metadata
+      let articles = buildArticlesFromResponse(data);
+
+      // Enrich articles with images from LinkPreview (for those missing images)
+      articles = await enrichArticlesWithImages(articles);
 
       // Add note if search was expanded
       const expandedNote = expanded
         ? `\n\n(Note: No news found for "${recency}" timeframe, expanded search to "${finalRecency}")`
         : "";
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = newsResultsTemplate(
+        articles.map((a) => ({
+          title: a.title,
+          url: a.url,
+          source: a.source,
+          published_date: a.date || undefined,
+          snippet: a.snippet || undefined,
+          image: a.image,
+        })),
+        { query: chamberQuery }
+      );
 
       return {
         success: true,
@@ -430,6 +658,8 @@ Use this for reliable, factual updates on congressional activities.`,
         count: articles.length,
         query: chamberQuery,
         summary: answer + expandedNote,
+        c1Template,
+        templateType: "newsResults",
       };
     } catch (error) {
       return {
@@ -508,19 +738,29 @@ including their statements, votes, and activities.`,
 
       const answer = data.choices[0]?.message?.content || "";
 
-      const articles: NewsArticle[] = (data.citations || []).map((url, index) => ({
-        title: `Source ${index + 1}`,
-        url,
-        snippet: "",
-        source: extractSource(url),
-        date: null,
-        relevanceScore: 1 - index * 0.1,
-      }));
+      // Transform response to articles format using search_results metadata
+      let articles = buildArticlesFromResponse(data);
+
+      // Enrich articles with images from LinkPreview (for those missing images)
+      articles = await enrichArticlesWithImages(articles);
 
       // Add note if search was expanded
       const expandedNote = expanded
         ? `\n\n(Note: No news found for "${recency}" timeframe, expanded search to "${finalRecency}")`
         : "";
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = newsResultsTemplate(
+        articles.map((a) => ({
+          title: a.title,
+          url: a.url,
+          source: a.source,
+          published_date: a.date || undefined,
+          snippet: a.snippet || undefined,
+          image: a.image,
+        })),
+        { query: searchQuery }
+      );
 
       return {
         success: true,
@@ -528,6 +768,8 @@ including their statements, votes, and activities.`,
         count: articles.length,
         query: searchQuery,
         summary: answer + expandedNote,
+        c1Template,
+        templateType: "newsResults",
       };
     } catch (error) {
       return {
@@ -594,6 +836,7 @@ Returns an AI-summarized answer with source citations.`,
           max_tokens: detailed ? 2048 : 1024,
           temperature: 0.2,
           return_citations: true,
+          return_images: true,
         }),
       });
 
@@ -603,17 +846,29 @@ Returns an AI-summarized answer with source citations.`,
 
       const data: PerplexityResponse = await response.json();
       const answer = data.choices[0]?.message?.content || "";
+      const searchResults = data.search_results || [];
 
-      const citations: PerplexityCitation[] = (data.citations || []).map((url) => ({
-        url,
-        title: extractSource(url),
-      }));
+      // Use search_results for better metadata when available
+      const citations: PerplexityCitation[] = searchResults.length > 0
+        ? searchResults.map((result) => ({
+            url: result.url,
+            title: result.title || extractSource(result.url),
+          }))
+        : (data.citations || []).map((url) => ({
+            url,
+            title: extractSource(url),
+          }));
+
+      // Generate C1 template for rich UI rendering
+      const c1Template = webSearchResultsTemplate(answer, citations, { query });
 
       return {
         success: true,
         answer,
         citations,
         query,
+        c1Template,
+        templateType: "webSearchResults",
       };
     } catch (error) {
       return {
