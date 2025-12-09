@@ -92,14 +92,25 @@ app.get('/api/subscription/status/:userId', async (c) => {
 
     // Get artifacts created this month
     const currentDate = new Date();
-    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getTime();
     const artifactsThisMonth = await db
       .prepare('SELECT COUNT(*) as count FROM artifacts WHERE user_id = ? AND created_at >= ?')
       .bind(userId, monthStart)
       .first();
 
-    // Calculate briefs remaining
-    const briefsUsed = user.briefs_used_this_month as number || 0;
+    // Count briefs created this month from the briefs table (more accurate than counter)
+    const briefsThisMonth = await db
+      .prepare(`
+        SELECT COUNT(*) as count FROM briefs
+        WHERE user_id = ?
+          AND created_at >= ?
+          AND status IN ('completed', 'script_ready', 'processing', 'audio_processing')
+      `)
+      .bind(userId, monthStart)
+      .first();
+
+    // Calculate briefs remaining - use actual count from briefs table
+    const briefsUsed = (briefsThisMonth?.count as number) || 0;
     const briefsLimit = isPro ? Infinity : FREE_TIER_BRIEFS_PER_MONTH;
     const briefsRemaining = isPro ? 'unlimited' : Math.max(0, briefsLimit - briefsUsed);
 
