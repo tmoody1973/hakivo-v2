@@ -6,6 +6,7 @@ import { ConditionalPlayer } from "@/components/conditional-player"
 import { AuthProvider } from "@/lib/auth/auth-context"
 import { AudioPlayerProvider } from "@/lib/audio/audio-player-context"
 import { C1Provider } from "@/components/c1"
+import { FeaturebaseWidget } from "@/components/featurebase"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -65,7 +66,7 @@ export default function RootLayout({
             </AudioPlayerProvider>
           </AuthProvider>
         </C1Provider>
-        {/* Analytics component removed */}
+        <FeaturebaseWidget />
       </body>
     </html>
   )
