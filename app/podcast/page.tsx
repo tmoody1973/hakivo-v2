@@ -138,7 +138,7 @@ export default function PodcastPage() {
               <div className="w-64 h-64 md:w-80 md:h-80 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-black/10">
                 <img
                   src="/podcast-hakivo.png"
-                  alt="Signed Into Law Podcast"
+                  alt="100 Laws That Shaped America Podcast"
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -151,10 +151,10 @@ export default function PodcastPage() {
                   A Hakivo Original Podcast
                 </p>
                 <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight">
-                  Signed Into Law
+                  100 Laws That Shaped America
                 </h1>
                 <p className="text-xl text-muted-foreground">
-                  The 100 bills that built modern America
+                  The legislation that built modern America
                 </p>
               </div>
 
@@ -163,7 +163,7 @@ export default function PodcastPage() {
                   Every law tells a story—of movements that demanded change, crises that forced action, and compromises that shaped a nation.
                 </p>
                 <p className="leading-relaxed">
-                  <strong>Signed Into Law</strong> is a daily podcast from Hakivo, the AI-powered civic engagement platform that turns dense legislative text into clear, listenable audio briefings.
+                  <strong>100 Laws That Shaped America</strong> is a podcast from Hakivo, the AI-powered civic engagement platform that turns dense legislative text into clear, listenable audio briefings.
                 </p>
                 <p className="leading-relaxed">
                   Each episode unpacks one of the 100 most consequential pieces of US legislation from 1900 to 2000: the debates behind them, the provisions within them, and the legacy they left.
