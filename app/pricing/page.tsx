@@ -30,6 +30,12 @@ export default function PricingPage() {
               About
             </Link>
             <Link
+              href="/faq"
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+            >
+              FAQ
+            </Link>
+            <Link
               href="/auth/signin"
               className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
             >
@@ -261,8 +267,9 @@ export default function PricingPage() {
             </div>
             <div className="flex gap-6">
               <Link href="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Home</Link>
+              <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</Link>
               <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
-              <Link href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
+              <Link href="/faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors">FAQ</Link>
               <Link href="mailto:info@hakivo.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
             </div>
           </div>

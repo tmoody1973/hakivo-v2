@@ -39,6 +39,12 @@ export default function HomePage() {
               Pricing
             </Link>
             <Link
+              href="/faq"
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+            >
+              FAQ
+            </Link>
+            <Link
               href="/auth/signin"
               className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
             >
@@ -541,6 +547,7 @@ export default function HomePage() {
               <Link href="/podcast" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Podcast</Link>
               <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</Link>
               <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
+              <Link href="/faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors">FAQ</Link>
               <Link href="mailto:info@hakivo.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
             </div>
           </div>

@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Heart, Lightbulb, Users, Radio, Mic2, Code2, Zap } from 'lucide-react'
 
@@ -29,6 +28,12 @@ export default function AboutPage() {
               className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
             >
               Pricing
+            </Link>
+            <Link
+              href="/faq"
+              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+            >
+              FAQ
             </Link>
             <Link
               href="/auth/signin"
@@ -445,6 +450,7 @@ export default function AboutPage() {
               <Link href="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Home</Link>
               <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">About</Link>
               <Link href="/pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</Link>
+              <Link href="/faq" className="text-sm text-muted-foreground hover:text-foreground transition-colors">FAQ</Link>
               <Link href="mailto:info@hakivo.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Contact</Link>
             </div>
           </div>
