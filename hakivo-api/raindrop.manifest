@@ -335,12 +335,14 @@ application "hakivo-prod" {
   // Spreaker OAuth token storage
   kv_cache "spreaker-tokens" {}
 
-  // SmartBuckets for document storage with semantic search
+  // Regular buckets for document storage
+  // NOTE: Cannot convert to SmartBuckets - existing buckets don't support index creation
+  // To enable semantic search later, create NEW SmartBuckets with different names
   // bill-texts: stores full bill text for RAG retrieval
-  smartbucket "bill-texts" {}
+  bucket "bill-texts" {}
 
   // audio-briefs: stores generated audio files with metadata
-  smartbucket "audio-briefs" {}
+  bucket "audio-briefs" {}
 
   // KV cache for agent memory (downgraded from SmartMemory due to initialization issues)
   kv_cache "congressional_memory" {}
