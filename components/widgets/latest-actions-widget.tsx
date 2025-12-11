@@ -42,7 +42,6 @@ interface LatestActionsResponse {
 }
 
 const ITEMS_PER_PAGE = 5;
-const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // State name mapping for display
 const STATE_NAMES: Record<string, string> = {
@@ -70,7 +69,6 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [loadingBillId, setLoadingBillId] = useState<string | null>(null);
 
   // State bills state
   const [stateBills, setStateBills] = useState<StateBill[]>([]);
@@ -271,46 +269,12 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
   };
 
   // Handle clicking on a bill action - navigate to bill detail page
-  // If bill is not in database, it will be auto-fetched from Congress.gov
-  const handleBillClick = async (action: BillAction) => {
+  // The bill detail page handles fetching bill data if not already in database
+  const handleBillClick = (action: BillAction) => {
     const billId = `${action.bill.congress}-${action.bill.type}-${action.bill.number}`;
-    setLoadingBillId(action.id);
-
-    try {
-      // If bill is already in database, navigate directly
-      if (action.bill.inDatabase) {
-        router.push(`/bills/${billId}`);
-        return;
-      }
-
-      // Bill not in database - fetch from Congress.gov via our API (auto-fetch enabled by default)
-      const response = await fetch(
-        `${BILLS_API_URL}/bills/${action.bill.congress}/${action.bill.type}/${action.bill.number}`,
-        { credentials: 'include' }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch bill details');
-      }
-
-      // Update local state to reflect that bill is now in database
-      setActions(prevActions =>
-        prevActions.map(a =>
-          a.id === action.id
-            ? { ...a, bill: { ...a.bill, inDatabase: true } }
-            : a
-        )
-      );
-
-      // Navigate to bill detail page
-      router.push(`/bills/${billId}`);
-    } catch (err) {
-      console.error('Error fetching bill:', err);
-      // Fallback: open Congress.gov URL in new tab
-      window.open(action.bill.url, '_blank');
-    } finally {
-      setLoadingBillId(null);
-    }
+    // Always navigate to internal bill detail page
+    // The bill detail page will fetch and display the bill data
+    router.push(`/bills/${billId}`);
   };
 
   if (loading) {
@@ -411,12 +375,6 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
                         <Badge variant="outline" className="text-xs">
                           {action.chamber}
                         </Badge>
-                        {loadingBillId === action.id && (
-                          <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                        )}
-                        {!action.bill.inDatabase && loadingBillId !== action.id && (
-                          <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                        )}
                       </div>
                       <h4 className="font-medium text-sm line-clamp-1 group-hover:text-primary transition-colors">{action.bill.title}</h4>
                     </div>
