@@ -326,7 +326,21 @@ Make the report data-driven with citations to actual legislation and news source
           } catch (error) {
             console.error("[API] Artifact generation error:", error);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "thinking-complete" })}\n\n`));
-            const errorMsg = error instanceof Error ? error.message : "Artifact generation failed";
+
+            // Provide user-friendly error messages
+            let errorMsg = "An error occurred while generating your document. Please try again.";
+            if (error instanceof Error) {
+              if (error.message.includes("network") || error.message.includes("Network")) {
+                errorMsg = "Network error: Unable to connect to the document generation service. Please check your connection and try again.";
+              } else if (error.message.includes("API key") || error.message.includes("THESYS_API_KEY")) {
+                errorMsg = "Configuration error: Document generation service is not properly configured.";
+              } else if (error.message.includes("timeout")) {
+                errorMsg = "The request timed out. Please try a simpler query.";
+              } else {
+                errorMsg = error.message;
+              }
+            }
+
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`));
             controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
             controller.close();
@@ -416,7 +430,6 @@ Make the report data-driven with citations to actual legislation and news source
           let chunkCount = 0;
           let totalContent = "";
           let hasStreamedToolResults = false; // Track if we've shown tool results to user
-          let lastToolName = ""; // Track last tool for context
 
           console.log("[API] Starting to consume fullStream");
 
@@ -449,7 +462,6 @@ Make the report data-driven with citations to actual legislation and news source
               // Mastra wraps tool info in payload: event.payload.toolName
               const payload = (event as any).payload || {};
               const toolName = payload.toolName || event.toolName || "unknown";
-              lastToolName = toolName;
               console.log("[API] Tool call:", toolName);
               // Stream thinking state for tool calls
               const toolInfo = TOOL_DESCRIPTIONS[toolName] || {

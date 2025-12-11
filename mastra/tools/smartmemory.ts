@@ -21,15 +21,15 @@ import { z } from "zod";
 // - dashboard-service = svc-...q19
 const DASHBOARD_SERVICE_URL =
   process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 const AUTH_SERVICE_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 const CHAT_SERVICE_URL =
   process.env.NEXT_PUBLIC_CHAT_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 // Type definitions for memory responses
 interface UserContext {

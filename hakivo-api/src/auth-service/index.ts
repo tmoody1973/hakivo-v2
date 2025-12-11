@@ -1002,12 +1002,14 @@ app.get('/auth/workos/callback', async (c) => {
     } else {
       userId = existingUser.id as string;
 
-      // Update WorkOS user ID if not set
-      if (!existingUser.workos_user_id) {
+      // Always update WorkOS user ID to handle staging → production migration
+      // This ensures the workos_user_id is updated when switching WorkOS environments
+      if (existingUser.workos_user_id !== user.id) {
         await db
           .prepare('UPDATE users SET workos_user_id = ?, updated_at = ? WHERE id = ?')
           .bind(user.id, Date.now(), userId)
           .run();
+        console.log(`✓ Updated WorkOS user ID: ${existingUser.workos_user_id} → ${user.id}`);
       }
 
       console.log(`✓ Existing user logged in via WorkOS: ${user.email}`);

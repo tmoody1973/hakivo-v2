@@ -418,7 +418,7 @@ Total: 39 modules (39 running)
 ✓ enrichment-observer - observer - running
 ✓ enrichment-queue - queue - running
 ✓ dashboard-service - service - running
-  → svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run
+  → svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run
 ```
 
 ---
@@ -539,7 +539,7 @@ Total: 39 modules (39 running)
 
 **Deployment URL:**
 ```
-https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run
+https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run
 ```
 
 **Test Endpoints:**

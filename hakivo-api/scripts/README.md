@@ -58,7 +58,7 @@ If you have a JWT token, use the admin endpoint:
 
 ```bash
 # Get token from browser localStorage after logging in
-curl -X POST https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/admin/trigger-news-sync \
+curl -X POST https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/admin/trigger-news-sync \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 

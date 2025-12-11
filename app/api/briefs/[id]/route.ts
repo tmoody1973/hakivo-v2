@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 // Briefs service URL
 const BRIEFS_API_URL = process.env.BRIEFS_API_URL ||
-  'https://svc-01ka8k5e6tr0kgy0jkzj9m4q17.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyz17.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 /**
  * GET /api/briefs/:id

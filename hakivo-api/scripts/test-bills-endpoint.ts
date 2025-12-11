@@ -2,7 +2,7 @@
  * Test the /dashboard/bills endpoint with mapped policy areas
  */
 
-const DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const TEST_TOKEN = process.env.TEST_TOKEN;
 
 if (!TEST_TOKEN) {

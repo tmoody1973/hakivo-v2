@@ -284,14 +284,14 @@ Provide:
 
 Be factual and cite your sources accurately. Include image URLs for articles when available from the search results.`;
 
-    // Call Gemini with Google Search grounding and structured output
+    // Call Gemini with Google Search grounding
+    // Note: We cannot use structured JSON output with Google Search grounding
+    // so we'll parse the response manually
     const response = await client.models.generateContent({
       model: GEMINI_MODEL,
       contents: searchPrompt,
       config: {
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: newsSearchSchema,
       },
     });
 
@@ -364,13 +364,26 @@ Be factual and cite your sources accurately. Include image URLs for articles whe
     };
   } catch (error) {
     console.error("[Gemini Search] Error:", error);
+    // Provide more detailed error information
+    let errorMessage = "Unknown error";
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      // Check for common issues
+      if (error.message.includes("API_KEY") || error.message.includes("apiKey")) {
+        errorMessage = "Gemini API key not configured. Please set GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY.";
+      } else if (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("ENOTFOUND")) {
+        errorMessage = `Network error connecting to Gemini API: ${error.message}`;
+      } else if (error.message.includes("quota") || error.message.includes("rate")) {
+        errorMessage = `Gemini API rate limit reached: ${error.message}`;
+      }
+    }
     return {
       success: false,
       summary: "",
       summaryWithCitations: "",
       articles: [],
       citations: [],
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: errorMessage,
     };
   }
 }

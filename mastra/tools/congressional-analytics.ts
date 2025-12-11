@@ -14,7 +14,7 @@ import { z } from "zod";
 
 // Admin dashboard endpoint for SQL queries
 const ADMIN_SERVICE =
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 /**
  * Execute SQL query against the admin dashboard

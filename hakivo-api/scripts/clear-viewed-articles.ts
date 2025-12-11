@@ -12,7 +12,7 @@ async function clearViewedArticles() {
     process.exit(1);
   }
 
-  const API_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  const API_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
   try {
     console.log(`🗑️  Clearing viewed articles for user: ${userId}`);

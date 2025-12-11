@@ -11,21 +11,27 @@
   NODE_ENV = "production"
   # Omit local .env files and Netlify internal build output from secrets scanning
   SECRETS_SCAN_OMIT_PATHS = ".env.local,hakivo-api/.env.local,hakivo-api/hakivo-api/.env.local,.netlify"
-  # Production Raindrop Cloud backend URLs
+  # Production Raindrop Cloud backend URLs (Updated 2025-12-11)
   # API_BASE_URL is used for auth endpoints (signin, callback)
-  NEXT_PUBLIC_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzg.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
   # DASHBOARD_API_URL is used for dashboard data endpoints
-  NEXT_PUBLIC_DASHBOARD_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_DASHBOARD_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
   # BILLS_API_URL for backend bills-service (server-side routes need this)
-  NEXT_PUBLIC_BILLS_API_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_BILLS_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  # Additional service URLs
+  NEXT_PUBLIC_BRIEFS_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_CHAT_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_MEMBERS_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzn.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+  NEXT_PUBLIC_SUBSCRIPTION_API_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzs.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
 # Only redirect semantic-search (CORS workaround for client-side requests)
 # Let Next.js handle all other /api/bills/* routes (analyze, detail, etc.)
+# Updated 2025-12-11 after fresh Raindrop deployment
 [[redirects]]
   from = "/api/bills/semantic-search"
-  to = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/semantic-search"
+  to = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/semantic-search"
   status = 200
   force = true

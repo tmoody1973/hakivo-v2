@@ -16,7 +16,7 @@ async function testDeduplication() {
 
   try {
     // Since news-sync-scheduler is a Task (cron job), we'll trigger it via API
-    const baseUrl = 'https://api-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+    const baseUrl = 'https://api-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
     console.log('📡 Triggering news sync via cron...\n');
     console.log('Note: The scheduler runs on cron (8 AM, 2 PM, 8 PM).');

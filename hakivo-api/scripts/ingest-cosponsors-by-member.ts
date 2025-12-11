@@ -24,7 +24,7 @@ const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, '../.env.local') });
 
 const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY;
-const ADMIN_DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const ADMIN_DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 console.log(`[DEBUG] API Key loaded: ${CONGRESS_API_KEY ? `${CONGRESS_API_KEY.substring(0, 10)}...` : 'NOT LOADED'}`);
 console.log(`[DEBUG] API Key length: ${CONGRESS_API_KEY?.length || 0}`);

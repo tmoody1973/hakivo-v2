@@ -1,7 +1,7 @@
 #!/bin/bash
 # Send articles to production database via admin API
 
-curl -X POST https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/admin/insert-articles \
+curl -X POST https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/admin/insert-articles \
   -H "Content-Type: application/json" \
   -d '{
     "articles": [

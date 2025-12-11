@@ -9,27 +9,32 @@
  */
 
 // Raindrop service URLs (deployed at lmapp.run)
+// Updated 2025-12-11 after fresh deployment
 const RAINDROP_SERVICES = {
   // Auth Service (public)
   AUTH: process.env.NEXT_PUBLIC_API_URL ||
-    "https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzg.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Bills Service (public)
   BILLS: process.env.NEXT_PUBLIC_BILLS_API_URL ||
-    "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Briefs Service (public)
-  BRIEFS: "https://svc-01ka8k5e6tr0kgy0jkzj9m4q17.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+  BRIEFS: process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Chat Service (public)
-  CHAT: "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+  CHAT: process.env.NEXT_PUBLIC_CHAT_API_URL ||
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Dashboard Service (public)
   DASHBOARD: process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
-    "https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Members Service (public)
-  MEMBERS: "https://svc-01ka8k5e6tr0kgy0jkzj9m4q1b.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+  MEMBERS: process.env.NEXT_PUBLIC_MEMBERS_API_URL ||
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzn.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Stripe Webhook Service (public) - handles Stripe webhook events
-  STRIPE_WEBHOOK: "https://svc-01kbx70mmpbcrf475s1hdsb2pm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+  STRIPE_WEBHOOK: process.env.NEXT_PUBLIC_STRIPE_WEBHOOK_URL ||
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzr.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   // Subscription API Service (public) - manages user subscriptions
   SUBSCRIPTION: process.env.NEXT_PUBLIC_SUBSCRIPTION_API_URL ||
-    "https://svc-01kbx70mmpbcrf475s1hdsb2pn.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzs.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
 } as const;
 
 type ServiceName = keyof typeof RAINDROP_SERVICES;

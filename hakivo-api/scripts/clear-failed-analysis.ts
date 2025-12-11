@@ -2,7 +2,7 @@
  * Clear failed analysis record for a bill
  */
 
-const ADMIN_DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const ADMIN_DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const BILL_ID = '119-s-1659';
 
 async function executeSQL(query: string): Promise<any> {
@@ -32,7 +32,7 @@ async function clearFailedAnalysis() {
     console.log('✅ Failed analysis record deleted');
     console.log('\nResult:', result);
     console.log('\nYou can now trigger a fresh analysis with:');
-    console.log(`   curl -X POST https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/119/s/1659/analyze`);
+    console.log(`   curl -X POST https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/119/s/1659/analyze`);
 
   } catch (error) {
     console.error('❌ Error:', error);

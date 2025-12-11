@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 // Dashboard service URL (contains the trivia endpoint)
 const DASHBOARD_API_URL = process.env.DASHBOARD_API_URL ||
-  'https://svc-01ka8k5e6tr0kgy0jkzj9m4q15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyz15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 /**
  * GET /api/trivia

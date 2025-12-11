@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Heart, Lightbulb, Users, Radio, Mic2, Code2, Zap } from 'lucide-react'
+import { ArrowRight, Heart, Lightbulb, Users, Radio, Mic2, Code2, Zap, Globe } from 'lucide-react'
 
 export default function AboutPage() {
   return (
@@ -173,6 +173,58 @@ export default function AboutPage() {
               all 50 state legislatures, AI-powered analysis using Claude, personalized audio briefings with
               Google's Gemini TTS, and the <em>100 Laws That Shaped America</em> podcast auto-published to Spreaker.
               All running on Cloudflare Workers through LiquidMetal's Raindrop framework.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* The Name Section */}
+      <section className="bg-card border-y border-border">
+        <div className="max-w-4xl mx-auto px-6 md:px-8 py-20 md:py-28">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+              <Globe className="w-4 h-4" />
+              The Name
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              What does &quot;Hakivo&quot; mean?
+            </h2>
+          </div>
+
+          <div className="bg-background/50 rounded-3xl p-8 md:p-12 border border-border">
+            <div className="flex flex-col md:flex-row gap-8 mb-8">
+              <div className="flex-1 text-center p-6 rounded-2xl bg-primary/5 border border-primary/10">
+                <div className="text-4xl font-bold text-primary mb-2">haki</div>
+                <div className="text-sm text-muted-foreground uppercase tracking-wide mb-1">Swahili</div>
+                <div className="text-lg font-medium">&quot;justice&quot; or &quot;rights&quot;</div>
+              </div>
+              <div className="flex items-center justify-center text-3xl font-light text-muted-foreground">+</div>
+              <div className="flex-1 text-center p-6 rounded-2xl bg-primary/5 border border-primary/10">
+                <div className="text-4xl font-bold text-primary mb-2">vo</div>
+                <div className="text-sm text-muted-foreground uppercase tracking-wide mb-1">Latin (vox)</div>
+                <div className="text-lg font-medium">&quot;voice&quot;</div>
+              </div>
+              <div className="flex items-center justify-center text-3xl font-light text-muted-foreground">=</div>
+              <div className="flex-1 text-center p-6 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
+                <div className="text-4xl font-bold text-primary mb-2">Hakivo</div>
+                <div className="text-sm text-muted-foreground uppercase tracking-wide mb-1">Together</div>
+                <div className="text-lg font-medium">&quot;The Voice of Justice&quot;</div>
+              </div>
+            </div>
+
+            <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
+              I chose this name because it captures the core mission: democracy works best when every citizen
+              has access to clear, unbiased information about what their government is doing. Hakivo is the
+              voice that translates complex congressional action into something accessible—whether that&apos;s
+              through semantic search, AI analysis, or audio briefings you can listen to during your morning
+              commute. No spin. No agenda. Just the facts, delivered with clarity.
+            </p>
+
+            <p className="text-lg text-muted-foreground leading-relaxed">
+              The name also reflects a commitment to amplifying diverse voices in civic engagement. Just as
+              Swahili bridges cultures across East Africa, Hakivo aims to bridge the gap between Capitol Hill
+              and Main Street—making democracy accessible to everyone, regardless of their background or how
+              much time they have.
             </p>
           </div>
         </div>

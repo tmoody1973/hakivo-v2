@@ -244,8 +244,8 @@ Duration    1.23s
 **Status:** ✅ RUNNING
 
 ### Backend Services:
-- Dashboard Service: `https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run`
-- Bills Service: `https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run`
+- Dashboard Service: `https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run`
+- Bills Service: `https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run`
 
 **Status:** ✅ DEPLOYED
 

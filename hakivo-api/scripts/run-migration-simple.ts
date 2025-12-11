@@ -4,7 +4,7 @@
  * Run Database Migration (Simple - executes CREATE TABLE statements individually)
  */
 
-const ADMIN_DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const ADMIN_DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 async function executeSQL(query: string): Promise<any> {
   const response = await fetch(`${ADMIN_DASHBOARD_URL}/api/database/query`, {

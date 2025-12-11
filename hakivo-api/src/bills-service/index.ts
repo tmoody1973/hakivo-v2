@@ -58,6 +58,36 @@ const StateBillsSchema = z.object({
   order: z.enum(['asc', 'desc']).default('desc')
 });
 
+// State code to full name mapping
+const STATE_CODE_TO_NAME: Record<string, string> = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+  CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+  HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+  MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri',
+  MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+  OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+  SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  DC: 'District of Columbia', PR: 'Puerto Rico', VI: 'Virgin Islands', GU: 'Guam',
+  AS: 'American Samoa', MP: 'Northern Mariana Islands'
+};
+
+/**
+ * Convert state input to full name for database query
+ * Handles both abbreviations (WI) and full names (Wisconsin)
+ */
+function normalizeStateName(state: string): string {
+  const upper = state.toUpperCase();
+  // Check if it's a state code
+  if (STATE_CODE_TO_NAME[upper]) {
+    return STATE_CODE_TO_NAME[upper];
+  }
+  // Otherwise assume it's already a full name
+  return state;
+}
+
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
 
@@ -168,102 +198,27 @@ app.post('/bills/semantic-search', async (c) => {
     }
 
     const searchLimit = Math.min(limit, 50);
-    const billTextsBucket = c.env.BILL_TEXTS;
     const db = c.env.APP_DB;
 
-    // Perform semantic search on SmartBucket
-    const searchResults = await billTextsBucket.search({ input: query });
-
-    if (!searchResults || !searchResults.results || !Array.isArray(searchResults.results)) {
-      return c.json({
-        success: true,
-        query,
-        bills: [],
-        count: 0
-      });
-    }
-
-    // Extract bill IDs from search results and fetch metadata from database
-    const bills = [];
-    let processedCount = 0;
-
-    for (const result of searchResults.results) {
-      if (processedCount >= searchLimit) break;
-
-      // Extract bill info from SmartBucket source (e.g., "bills/119/hr-1234.txt")
-      const source = result.source || '';
-      const match = source.match(/bills\/(\d+)\/([a-z]+)-(\d+)\.txt/i);
-
-      if (!match || !match[1] || !match[2] || !match[3]) continue;
-
-      const billCongress = match[1];
-      const billType = match[2];
-      const billNumber = match[3];
-
-      // Filter by congress if specified
-      if (congress && parseInt(billCongress) !== congress) continue;
-
-      // Fetch bill metadata from database
-      const billData = await db
-        .prepare(`
-          SELECT
-            b.id,
-            b.congress,
-            b.bill_type,
-            b.bill_number,
-            b.title,
-            b.origin_chamber,
-            b.introduced_date,
-            b.latest_action_date,
-            b.latest_action_text,
-            b.sponsor_bioguide_id,
-            b.policy_area,
-            m.first_name,
-            m.last_name,
-            m.party,
-            m.state
-          FROM bills b
-          LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
-          WHERE b.congress = ? AND b.bill_type = ? AND b.bill_number = ?
-        `)
-        .bind(billCongress, billType.toLowerCase(), billNumber)
-        .first();
-
-      if (billData) {
-        bills.push({
-          id: billData.id,
-          congress: billData.congress,
-          type: billData.bill_type,
-          number: billData.bill_number,
-          title: billData.title,
-          policyArea: billData.policy_area,
-          originChamber: billData.origin_chamber,
-          introducedDate: billData.introduced_date,
-          latestAction: {
-            date: billData.latest_action_date,
-            text: billData.latest_action_text
-          },
-          sponsor: billData.sponsor_bioguide_id ? {
-            bioguideId: billData.sponsor_bioguide_id,
-            firstName: billData.first_name,
-            lastName: billData.last_name,
-            party: billData.party,
-            state: billData.state
-          } : null,
-          relevanceScore: result.score || 0,
-          matchedChunk: result.text ? result.text.substring(0, 300) + '...' : null
-        });
-
-        processedCount++;
-      }
-    }
+    // SmartBucket search temporarily disabled - using regular Bucket
+    // TODO: Re-enable when SmartBucket index creation is fixed
+    // For now, fall back to SQL LIKE search
+    const sqlQuery = `
+      SELECT DISTINCT b.id, b.congress, b.bill_type, b.bill_number, b.title,
+             b.short_title, b.status, b.introduced_date, b.sponsor_bioguide_id
+      FROM bills b
+      WHERE b.title LIKE ? OR b.short_title LIKE ?
+      LIMIT ?
+    `;
+    const searchPattern = `%${query}%`;
+    const fallbackResults = await db.prepare(sqlQuery).bind(searchPattern, searchPattern, searchLimit).all();
 
     return c.json({
       success: true,
       query,
-      bills,
-      count: bills.length,
-      searchMethod: 'vector_similarity'
+      bills: fallbackResults.results || [],
+      count: fallbackResults.results?.length || 0,
+      note: 'Using fallback text search - semantic search temporarily disabled'
     });
 
   } catch (error) {
@@ -1584,8 +1539,20 @@ app.get('/members/search', async (c) => {
     }
 
     if (params.state) {
-      conditions.push('state = ?');
-      bindings.push(params.state);
+      // Database has inconsistent state data - some records use codes (WI), others use full names (Wisconsin)
+      // Search for both the original input and the normalized full name
+      const stateInput = params.state.toUpperCase();
+      const stateName = normalizeStateName(params.state);
+
+      if (stateInput !== stateName.toUpperCase()) {
+        // Input was a state code, search for both code and full name
+        conditions.push('(state = ? OR state = ?)');
+        bindings.push(stateInput, stateName);
+      } else {
+        // Input was likely already a full name
+        conditions.push('state = ?');
+        bindings.push(stateName);
+      }
     }
 
     if (params.chamber) {

@@ -3,7 +3,7 @@
  * to see if it queues enrichment
  */
 
-const DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const BILL_ID = '119-s-1092';
 
 // You'll need to get a valid auth token from your frontend

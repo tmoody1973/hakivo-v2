@@ -357,7 +357,7 @@ Returns the tracking ID on success.`,
     } = context;
 
     const BILLS_SERVICE = process.env.NEXT_PUBLIC_BILLS_API_URL ||
-      "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+      "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
     if (!authToken) {
       return {
@@ -483,7 +483,7 @@ export const untrackBillTool = createTool({
     const { trackingId, billType, authToken } = context;
 
     const BILLS_SERVICE = process.env.NEXT_PUBLIC_BILLS_API_URL ||
-      "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+      "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
     if (!authToken) {
       return {

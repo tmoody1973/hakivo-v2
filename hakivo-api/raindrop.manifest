@@ -1,11 +1,10 @@
-application "hakivo-new" {
+application "hakivo-prod" {
 
-  // Stripe payments integration - Pro tier at $12/month
-  // Services with visibility = "paid" require active subscription
-  // Non-subscribers get 402 response with paymentUrl
-  payments {
-    mode = "test"  // Change to "live" for production
-  }
+  // TEMPORARILY DISABLED: payments block causes annotation-bucket SmartBucket creation which fails
+  // Re-enable after Raindrop fixes SmartBucket index creation
+  // payments {
+  //   mode = "test"
+  // }
 
   // Environment variables for API keys
   env "WORKOS_API_KEY" {
@@ -336,12 +335,13 @@ application "hakivo-new" {
   // Spreaker OAuth token storage
   kv_cache "spreaker-tokens" {}
 
-  // SmartBuckets for storage with automatic search
+  // SmartBuckets for document storage with semantic search
+  // bill-texts: stores full bill text for RAG retrieval
   smartbucket "bill-texts" {}
 
+  // audio-briefs: stores generated audio files with metadata
   smartbucket "audio-briefs" {}
 
-  // SmartMemory for AI agent memory (working, episodic, semantic, procedural)
-  // Enables personalized user experiences and conversation continuity
-  smartmemory "congressional_memory" {}
+  // KV cache for agent memory (downgraded from SmartMemory due to initialization issues)
+  kv_cache "congressional_memory" {}
 }

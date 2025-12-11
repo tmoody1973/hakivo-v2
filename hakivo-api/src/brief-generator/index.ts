@@ -445,7 +445,7 @@ export default class extends Each<Body, Env> {
         return null;
       }
 
-      const result = await response.json();
+      const result = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { data: string; mimeType?: string } }> } }> };
 
       // Extract image data from response
       const candidates = result.candidates;

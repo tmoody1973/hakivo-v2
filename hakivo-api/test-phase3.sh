@@ -3,7 +3,7 @@
 # Phase 3 Endpoint Testing Script
 # Tests the three updated API endpoints with AI enrichment
 
-DASHBOARD_URL="https://svc-01ka8k5e6tr0kgy0jkzj9m4q19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+DASHBOARD_URL="https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
 
 echo "🧪 Phase 3: Backend API Testing"
 echo "================================"

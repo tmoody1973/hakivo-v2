@@ -50,7 +50,7 @@ A comprehensive legislative assistant AI agent that:
 | Generative UI | Thesys C1 + Crayon SDK |
 | Database | SQLite3 (local cache) |
 | APIs | Congress.gov, LegiScan, Federal Register, Regulations.gov |
-| News Search | Brave Search API / NewsAPI |
+| News Search | Google Gemini with Google Search Grounding |
 
 ---
 
@@ -113,7 +113,7 @@ A comprehensive legislative assistant AI agent that:
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │
-│  │ Regulations  │  │ Brave Search │  │ Local SQLite │              │
+│  │ Regulations  │  │ Gemini       │  │ Local SQLite │              │
 │  │ .gov API     │  │ API          │  │ (Members)    │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 └─────────────────────────────────────────────────────────────────────┘
@@ -170,7 +170,7 @@ legislative-assistant/
 │       │   ├── congressGov.ts
 │       │   ├── legiScan.ts
 │       │   ├── federalRegister.ts
-│       │   └── braveSearch.ts
+│       │   └── geminiSearch.ts
 │       └── utils/
 │           ├── billParser.ts
 │           └── dateUtils.ts
@@ -202,10 +202,8 @@ LEGISCAN_API_KEY=xxxxx
 # Regulations.gov API (free - get at api.data.gov)
 REGULATIONS_GOV_API_KEY=xxxxx
 
-# News Search (choose one)
-BRAVE_SEARCH_API_KEY=xxxxx
-# OR
-NEWS_API_KEY=xxxxx
+# Google Gemini (for grounded search)
+GOOGLE_AI_API_KEY=xxxxx
 
 # Thesys C1
 THESYS_API_KEY=xxxxx
@@ -531,19 +529,50 @@ export function getDatabase(): Database.Database {
 | `/dockets` | Rulemaking dockets |
 | `/dockets/{id}` | Docket details |
 
-### 5.5 Brave Search API (for News)
+### 5.5 Google Gemini API with Search Grounding (for News)
 
-**Base URL**: `https://api.search.brave.com/res/v1`
-**Auth**: API key in `X-Subscription-Token` header
-**Rate Limit**: Varies by plan
-**Documentation**: https://brave.com/search/api/
+**Models**:
+- `gemini-2.0-flash` - Fast, cost-effective for most news queries
+- `gemini-2.5-pro` - Most capable, best for complex research queries
 
-#### Key Endpoints
+**Auth**: API key via Google AI Studio (https://aistudio.google.com/)
+**Documentation**: https://ai.google.dev/gemini-api/docs/grounding
 
-| Endpoint | Purpose |
-|----------|---------|
-| `/web/search` | General web search |
-| `/news/search` | News-specific search |
+#### Google Search Grounding
+
+Gemini models can use Google Search as a grounding tool to retrieve real-time information. This provides:
+- Real-time news and current events
+- Source URLs with citations
+- Automatic relevance filtering
+
+#### Configuration
+
+```typescript
+import { GoogleGenAI } from "@google/genai";
+
+const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+
+// Use Gemini 2.0 Flash for news search with grounding
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.0-flash",
+  tools: [{ googleSearch: {} }], // Enable Google Search grounding
+});
+
+// For more complex research, use Gemini 2.5 Pro
+const researchModel = genAI.getGenerativeModel({
+  model: "gemini-2.5-pro-preview-05-06",
+  tools: [{ googleSearch: {} }],
+});
+```
+
+#### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| `googleSearch` tool | Enables real-time Google Search during generation |
+| `groundingMetadata` | Returns source URLs and citations |
+| `searchEntryPoint` | Provides rendered search results link |
+| Dynamic retrieval | Model decides when to search based on query |
 
 ---
 
@@ -1357,252 +1386,370 @@ export const getExecutiveOrders = createTool({
 
 ---
 
-## 7. Web Search Tool for News
+## 7. Web Search Tool for News (Gemini with Google Search Grounding)
 
-### 7.1 News Search Tool (Brave Search)
+This section uses Google Gemini with Google Search grounding for news search, replacing the previous Brave Search implementation. Gemini provides:
+- Real-time search grounded in Google's index
+- Inline citations and source attribution
+- Structured JSON output for consistent parsing
+- High-quality summaries with key findings
+
+### 7.1 Gemini Search Client Setup
+
+```typescript
+// src/lib/api/geminiSearch.ts
+import { GoogleGenAI } from "@google/genai";
+
+// Gemini configuration
+const GEMINI_MODEL = "gemini-2.0-flash"; // Fast, cost-effective for news
+// For complex research, use: "gemini-2.5-pro-preview-05-06"
+
+// Lazy-initialized Gemini client
+let _geminiClient: GoogleGenAI | null = null;
+
+function getGeminiClient(): GoogleGenAI {
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY not set");
+  }
+
+  if (!_geminiClient) {
+    _geminiClient = new GoogleGenAI({ apiKey });
+  }
+
+  return _geminiClient;
+}
+
+export { getGeminiClient, GEMINI_MODEL };
+```
+
+### 7.2 News Search Tool (Gemini + Google Search)
 
 ```typescript
 // src/mastra/tools/news/newsSearch.ts
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { GoogleGenAI } from "@google/genai";
+
+const GEMINI_MODEL = "gemini-2.0-flash";
+
+// Structured output schema for news search
+const newsSearchSchema = {
+  type: "object" as const,
+  properties: {
+    summary: {
+      type: "string",
+      description: "Comprehensive summary with [n] citation markers",
+    },
+    keyFindings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          point: { type: "string" },
+          citationIndex: { type: "integer" },
+        },
+        required: ["point"],
+      },
+    },
+    articles: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          source: { type: "string" },
+          url: { type: "string" },
+          date: { type: "string" },
+          snippet: { type: "string" },
+        },
+        required: ["title", "source", "url"],
+      },
+    },
+    relatedTopics: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+  required: ["summary", "articles"],
+};
 
 export const newsSearch = createTool({
   id: "news-search",
-  description: `Searches for recent news articles about legislation, policies, 
-    members of Congress, or political issues. Uses Brave Search News API.
-    Use for current events, press coverage, and media analysis.`,
+  description: `Searches for recent news using Gemini with Google Search grounding.
+    Returns comprehensive results with inline citations and structured output.
+    Best for current events, policy news, and legislative coverage.`,
 
   inputSchema: z.object({
-    query: z.string()
-      .describe("Search query for news articles"),
-    topic: z.enum([
-      "legislation",
-      "policy",
-      "congress",
-      "politics",
-      "regulation",
-      "executive",
-      "general"
-    ]).optional()
-      .describe("Topic category to help focus results"),
-    freshness: z.enum(["pd", "pw", "pm", "py"]).optional()
-      .describe("Recency filter: pd=past day, pw=past week, pm=past month, py=past year"),
-    count: z.number().default(10).describe("Number of results (max 20)"),
+    query: z.string().describe("Search query for news articles"),
+    focus: z.enum(["news", "general", "policy"]).optional().default("news")
+      .describe("Search focus: news (recent), general (comprehensive), policy (government sources)"),
+    maxArticles: z.number().optional().default(10).describe("Maximum articles to return"),
   }),
 
   outputSchema: z.object({
-    query: z.string(),
-    totalResults: z.number(),
+    success: z.boolean(),
+    summary: z.string(),
+    summaryWithCitations: z.string(),
     articles: z.array(z.object({
       title: z.string(),
-      description: z.string(),
-      url: z.string(),
       source: z.string(),
-      publishedAt: z.string(),
-      thumbnail: z.string().optional(),
-      age: z.string().optional(),
+      url: z.string(),
+      date: z.string().optional(),
+      snippet: z.string().optional(),
     })),
+    citations: z.array(z.object({
+      index: z.number(),
+      title: z.string(),
+      url: z.string(),
+    })),
+    keyFindings: z.array(z.object({
+      point: z.string(),
+      citationIndex: z.number().optional(),
+    })).optional(),
+    relatedTopics: z.array(z.string()).optional(),
+    error: z.string().optional(),
   }),
 
   execute: async ({ context }) => {
-    const { query, topic, freshness, count } = context;
-    const apiKey = process.env.BRAVE_SEARCH_API_KEY;
-    
+    const { query, focus = "news", maxArticles = 10 } = context;
+
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error("BRAVE_SEARCH_API_KEY not configured");
+      return { success: false, error: "Gemini API key not configured" };
     }
 
-    // Build enhanced query based on topic
-    let enhancedQuery = query;
-    if (topic) {
-      const topicTerms: Record<string, string> = {
-        legislation: "Congress bill legislation",
-        policy: "policy government",
-        congress: "Congress Senate House Representatives",
-        politics: "political Washington DC",
-        regulation: "regulation federal agency rule",
-        executive: "White House President executive",
-        general: "",
-      };
-      if (topicTerms[topic]) {
-        enhancedQuery = `${query} ${topicTerms[topic]}`;
-      }
-    }
+    const client = new GoogleGenAI({ apiKey });
 
-    const params = new URLSearchParams({
-      q: enhancedQuery,
-      count: Math.min(count, 20).toString(),
-      text_decorations: "false",
-      search_lang: "en",
-      country: "us",
-    });
-    
-    if (freshness) {
-      params.set("freshness", freshness);
-    }
-
-    const res = await fetch(
-      `https://api.search.brave.com/res/v1/news/search?${params.toString()}`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "X-Subscription-Token": apiKey,
-        },
-      }
-    );
-
-    if (!res.ok) {
-      const error = await res.text();
-      throw new Error(`Brave Search API error: ${res.status} - ${error}`);
-    }
-
-    const data = await res.json();
-
-    return {
-      query,
-      totalResults: data.results?.length || 0,
-      articles: (data.results || []).map((article: any) => ({
-        title: article.title,
-        description: article.description || "",
-        url: article.url,
-        source: article.meta_url?.hostname || article.source || "Unknown",
-        publishedAt: article.age || article.page_age || "",
-        thumbnail: article.thumbnail?.src,
-        age: article.age,
-      })),
+    // Focus-specific instructions
+    const focusInstructions = {
+      news: "Focus on recent news articles and current events coverage.",
+      general: "Search for comprehensive information from authoritative sources.",
+      policy: "Focus on government sources, policy documents, and legislative news.",
     };
+
+    const searchPrompt = `Search for: "${query}"
+
+${focusInstructions[focus]}
+
+Provide:
+1. A comprehensive summary with inline citations [n]
+2. Key findings with citation references
+3. List of the most relevant articles (up to ${maxArticles})
+4. Related topics for further exploration
+
+Be factual and cite sources accurately.`;
+
+    try {
+      const response = await client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: searchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }], // Enable Google Search grounding
+          responseMimeType: "application/json",
+          responseSchema: newsSearchSchema,
+        },
+      });
+
+      const responseText = response.text || "{}";
+      let parsedResponse;
+
+      try {
+        parsedResponse = JSON.parse(responseText);
+      } catch {
+        parsedResponse = { summary: responseText, articles: [] };
+      }
+
+      // Process grounding metadata for citations
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata || {};
+      const chunks = groundingMetadata.groundingChunks || [];
+
+      const citations = chunks.map((chunk: any, index: number) => ({
+        index: index + 1,
+        title: chunk.web?.title || "Source",
+        url: chunk.web?.uri || "",
+      }));
+
+      // Enrich articles from grounding chunks if needed
+      const articles = parsedResponse.articles?.length > 0
+        ? parsedResponse.articles
+        : chunks.slice(0, maxArticles).map((chunk: any) => ({
+            title: chunk.web?.title || "Article",
+            source: chunk.web?.uri ? new URL(chunk.web.uri).hostname.replace("www.", "") : "Unknown",
+            url: chunk.web?.uri || "",
+          }));
+
+      return {
+        success: true,
+        summary: parsedResponse.summary || "",
+        summaryWithCitations: parsedResponse.summary || "",
+        articles,
+        citations,
+        keyFindings: parsedResponse.keyFindings,
+        relatedTopics: parsedResponse.relatedTopics,
+      };
+    } catch (error) {
+      console.error("[Gemini Search] Error:", error);
+      return {
+        success: false,
+        summary: "",
+        summaryWithCitations: "",
+        articles: [],
+        citations: [],
+        error: error instanceof Error ? error.message : "Search failed",
+      };
+    }
   },
 });
 ```
 
-### 7.2 Member News Tool
+### 7.3 Member News Tool (Gemini)
 
 ```typescript
 // src/mastra/tools/news/memberNews.ts
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { GoogleGenAI } from "@google/genai";
 
 export const memberNews = createTool({
   id: "member-news",
-  description: `Searches for recent news about a specific member of Congress.
-    Useful for tracking press coverage, statements, and media mentions.`,
+  description: `Searches for recent news about a specific member of Congress
+    using Gemini with Google Search grounding. Provides categorized coverage.`,
 
   inputSchema: z.object({
-    memberName: z.string()
-      .describe("Full name of the member of Congress"),
-    state: z.string().optional()
-      .describe("State to disambiguate common names"),
-    includeTopics: z.array(z.string()).optional()
-      .describe("Additional topics to include in search"),
-    freshness: z.enum(["pd", "pw", "pm"]).default("pw")
-      .describe("Recency: pd=past day, pw=past week, pm=past month"),
-    count: z.number().default(10),
+    memberName: z.string().describe("Full name of the member of Congress"),
+    state: z.string().optional().describe("State to disambiguate common names"),
+    includeTopics: z.array(z.string()).optional().describe("Additional topics"),
+    maxArticles: z.number().optional().default(10),
   }),
 
   execute: async ({ context }) => {
-    const { memberName, state, includeTopics, freshness, count } = context;
-    const apiKey = process.env.BRAVE_SEARCH_API_KEY;
+    const { memberName, state, includeTopics, maxArticles = 10 } = context;
 
-    // Build query
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return { success: false, error: "Gemini API key not configured" };
+    }
+
+    const client = new GoogleGenAI({ apiKey });
+
+    // Build search query
     let query = `"${memberName}"`;
-    if (state) {
-      query += ` ${state}`;
-    }
+    if (state) query += ` ${state}`;
     query += " Congress";
-    
-    if (includeTopics?.length) {
-      query += ` ${includeTopics.join(" ")}`;
-    }
+    if (includeTopics?.length) query += ` ${includeTopics.join(" ")}`;
 
-    const params = new URLSearchParams({
-      q: query,
-      count: Math.min(count, 20).toString(),
-      freshness,
-      text_decorations: "false",
-      search_lang: "en",
-      country: "us",
-    });
+    const searchPrompt = `Search for recent news about ${memberName}${state ? ` from ${state}` : ""}.
 
-    const res = await fetch(
-      `https://api.search.brave.com/res/v1/news/search?${params.toString()}`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "X-Subscription-Token": apiKey,
+Provide:
+1. A summary of recent coverage with inline citations [n]
+2. List of news articles, categorized as:
+   - "legislation" (votes, bills)
+   - "campaign" (elections, polling)
+   - "statement" (quotes, announcements)
+   - "committee" (hearings, assignments)
+   - "general" (other)
+3. Key findings about their recent activities
+
+Focus on congressional and political news.`;
+
+    try {
+      const response = await client.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: searchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              summary: { type: "string" },
+              articles: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    source: { type: "string" },
+                    url: { type: "string" },
+                    date: { type: "string" },
+                    category: { type: "string", enum: ["legislation", "campaign", "statement", "committee", "general"] },
+                    snippet: { type: "string" },
+                  },
+                  required: ["title", "source", "url", "category"],
+                },
+              },
+              keyFindings: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            required: ["summary", "articles"],
+          },
         },
-      }
-    );
+      });
 
-    const data = await res.json();
+      const data = JSON.parse(response.text || "{}");
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
-    // Categorize articles by topic
-    const articles = (data.results || []).map((article: any) => {
-      const titleLower = article.title?.toLowerCase() || "";
-      const descLower = article.description?.toLowerCase() || "";
-      const combined = `${titleLower} ${descLower}`;
-      
-      let category = "general";
-      if (combined.includes("vote") || combined.includes("bill") || combined.includes("legislation")) {
-        category = "legislation";
-      } else if (combined.includes("campaign") || combined.includes("election") || combined.includes("poll")) {
-        category = "campaign";
-      } else if (combined.includes("statement") || combined.includes("said") || combined.includes("announced")) {
-        category = "statement";
-      } else if (combined.includes("committee") || combined.includes("hearing")) {
-        category = "committee";
-      }
-      
+      const citations = groundingChunks.map((chunk: any, i: number) => ({
+        index: i + 1,
+        title: chunk.web?.title || "Source",
+        url: chunk.web?.uri || "",
+      }));
+
       return {
-        title: article.title,
-        description: article.description || "",
-        url: article.url,
-        source: article.meta_url?.hostname || "Unknown",
-        publishedAt: article.age || "",
-        thumbnail: article.thumbnail?.src,
-        category,
+        success: true,
+        memberName,
+        summary: data.summary || "",
+        articles: (data.articles || []).slice(0, maxArticles),
+        citations,
+        keyFindings: data.keyFindings || [],
+        topSources: [...new Set((data.articles || []).map((a: any) => a.source))].slice(0, 5),
       };
-    });
-
-    return {
-      memberName,
-      articlesFound: articles.length,
-      articles,
-      topSources: [...new Set(articles.map((a: any) => a.source))].slice(0, 5),
-    };
+    } catch (error) {
+      return {
+        success: false,
+        memberName,
+        error: error instanceof Error ? error.message : "Search failed",
+      };
+    }
   },
 });
 ```
 
-### 7.3 Issue News Tool
+### 7.4 Issue News Tool (Gemini)
 
 ```typescript
 // src/mastra/tools/news/issueNews.ts
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { GoogleGenAI } from "@google/genai";
 
 export const issueNews = createTool({
   id: "issue-news",
-  description: `Searches for news coverage on a specific policy issue or topic.
-    Returns articles with analysis of coverage sentiment and sources.`,
+  description: `Searches for news coverage on a policy issue using Gemini
+    with Google Search grounding. Includes source analysis and related terms.`,
 
   inputSchema: z.object({
-    issue: z.string()
-      .describe("The policy issue or topic to search for"),
-    relatedBills: z.array(z.string()).optional()
-      .describe("Related bill numbers to include (e.g., 'HR 1234')"),
-    relatedMembers: z.array(z.string()).optional()
-      .describe("Related member names to include"),
-    freshness: z.enum(["pd", "pw", "pm", "py"]).default("pw"),
-    count: z.number().default(15),
+    issue: z.string().describe("The policy issue or topic to search for"),
+    relatedBills: z.array(z.string()).optional().describe("Related bill numbers"),
+    relatedMembers: z.array(z.string()).optional().describe("Related member names"),
+    maxArticles: z.number().optional().default(15),
   }),
 
   execute: async ({ context }) => {
-    const { issue, relatedBills, relatedMembers, freshness, count } = context;
-    const apiKey = process.env.BRAVE_SEARCH_API_KEY;
+    const { issue, relatedBills, relatedMembers, maxArticles = 15 } = context;
+
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return { success: false, error: "Gemini API key not configured" };
+    }
+
+    const client = new GoogleGenAI({ apiKey });
 
     // Build comprehensive query
     let query = `${issue} Congress legislation policy`;
-    
     if (relatedBills?.length) {
       query += ` ${relatedBills.slice(0, 2).join(" ")}`;
     }
@@ -1610,82 +1757,119 @@ export const issueNews = createTool({
       query += ` ${relatedMembers.slice(0, 2).map(m => `"${m}"`).join(" ")}`;
     }
 
-    const params = new URLSearchParams({
-      q: query,
-      count: Math.min(count, 20).toString(),
-      freshness,
-      text_decorations: "false",
-      search_lang: "en",
-      country: "us",
-    });
+    const searchPrompt = `Search for news and analysis about: ${issue}
 
-    const res = await fetch(
-      `https://api.search.brave.com/res/v1/news/search?${params.toString()}`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "X-Subscription-Token": apiKey,
+Context:
+- Related bills: ${relatedBills?.join(", ") || "none specified"}
+- Related members: ${relatedMembers?.join(", ") || "none specified"}
+
+Provide:
+1. Comprehensive summary with citations [n]
+2. Key findings from the coverage
+3. List of relevant articles (up to ${maxArticles})
+4. Source distribution analysis
+5. Related topics and emerging themes
+
+Focus on congressional and policy coverage.`;
+
+    try {
+      const response = await client.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: searchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "object",
+            properties: {
+              summary: { type: "string" },
+              keyFindings: { type: "array", items: { type: "string" } },
+              articles: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    source: { type: "string" },
+                    url: { type: "string" },
+                    date: { type: "string" },
+                    snippet: { type: "string" },
+                  },
+                  required: ["title", "source", "url"],
+                },
+              },
+              relatedTopics: { type: "array", items: { type: "string" } },
+            },
+            required: ["summary", "articles"],
+          },
         },
-      }
-    );
+      });
 
-    const data = await res.json();
+      const data = JSON.parse(response.text || "{}");
+      const articles = (data.articles || []).slice(0, maxArticles);
 
-    const articles = (data.results || []).map((article: any) => ({
-      title: article.title,
-      description: article.description || "",
-      url: article.url,
-      source: article.meta_url?.hostname || "Unknown",
-      publishedAt: article.age || "",
-      thumbnail: article.thumbnail?.src,
-    }));
+      // Analyze source distribution
+      const sourceCount: Record<string, number> = {};
+      articles.forEach((a: any) => {
+        sourceCount[a.source] = (sourceCount[a.source] || 0) + 1;
+      });
 
-    // Analyze source distribution
-    const sourceCount: Record<string, number> = {};
-    articles.forEach((a: any) => {
-      sourceCount[a.source] = (sourceCount[a.source] || 0) + 1;
-    });
+      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const citations = groundingChunks.map((chunk: any, i: number) => ({
+        index: i + 1,
+        title: chunk.web?.title || "Source",
+        url: chunk.web?.uri || "",
+      }));
 
-    const sortedSources = Object.entries(sourceCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
-
-    return {
-      issue,
-      totalArticles: articles.length,
-      articles,
-      sourceAnalysis: {
-        uniqueSources: Object.keys(sourceCount).length,
-        topSources: sortedSources.map(([source, count]) => ({ source, count })),
-      },
-      relatedTerms: extractRelatedTerms(articles),
-    };
+      return {
+        success: true,
+        issue,
+        summary: data.summary || "",
+        totalArticles: articles.length,
+        articles,
+        citations,
+        keyFindings: data.keyFindings || [],
+        sourceAnalysis: {
+          uniqueSources: Object.keys(sourceCount).length,
+          topSources: Object.entries(sourceCount)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([source, count]) => ({ source, count })),
+        },
+        relatedTopics: data.relatedTopics || [],
+      };
+    } catch (error) {
+      return {
+        success: false,
+        issue,
+        error: error instanceof Error ? error.message : "Search failed",
+      };
+    }
   },
 });
+```
 
-function extractRelatedTerms(articles: any[]): string[] {
-  // Extract frequently mentioned terms from titles
-  const termCounts: Record<string, number> = {};
-  const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'it', 'its', 'as', 'from', 'up', 'out', 'about', 'into', 'over', 'after', 'new', 'says', 'said']);
-  
-  articles.forEach(article => {
-    const words = (article.title || "")
-      .toLowerCase()
-      .replace(/[^a-z\s]/g, '')
-      .split(/\s+/)
-      .filter((w: string) => w.length > 3 && !stopWords.has(w));
-    
-    words.forEach((word: string) => {
-      termCounts[word] = (termCounts[word] || 0) + 1;
-    });
-  });
-  
-  return Object.entries(termCounts)
-    .filter(([_, count]) => count >= 2)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([term]) => term);
+### 7.5 Package Dependencies
+
+Add to your `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@google/genai": "^1.32.0"
+  }
 }
+```
+
+### 7.6 Environment Variables
+
+Update your `.env.local`:
+
+```bash
+# Google Gemini (for grounded search) - choose one
+GOOGLE_GENERATIVE_AI_API_KEY=your-api-key
+# OR
+GEMINI_API_KEY=your-api-key
 ```
 
 ---

@@ -5,7 +5,7 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const ADMIN_DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const ADMIN_DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const BILL_ID = '119-s-1092';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 

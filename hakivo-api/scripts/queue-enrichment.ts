@@ -2,7 +2,7 @@
  * Manually queue a bill for AI enrichment
  */
 
-const ENRICHMENT_QUEUE_URL = 'https://api-01ka8k5e6tr0kgy0jkzj9m4q1g.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const ENRICHMENT_QUEUE_URL = 'https://api-01kc6rbecv0s5k4yk6ksdaqyz1g.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const BILL_ID = '119-s-1092';
 
 async function queueEnrichment() {

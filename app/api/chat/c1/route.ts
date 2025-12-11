@@ -1,26 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { transformStream } from "@crayonai/stream";
-// Tools disabled for now - testing pure C1 UI generation
+import { defaultTools } from "@/lib/c1/tools";
+import { HAKIVO_SYSTEM_PROMPT } from "@/lib/c1/system-prompt";
+import { buildSystemPromptWithContext, UserContext } from "@/lib/c1/user-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * C1 Chat API Route - Direct OpenAI SDK Integration
+ * C1 Chat API Route - OpenAI SDK with Tool Calling
  *
- * Uses OpenAI SDK with runTools for proper C1 generative UI.
+ * Uses OpenAI SDK with runTools for C1 generative UI with Hakivo tools.
  * Based on thesys template-c1-next pattern.
  *
  * Features:
+ * - Tool calling for news, bills, members, and images
  * - Persists messages to backend database when authenticated
  * - Falls back to in-memory storage for anonymous users
  * - User-isolated chat history
+ * - System prompt guides tone, tool usage, and component selection
  */
 
 const CHAT_SERVICE_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+
+const DASHBOARD_SERVICE_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz0c.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 interface DBMessage {
   id: string;
@@ -32,29 +39,47 @@ interface ChatRequest {
   prompt: DBMessage;
   threadId: string;
   responseId: string;
+  useTools?: boolean; // Option to enable/disable tools
+  userContext?: UserContext; // User profile, preferences, representatives
 }
 
-// NO system prompt - template uses empty message store
-// C1 model is fine-tuned for UI generation, system prompts can interfere
+// System prompt is now imported from lib/c1/system-prompt.ts
 
 // In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
 
-function getMessageStore(threadId: string) {
+function getMessageStore(threadId: string, userContext?: UserContext) {
   if (!messageStores.has(threadId)) {
-    // Start with EMPTY array - no system message (matches template exactly)
+    // Initialize with empty array
     messageStores.set(threadId, []);
   }
+
+  // Build personalized system prompt with user context
+  const systemPrompt = buildSystemPromptWithContext(HAKIVO_SYSTEM_PROMPT, userContext || null);
+
   return {
     addMessage: (msg: DBMessage) => {
       const store = messageStores.get(threadId)!;
       store.push(msg);
     },
-    getOpenAICompatibleMessageList: () => {
-      return messageStores.get(threadId)!.map(m => ({
-        role: m.role,
+    getOpenAICompatibleMessageList: (includeSystemPrompt: boolean = true): OpenAI.Chat.ChatCompletionMessageParam[] => {
+      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+
+      // Add personalized system prompt if requested
+      if (includeSystemPrompt) {
+        messages.push({
+          role: "system",
+          content: systemPrompt,
+        });
+      }
+
+      // Add conversation history
+      messages.push(...messageStores.get(threadId)!.map(m => ({
+        role: m.role as "user" | "assistant" | "system",
         content: m.content,
-      }));
+      })));
+
+      return messages;
     }
   };
 }
@@ -131,9 +156,91 @@ async function loadMessagesFromBackend(
   }
 }
 
+/**
+ * Fetch user context (profile, preferences, representatives) from backend
+ * This is used to personalize the system prompt for each user
+ */
+async function fetchUserContext(accessToken: string): Promise<UserContext | null> {
+  try {
+    // Fetch representatives (which includes user's state/district info)
+    const repsResponse = await fetch(
+      `${DASHBOARD_SERVICE_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`,
+      {
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!repsResponse.ok) {
+      console.warn("[C1 API] Failed to fetch representatives:", repsResponse.status);
+      return null;
+    }
+
+    const repsData = await repsResponse.json();
+
+    // Build user context from representatives response
+    const userContext: UserContext = {
+      profile: {
+        id: "", // Will be extracted from token if needed
+        name: "", // Not returned from this endpoint
+        email: "",
+        location: {
+          state: repsData.state || undefined,
+          district: repsData.district?.toString() || undefined,
+        },
+      },
+      representatives: [],
+    };
+
+    // Map senators
+    if (repsData.senators && Array.isArray(repsData.senators)) {
+      for (const senator of repsData.senators) {
+        userContext.representatives!.push({
+          bioguideId: senator.bioguideId || "",
+          name: senator.name || senator.fullName || "",
+          party: senator.party || "",
+          chamber: "Senate",
+          state: senator.state || repsData.state || "",
+          imageUrl: senator.photoUrl || senator.imageUrl || undefined,
+          phone: senator.phone || undefined,
+          website: senator.website || undefined,
+        });
+      }
+    }
+
+    // Map house representative
+    if (repsData.representative) {
+      const rep = repsData.representative;
+      userContext.representatives!.push({
+        bioguideId: rep.bioguideId || "",
+        name: rep.name || rep.fullName || "",
+        party: rep.party || "",
+        chamber: "House",
+        state: rep.state || repsData.state || "",
+        district: repsData.district || undefined,
+        imageUrl: rep.photoUrl || rep.imageUrl || undefined,
+        phone: rep.phone || undefined,
+        website: rep.website || undefined,
+      });
+    }
+
+    console.log("[C1 API] Fetched user context:", {
+      state: userContext.profile?.location?.state,
+      district: userContext.profile?.location?.district,
+      representativesCount: userContext.representatives?.length,
+    });
+
+    return userContext;
+  } catch (error) {
+    console.warn("[C1 API] Error fetching user context:", error);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, threadId, responseId } = (await req.json()) as ChatRequest;
+    const { prompt, threadId, responseId, userContext: clientUserContext } = (await req.json()) as ChatRequest;
 
     // Check for auth token
     const authHeader = req.headers.get("Authorization");
@@ -146,8 +253,59 @@ export async function POST(req: NextRequest) {
       apiKey: process.env.THESYS_API_KEY,
     });
 
-    // Get or create message store
-    const messageStore = getMessageStore(threadId);
+    // Fetch user context server-side when authenticated
+    // This ensures the assistant knows the user's representatives, location, etc.
+    let userContext: UserContext | null = clientUserContext || null;
+    if (accessToken && !userContext) {
+      userContext = await fetchUserContext(accessToken);
+    }
+
+    // DEV ONLY: Use mock data for testing when not authenticated
+    if (!userContext && process.env.NODE_ENV === "development") {
+      console.log("[C1 API] Using mock user context for development testing");
+      userContext = {
+        profile: {
+          id: "dev-user",
+          name: "Test User",
+          email: "test@example.com",
+          location: {
+            state: "WI",
+            district: "2",
+            city: "Madison",
+          },
+        },
+        representatives: [
+          {
+            bioguideId: "B001230",
+            name: "Tammy Baldwin",
+            party: "D",
+            chamber: "Senate",
+            state: "WI",
+            phone: "(202) 224-5653",
+          },
+          {
+            bioguideId: "J000293",
+            name: "Ron Johnson",
+            party: "R",
+            chamber: "Senate",
+            state: "WI",
+            phone: "(202) 224-5323",
+          },
+          {
+            bioguideId: "P000607",
+            name: "Mark Pocan",
+            party: "D",
+            chamber: "House",
+            state: "WI",
+            district: 2,
+            phone: "(202) 225-2906",
+          },
+        ],
+      };
+    }
+
+    // Get or create message store with user context for personalized system prompt
+    const messageStore = getMessageStore(threadId, userContext || undefined);
 
     // If authenticated, try to load history from backend and persist new message
     if (accessToken) {
@@ -164,13 +322,15 @@ export async function POST(req: NextRequest) {
 
     messageStore.addMessage(prompt);
 
-    // Use standard chat.completions.create - NOT runTools
-    // This matches C1's expected API format for UI generation
-    const llmStream = await client.chat.completions.create({
+    // Use runTools for tool calling - follows C1 template pattern
+    // Tools return data, C1 renders as UI components (Cards, Reports, etc.)
+    const llmStream = await client.beta.chat.completions.runTools({
       model: "c1/anthropic/claude-sonnet-4/v-20251130",
       temperature: 0.5,
       messages: messageStore.getOpenAICompatibleMessageList(),
       stream: true,
+      tool_choice: defaultTools.length > 0 ? "auto" : "none",
+      tools: defaultTools,
     });
 
     const responseStream = transformStream(

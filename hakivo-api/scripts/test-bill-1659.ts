@@ -4,7 +4,7 @@
 
 async function testBill() {
   const billId = '119-s-1659';
-  const apiUrl = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  const apiUrl = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
   console.log(`Testing bill: ${billId}`);
   console.log('='.repeat(60));

@@ -1,0 +1,12 @@
+@use "@crayonai/react-ui/scssUtils" as cssUtils;
+
+.chat-theme {
+    
+      & :global(.crayon-shell-container) {
+        background: transparent !important;
+        background-image: url("/charcoal-bg-dark.svg") !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-repeat: no-repeat !important;
+      }
+}

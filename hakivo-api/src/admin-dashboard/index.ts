@@ -697,15 +697,13 @@ app.post('/api/smartbucket/search', async (c) => {
       return c.json({ success: false, error: 'Query is required' }, 400);
     }
 
-    const billTextsBucket = c.env.BILL_TEXTS;
-
-    // Perform semantic search
-    const searchResults = await billTextsBucket.search({ input: query });
-
+    // SmartBucket search temporarily disabled - using regular Bucket
+    // TODO: Re-enable when SmartBucket index creation is fixed
     return c.json({
-      success: true,
+      success: false,
       query,
-      results: searchResults
+      error: 'Semantic search temporarily disabled',
+      results: []
     });
   } catch (error) {
     return c.json({

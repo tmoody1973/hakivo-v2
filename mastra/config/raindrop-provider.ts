@@ -17,7 +17,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 // Raindrop Chat Service endpoint (has AI capabilities)
 const RAINDROP_CHAT_SERVICE =
   process.env.RAINDROP_CHAT_URL ||
-  "https://svc-01ka8k5e6tr0kgy0jkzj9m4q18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 // Raindrop AI endpoint (OpenAI-compatible)
 const RAINDROP_AI_ENDPOINT = `${RAINDROP_CHAT_SERVICE}/v1`;

@@ -470,8 +470,8 @@ export function generateArtifactId(): string {
 // THESYS TOOL CALLING - Native tool integration for data-driven artifacts
 // =============================================================================
 
-const RAINDROP_ADMIN_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
-const BILLS_SERVICE_URL = "https://svc-01ka8k5e6tr0kgy0jkzj9m4q16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const RAINDROP_ADMIN_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const BILLS_SERVICE_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 /**
  * Search bills in the Hakivo database
@@ -1299,9 +1299,23 @@ Create an accurate, well-cited document using ONLY facts from the research data 
     };
   } catch (error) {
     console.error("[Thesys Stream] Error:", error);
+    let errorMessage = "Unknown error generating document";
+
     if (error instanceof OpenAI.APIError) {
-      throw new Error(`Thesys API error: ${error.message} (${error.status})`);
+      errorMessage = `Thesys API error: ${error.message} (${error.status})`;
+    } else if (error instanceof Error) {
+      // Check for common error types
+      if (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("ENOTFOUND") || error.message.includes("ECONNREFUSED")) {
+        errorMessage = `Network error: Unable to connect to document generation service. Please try again.`;
+      } else if (error.message.includes("timeout")) {
+        errorMessage = `Request timeout: The document generation took too long. Please try a simpler request.`;
+      } else if (error.message.includes("API_KEY") || error.message.includes("apiKey")) {
+        errorMessage = `Configuration error: API key not set for document generation.`;
+      } else {
+        errorMessage = error.message;
+      }
     }
-    throw error;
+
+    throw new Error(errorMessage);
   }
 }

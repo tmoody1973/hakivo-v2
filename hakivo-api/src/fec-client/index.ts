@@ -198,7 +198,7 @@ export default class extends Service<Env> {
         throw new Error(`Failed to fetch legislators: ${response.status}`);
       }
 
-      const legislators: Array<{ id: LegislatorIds }> = await response.json();
+      const legislators = await response.json() as Array<{ id: LegislatorIds }>;
 
       this.legislatorCache = new Map();
       for (const legislator of legislators) {

@@ -10,6 +10,11 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT,
     email_verified INTEGER DEFAULT 0,
     onboarding_completed INTEGER DEFAULT 0,
+    workos_user_id TEXT,
+    stripe_customer_id TEXT,
+    subscription_status TEXT DEFAULT 'free',
+    subscription_plan TEXT,
+    subscription_period_end INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
