@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { HakivoLogo } from "@/components/hakivo-logo"
 
 interface FAQItem {
   question: string
@@ -291,11 +292,8 @@ export default function FAQPage() {
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/90 backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between px-6 md:px-8 max-w-7xl mx-auto">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-primary-foreground font-bold text-lg">
-              H
-            </div>
-            <span className="text-xl font-bold tracking-tight">Hakivo</span>
+          <Link href="/" className="flex items-center">
+            <HakivoLogo height={32} className="text-primary" />
           </Link>
           <nav className="flex items-center gap-3">
             <Link
@@ -442,7 +440,7 @@ export default function FAQPage() {
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8">
           <div className="flex flex-wrap justify-between items-center gap-6">
             <div>
-              <div className="text-lg font-bold mb-1">Hakivo</div>
+              <HakivoLogo height={24} className="text-foreground mb-1" />
               <div className="text-sm text-muted-foreground">Civic engagement for the podcast generation.</div>
             </div>
             <div className="flex gap-6">

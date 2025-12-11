@@ -1,5 +1,6 @@
 import { Each, Message } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
+import { getPolicyAreasForInterests, getKeywordsForInterests } from '../config/user-interests';
 
 /**
  * Brief Generator - Multi-Stage Pipeline
@@ -587,21 +588,24 @@ export default class extends Each<Body, Env> {
       }
 
       // Map policy interests to Pexels-friendly search terms
+      // IMPORTANT: Keys must match exactly with user-interests.ts interest names
       const searchTermMap: Record<string, string[]> = {
-        'Commerce & Labor': ['business meeting', 'office', 'workers'],
-        'Education & Science': ['classroom', 'university', 'science lab'],
-        'Economy & Finance': ['finance', 'stock market', 'money'],
-        'Environment & Energy': ['nature', 'solar panels', 'wind turbines'],
-        'Health & Social Welfare': ['healthcare', 'hospital', 'medical'],
-        'Defense & Security': ['military', 'security', 'american flag'],
-        'Immigration': ['immigration', 'border', 'diversity'],
-        'Foreign Affairs': ['diplomacy', 'world map', 'international'],
-        'Government': ['capitol building', 'congress', 'government'],
-        'Civil Rights': ['protest', 'voting', 'civil rights']
+        'Environment & Energy': ['nature', 'solar panels', 'wind turbines', 'clean energy'],
+        'Health & Social Welfare': ['healthcare', 'hospital', 'medical', 'family'],
+        'Economy & Finance': ['finance', 'stock market', 'money', 'banking'],
+        'Education & Science': ['classroom', 'university', 'science lab', 'research'],
+        'Civil Rights & Law': ['protest', 'voting', 'civil rights', 'justice'],
+        'Commerce & Labor': ['business meeting', 'office', 'workers', 'factory'],
+        'Government & Politics': ['capitol building', 'congress', 'government', 'voting'],
+        'Foreign Policy & Defense': ['military', 'diplomacy', 'world map', 'american flag'],
+        'Housing & Urban Development': ['housing', 'city', 'urban', 'construction'],
+        'Agriculture & Food': ['farming', 'agriculture', 'food', 'rural'],
+        'Sports, Arts & Culture': ['sports', 'art', 'culture', 'museum'],
+        'Immigration & Indigenous Issues': ['immigration', 'border', 'diversity', 'heritage']
       };
 
       // Get search terms from first interest, with fallback to civic imagery
-      const interest = policyInterests[0] || 'Government';
+      const interest = policyInterests[0] || 'Government & Politics';
       const terms = searchTermMap[interest] || ['capitol building', 'congress'];
       const searchQuery = terms[Math.floor(Math.random() * terms.length)] || 'capitol building';
 
@@ -803,47 +807,11 @@ export default class extends Each<Body, Env> {
   ): Promise<any[]> {
     const db = this.env.APP_DB;
 
-    // Map user interests to policy_area values
-    const policyAreaMap: Record<string, string[]> = {
-      'Commerce & Labor': ['Commerce', 'Labor and Employment', 'Economics and Public Finance'],
-      'Education & Science': ['Education', 'Science, Technology, Communications'],
-      'Economy & Finance': ['Finance and Financial Sector', 'Economics and Public Finance', 'Taxation'],
-      'Environment & Energy': ['Environmental Protection', 'Energy', 'Public Lands and Natural Resources'],
-      'Health & Social Welfare': ['Health', 'Social Welfare', 'Families'],
-      'Defense & Security': ['Armed Forces and National Security', 'Crime and Law Enforcement'],
-      'Immigration': ['Immigration'],
-      'Foreign Affairs': ['International Affairs', 'Foreign Trade and International Finance'],
-      'Government': ['Government Operations and Politics', 'Congress'],
-      'Civil Rights': ['Civil Rights and Liberties, Minority Issues']
-    };
+    // Use centralized interest mapping from user-interests.ts
+    const policyAreas = getPolicyAreasForInterests(interests);
+    const keywords = getKeywordsForInterests(interests);
 
-    // Map user interests to keywords for title matching (for bills without policy_area)
-    const keywordMap: Record<string, string[]> = {
-      'Commerce & Labor': ['commerce', 'business', 'trade', 'labor', 'employment', 'worker', 'job'],
-      'Education & Science': ['education', 'school', 'science', 'research', 'technology', 'student'],
-      'Economy & Finance': ['finance', 'tax', 'budget', 'economic', 'banking', 'fiscal'],
-      'Environment & Energy': ['environment', 'energy', 'climate', 'conservation', 'pollution'],
-      'Health & Social Welfare': ['health', 'medical', 'medicare', 'medicaid', 'welfare', 'social'],
-      'Defense & Security': ['defense', 'military', 'security', 'armed forces', 'veteran'],
-      'Immigration': ['immigration', 'immigrant', 'border', 'visa', 'asylum'],
-      'Foreign Affairs': ['foreign', 'international', 'diplomatic', 'treaty'],
-      'Government': ['government', 'federal', 'administration', 'agency'],
-      'Civil Rights': ['civil rights', 'discrimination', 'equality', 'voting rights']
-    };
-
-    // Build list of policy areas and keywords to match
-    const policyAreas: string[] = [];
-    const keywords: string[] = [];
-    for (const interest of interests) {
-      const mapped = policyAreaMap[interest];
-      if (mapped) {
-        policyAreas.push(...mapped);
-      }
-      const kwds = keywordMap[interest];
-      if (kwds) {
-        keywords.push(...kwds);
-      }
-    }
+    console.log(`✓ Mapped ${interests.length} interests to ${policyAreas.length} policy areas and ${keywords.length} keywords`);
 
     const allBills: any[] = [];
 

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, X } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { HakivoLogo } from "@/components/hakivo-logo"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -91,11 +92,8 @@ export function DashboardHeader() {
             </SheetTrigger>
             <SheetContent side="left" className="w-72">
               <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-                    H
-                  </div>
-                  <span className="text-xl font-bold">Hakivo</span>
+                <SheetTitle className="flex items-center">
+                  <HakivoLogo height={28} className="text-primary" />
                 </SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col gap-1 mt-6">
@@ -146,12 +144,9 @@ export function DashboardHeader() {
           </Sheet>
 
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-              H
-            </div>
-            <span className="text-xl font-bold">Hakivo</span>
-          </div>
+          <Link href="/dashboard" className="flex items-center">
+            <HakivoLogo height={28} className="text-primary" />
+          </Link>
         </div>
 
         <nav className="hidden md:flex items-center gap-1">

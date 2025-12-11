@@ -140,6 +140,13 @@ export const USER_INTERESTS: InterestMapping[] = [
     ],
     keywords: [
       "housing",
+      "affordable housing",
+      "rent",
+      "mortgage",
+      "homelessness",
+      "housing crisis",
+      "HUD",
+      "eviction",
       "urban planning",
       "infrastructure",
       "transportation",
