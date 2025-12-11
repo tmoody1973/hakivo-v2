@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Briefs service URL (handles both briefs and podcast endpoints)
-const BRIEFS_API_URL = process.env.BRIEFS_API_URL ||
-  'https://svc-01kc6rbecv0s5k4yk6ksdaqyz17.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Uses NEXT_PUBLIC_BRIEFS_API_URL from .env.local
+const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 /**
  * GET /api/podcast/:id

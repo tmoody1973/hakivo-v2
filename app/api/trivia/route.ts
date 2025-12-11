@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 
 // Dashboard service URL (contains the trivia endpoint)
-const DASHBOARD_API_URL = process.env.DASHBOARD_API_URL ||
-  'https://svc-01kc6rbecv0s5k4yk6ksdaqyz15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Uses NEXT_PUBLIC_DASHBOARD_API_URL from .env.local
+const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 /**
  * GET /api/trivia

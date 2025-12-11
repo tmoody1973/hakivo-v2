@@ -64,14 +64,31 @@ export default class extends Task<Env> {
         .bind(stuckThreshold)
         .all();
 
-      const count = (briefResult.results?.[0] as { count: number } | undefined)?.count || 0;
+      const briefCount = (briefResult.results?.[0] as { count: number } | undefined)?.count || 0;
 
-      if (count === 0) {
-        console.log('ℹ️ [AUDIO-RETRY] No briefs pending audio generation');
+      // Check if any podcast episodes need audio processing
+      const podcastResult = await db
+        .prepare(`
+          SELECT COUNT(*) as count
+          FROM podcast_episodes
+          WHERE (status = 'script_ready'
+                 OR (status = 'audio_processing' AND updated_at < ?))
+            AND script IS NOT NULL
+            AND script != ''
+        `)
+        .bind(stuckThreshold)
+        .all();
+
+      const podcastCount = (podcastResult.results?.[0] as { count: number } | undefined)?.count || 0;
+
+      const totalCount = briefCount + podcastCount;
+
+      if (totalCount === 0) {
+        console.log('ℹ️ [AUDIO-RETRY] No briefs or podcast episodes pending audio generation');
         return;
       }
 
-      console.log(`📋 [AUDIO-RETRY] Found ${count} brief(s) pending audio. Triggering Netlify background function...`);
+      console.log(`📋 [AUDIO-RETRY] Found ${briefCount} brief(s) and ${podcastCount} podcast episode(s) pending audio. Triggering Netlify background function...`);
 
       // Update cooldown timestamp before triggering
       await cache.put(RATE_LIMIT_KEY, Date.now().toString(), { expirationTtl: 600 });

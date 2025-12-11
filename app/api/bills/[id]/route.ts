@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Server-side API route needs actual bills-service URL, not the frontend proxy path
-const BILLS_API_URL = (process.env.NEXT_PUBLIC_BILLS_API_URL && process.env.NEXT_PUBLIC_BILLS_API_URL.startsWith('http'))
-  ? process.env.NEXT_PUBLIC_BILLS_API_URL
-  : 'https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Server-side API route needs actual bills-service URL
+// Uses NEXT_PUBLIC_BILLS_API_URL from .env.local
+const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 export async function GET(
   request: NextRequest,

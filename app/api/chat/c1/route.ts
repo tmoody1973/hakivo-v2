@@ -23,11 +23,13 @@ export const maxDuration = 60;
  * - System prompt guides tone, tool usage, and component selection
  */
 
+// Uses NEXT_PUBLIC_CHAT_API_URL from .env.local
 const CHAT_SERVICE_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
+// Uses NEXT_PUBLIC_DASHBOARD_API_URL from .env.local
 const DASHBOARD_SERVICE_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz0c.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 interface DBMessage {
   id: string;
