@@ -28,11 +28,11 @@ const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David
 
 const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
 
-// Raindrop service URLs
-// Dashboard service for database queries (uses /api/database/query)
-const DASHBOARD_URL = 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Raindrop service URLs (hakivo-prod @01kc6cdq deployment)
+// Admin-dashboard service for database queries (uses /api/database/query)
+const DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 // DB-Admin service for Spreaker uploads (uses /spreaker/*)
-const DB_ADMIN_URL = 'https://svc-01kbwj6m2fjpvfp9jj2xpefwqm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const DB_ADMIN_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzq.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 // Content types for audio processing
 type ContentType = 'brief' | 'podcast';
