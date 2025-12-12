@@ -29,6 +29,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+// ESM __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY;
@@ -52,7 +57,7 @@ const args = process.argv.slice(2);
 const RESUME_MODE = args.includes('--resume');
 const SKIP_TEXT = args.includes('--skip-text');
 const LIMIT_ARG = args.indexOf('--limit');
-const BILL_LIMIT = LIMIT_ARG !== -1 ? parseInt(args[LIMIT_ARG + 1]) : Infinity;
+const BILL_LIMIT = LIMIT_ARG !== -1 ? parseInt(args[LIMIT_ARG + 1] || '0') : Infinity;
 
 // Stats
 interface Stats {

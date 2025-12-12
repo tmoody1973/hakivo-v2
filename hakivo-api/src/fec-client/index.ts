@@ -139,9 +139,11 @@ export default class extends Service<Env> {
     const apiKey = this.env.FEC_API_KEY;
 
     if (!apiKey) {
+      console.error('[FEC] ERROR: FEC_API_KEY environment variable is not set');
       throw new Error('FEC_API_KEY environment variable is not set');
     }
 
+    console.log(`[FEC] API key present, length: ${apiKey.length}`);
     return apiKey;
   }
 
@@ -163,21 +165,27 @@ export default class extends Service<Env> {
     });
 
     const url = `${this.BASE_URL}${endpoint}?${queryParams}`;
+    console.log(`[FEC] API Request: ${endpoint} with params: ${JSON.stringify(params)}`);
 
     try {
       const response = await fetch(url);
 
       if (response.status === 429) {
+        console.error(`[FEC] API Rate limited!`);
         throw new Error('FEC API rate limit exceeded (1000 requests/hour)');
       }
 
       if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`[FEC] API Error ${response.status}: ${errorBody}`);
         throw new Error(`FEC API error: ${response.status} ${response.statusText}`);
       }
 
-      return await response.json() as T;
+      const data = await response.json() as T;
+      console.log(`[FEC] API Response OK for ${endpoint}`);
+      return data;
     } catch (error) {
-      console.error('FEC API request error:', error);
+      console.error('[FEC] API request error:', error);
       throw new Error(`FEC API request failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -223,14 +231,16 @@ export default class extends Service<Env> {
     fecIds: string[];
     opensecretsId?: string;
   }> {
+    console.log(`[FEC] Looking up FEC IDs for bioguide: ${bioguideId}`);
     const mapping = await this.loadLegislatorMapping();
     const ids = mapping.get(bioguideId);
 
     if (!ids) {
-      console.log(`No mapping found for bioguide ID: ${bioguideId}`);
+      console.log(`[FEC] No mapping found for bioguide ID: ${bioguideId}`);
       return { fecIds: [] };
     }
 
+    console.log(`[FEC] Found mapping for ${bioguideId}: FEC IDs = ${JSON.stringify(ids.fec)}, OpenSecrets = ${ids.opensecrets}`);
     return {
       fecIds: ids.fec || [],
       opensecretsId: ids.opensecrets
@@ -447,75 +457,99 @@ export default class extends Service<Env> {
     bioguideId: string,
     cycle: number = 2024
   ): Promise<CampaignFinanceSummary | null> {
-    console.log(`Getting campaign finance for ${bioguideId} (${cycle})`);
+    console.log(`[FEC] ========================================`);
+    console.log(`[FEC] Getting campaign finance for ${bioguideId} (${cycle})`);
 
     try {
       // Step 1: Get FEC ID from bioguide mapping
-      const { fecIds, opensecretsId } = await this.getFecIdsFromBioguide(bioguideId);
+      console.log(`[FEC] Step 1: Getting FEC IDs from bioguide mapping...`);
+      const { fecIds } = await this.getFecIdsFromBioguide(bioguideId);
 
       if (fecIds.length === 0) {
-        console.log(`No FEC IDs found for ${bioguideId}`);
+        console.log(`[FEC] FAIL: No FEC IDs found for ${bioguideId}`);
         return null;
       }
 
-      // Use the most recent FEC ID (usually the last one for current office)
-      // For members who served in both House and Senate, they'll have multiple IDs
-      const candidateId = fecIds[fecIds.length - 1]!;
-      console.log(`Using FEC candidate ID: ${candidateId}`);
+      // Members may have multiple FEC IDs (House vs Senate).
+      // FEC IDs starting with 'S' are Senate, 'H' are House, 'P' are Presidential.
+      // We need to try IDs to find one with data for the requested cycle.
+      // Strategy: Try IDs in order of likely relevance (Senate first, then House).
+      const sortedFecIds = [...fecIds].sort((a, b) => {
+        // Prefer Senate (S) over House (H) since Senators run every 6 years
+        const aIsSenate = a.startsWith('S') ? 0 : 1;
+        const bIsSenate = b.startsWith('S') ? 0 : 1;
+        return aIsSenate - bIsSenate;
+      });
 
-      // Step 2: Get the principal campaign committee
-      const committee = await this.getCandidateCommittee(candidateId);
-      if (!committee) {
-        console.log(`No committee found for ${candidateId}`);
-        return null;
+      console.log(`[FEC] Step 2: FEC IDs to try: ${JSON.stringify(sortedFecIds)}`);
+
+      // Try each FEC ID until we find one with data for this cycle
+      for (const candidateId of sortedFecIds) {
+        console.log(`[FEC] Trying FEC candidate ID: ${candidateId}`);
+
+        // Step 2: Get the principal campaign committee
+        const committee = await this.getCandidateCommittee(candidateId);
+        if (!committee) {
+          console.log(`[FEC] No committee found for ${candidateId}, trying next ID...`);
+          continue;
+        }
+
+        const committeeId = committee.committee_id;
+        console.log(`[FEC] Found committee: ${committeeId} (${committee.name})`);
+
+        // Step 3: Get financial totals
+        console.log(`[FEC] Getting financial totals for cycle ${cycle}...`);
+        const totals = await this.getCandidateTotals(candidateId, cycle);
+        console.log(`[FEC] Totals response: ${totals.length} records found`);
+
+        const currentTotals = totals.find(t =>
+          t.candidate_election_year === cycle ||
+          (t.cycle === cycle)
+        ) || totals[0];
+
+        if (!currentTotals) {
+          console.log(`[FEC] No totals found for ${candidateId} in cycle ${cycle}, trying next ID...`);
+          continue;
+        }
+
+        console.log(`[FEC] Using totals: receipts=${currentTotals.receipts}, disbursements=${currentTotals.disbursements}`);
+
+        // Step 4: Get contribution breakdowns in parallel
+        const [byEmployer, byOccupation, byState, bySize] = await Promise.all([
+          this.getContributionsByEmployer(committeeId, cycle, 25),
+          this.getContributionsByOccupation(committeeId, cycle, 25),
+          this.getContributionsByState(committeeId, cycle),
+          this.getContributionsBySize(committeeId, cycle)
+        ]);
+
+        // Build the summary
+        const summary: CampaignFinanceSummary = {
+          candidateId,
+          committeeId,
+          cycle,
+          totalRaised: currentTotals.receipts || 0,
+          totalSpent: currentTotals.disbursements || 0,
+          cashOnHand: currentTotals.last_cash_on_hand_end_period || 0,
+          individualContributions: currentTotals.individual_contributions || 0,
+          pacContributions: currentTotals.other_political_committee_contributions || 0,
+          partyContributions: currentTotals.political_party_committee_contributions || 0,
+          selfFinanced: currentTotals.loans_made_by_candidate || 0,
+          debts: currentTotals.last_debts_owed_by_committee || 0,
+          coverageStart: currentTotals.coverage_start_date || '',
+          coverageEnd: currentTotals.coverage_end_date || '',
+          topContributorsByEmployer: byEmployer,
+          topContributorsByOccupation: byOccupation,
+          contributionsByState: byState,
+          contributionsBySize: bySize
+        };
+
+        console.log(`[FEC] Campaign finance data retrieved for ${bioguideId} using candidate ${candidateId}`);
+        return summary;
       }
 
-      const committeeId = committee.committee_id;
-      console.log(`Found committee: ${committeeId} (${committee.name})`);
-
-      // Step 3: Get financial totals
-      const totals = await this.getCandidateTotals(candidateId, cycle);
-      const currentTotals = totals.find(t =>
-        t.candidate_election_year === cycle ||
-        (t.cycle === cycle)
-      ) || totals[0];
-
-      if (!currentTotals) {
-        console.log(`No totals found for ${candidateId} in cycle ${cycle}`);
-        return null;
-      }
-
-      // Step 4: Get contribution breakdowns in parallel
-      const [byEmployer, byOccupation, byState, bySize] = await Promise.all([
-        this.getContributionsByEmployer(committeeId, cycle, 25),
-        this.getContributionsByOccupation(committeeId, cycle, 25),
-        this.getContributionsByState(committeeId, cycle),
-        this.getContributionsBySize(committeeId, cycle)
-      ]);
-
-      // Build the summary
-      const summary: CampaignFinanceSummary = {
-        candidateId,
-        committeeId,
-        cycle,
-        totalRaised: currentTotals.receipts || 0,
-        totalSpent: currentTotals.disbursements || 0,
-        cashOnHand: currentTotals.last_cash_on_hand_end_period || 0,
-        individualContributions: currentTotals.individual_contributions || 0,
-        pacContributions: currentTotals.other_political_committee_contributions || 0,
-        partyContributions: currentTotals.political_party_committee_contributions || 0,
-        selfFinanced: currentTotals.loans_made_by_candidate || 0,
-        debts: currentTotals.last_debts_owed_by_committee || 0,
-        coverageStart: currentTotals.coverage_start_date || '',
-        coverageEnd: currentTotals.coverage_end_date || '',
-        topContributorsByEmployer: byEmployer,
-        topContributorsByOccupation: byOccupation,
-        contributionsByState: byState,
-        contributionsBySize: bySize
-      };
-
-      console.log(`Campaign finance data retrieved for ${bioguideId}`);
-      return summary;
+      // No FEC ID had data for this cycle
+      console.log(`[FEC] FAIL: No data found for any FEC ID for ${bioguideId} in cycle ${cycle}`);
+      return null;
     } catch (error) {
       console.error(`Failed to get campaign finance for ${bioguideId}:`, error);
       throw error;
@@ -524,6 +558,7 @@ export default class extends Service<Env> {
 
   /**
    * Get available election cycles for a member
+   * Combines cycles from all FEC IDs (House and Senate)
    */
   async getMemberElectionCycles(bioguideId: string): Promise<number[]> {
     const { fecIds } = await this.getFecIdsFromBioguide(bioguideId);
@@ -532,10 +567,19 @@ export default class extends Service<Env> {
       return [];
     }
 
-    const candidateId = fecIds[fecIds.length - 1]!;
-    const candidate = await this.getCandidateDetails(candidateId);
+    // Collect cycles from all FEC IDs
+    const allCycles = new Set<number>();
+    for (const candidateId of fecIds) {
+      const candidate = await this.getCandidateDetails(candidateId);
+      if (candidate?.cycles) {
+        for (const cycle of candidate.cycles) {
+          allCycles.add(cycle);
+        }
+      }
+    }
 
-    return candidate?.cycles || [];
+    // Return sorted descending (most recent first)
+    return Array.from(allCycles).sort((a, b) => b - a);
   }
 
   /**
