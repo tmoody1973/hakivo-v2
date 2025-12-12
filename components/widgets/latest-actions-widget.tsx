@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, TrendingUp, List, Bookmark, BookmarkX, Sparkles, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2, Landmark, FileText } from 'lucide-react';
+import { AlertCircle, TrendingUp, List, Bookmark, BookmarkX, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2, Landmark, FileText } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { getStateBills, StateBill } from '@/lib/api/backend';
 import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
@@ -332,7 +332,7 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="latest" className="w-full" onValueChange={handleTabChange}>
-          <TabsList className="grid w-full grid-cols-4 mb-4">
+          <TabsList className="grid w-full grid-cols-3 mb-4">
             <TabsTrigger value="latest" className="flex items-center gap-1.5">
               <List className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Latest</span>
@@ -347,11 +347,6 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
               <Bookmark className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Tracked</span>
               <span className="sm:hidden">Tracked</span>
-            </TabsTrigger>
-            <TabsTrigger value="recent" className="flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Recent</span>
-              <span className="sm:hidden">Recent</span>
             </TabsTrigger>
           </TabsList>
 
@@ -771,12 +766,6 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
             )}
           </TabsContent>
 
-          <TabsContent value="recent" className="mt-0">
-            <div className="text-center py-8 text-muted-foreground">
-              <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">Recently introduced bills coming soon.</p>
-            </div>
-          </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
