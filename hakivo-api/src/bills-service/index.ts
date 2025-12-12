@@ -252,22 +252,38 @@ app.post('/bills/semantic-search', async (c) => {
         });
       }
 
-      // Fetch full bill metadata from database
+      // Fetch full bill metadata from database with sponsor info
       const placeholders = billIds.map(() => '?').join(',');
       const billsResult = await db.prepare(`
-        SELECT id, congress, bill_type, bill_number, title,
-               introduced_date, sponsor_bioguide_id, origin_chamber, latest_action_date
-        FROM bills
-        WHERE id IN (${placeholders})
+        SELECT b.id, b.congress, b.bill_type, b.bill_number, b.title,
+               b.introduced_date, b.sponsor_bioguide_id, b.origin_chamber, b.latest_action_date,
+               m.first_name as sponsor_first_name, m.last_name as sponsor_last_name,
+               m.party as sponsor_party, m.state as sponsor_state
+        FROM bills b
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
+        WHERE b.id IN (${placeholders})
       `).bind(...billIds).all();
 
-      // Merge search scores with bill data
-      const billsWithScores = billsResult.results?.map(bill => {
+      // Merge search scores with bill data and format sponsor
+      const billsWithScores = billsResult.results?.map((bill: any) => {
         const searchResult = searchResults.results.find((r: any) =>
           r.source && extractBillIdFromKey(r.source) === bill.id
         );
         return {
-          ...bill,
+          id: bill.id,
+          congress: bill.congress,
+          bill_type: bill.bill_type,
+          bill_number: bill.bill_number,
+          title: bill.title,
+          introduced_date: bill.introduced_date,
+          origin_chamber: bill.origin_chamber,
+          latest_action_date: bill.latest_action_date,
+          sponsor: bill.sponsor_first_name ? {
+            firstName: bill.sponsor_first_name,
+            lastName: bill.sponsor_last_name,
+            party: bill.sponsor_party,
+            state: bill.sponsor_state
+          } : null,
           relevanceScore: searchResult?.score || 0
         };
       }) || [];
@@ -289,19 +305,40 @@ app.post('/bills/semantic-search', async (c) => {
       console.warn('SmartBucket search failed, using fallback:', smartBucketError);
       const sqlQuery = `
         SELECT DISTINCT b.id, b.congress, b.bill_type, b.bill_number, b.title,
-               b.introduced_date, b.sponsor_bioguide_id
+               b.introduced_date, b.origin_chamber, b.latest_action_date,
+               m.first_name as sponsor_first_name, m.last_name as sponsor_last_name,
+               m.party as sponsor_party, m.state as sponsor_state
         FROM bills b
+        LEFT JOIN members m ON b.sponsor_bioguide_id = m.bioguide_id
         WHERE b.title LIKE ?
         LIMIT ?
       `;
       const searchPattern = `%${query}%`;
       const fallbackResults = await db.prepare(sqlQuery).bind(searchPattern, searchLimit).all();
 
+      // Format results with sponsor info
+      const formattedBills = fallbackResults.results?.map((bill: any) => ({
+        id: bill.id,
+        congress: bill.congress,
+        bill_type: bill.bill_type,
+        bill_number: bill.bill_number,
+        title: bill.title,
+        introduced_date: bill.introduced_date,
+        origin_chamber: bill.origin_chamber,
+        latest_action_date: bill.latest_action_date,
+        sponsor: bill.sponsor_first_name ? {
+          firstName: bill.sponsor_first_name,
+          lastName: bill.sponsor_last_name,
+          party: bill.sponsor_party,
+          state: bill.sponsor_state
+        } : null
+      })) || [];
+
       return c.json({
         success: true,
         query,
-        bills: fallbackResults.results || [],
-        count: fallbackResults.results?.length || 0,
+        bills: formattedBills,
+        count: formattedBills.length,
         searchType: 'fallback'
       });
     }
