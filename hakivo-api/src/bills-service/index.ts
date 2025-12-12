@@ -198,28 +198,88 @@ app.post('/bills/semantic-search', async (c) => {
     }
 
     const searchLimit = Math.min(limit, 50);
+    const legislationSearch = c.env.LEGISLATION_SEARCH;
     const db = c.env.APP_DB;
 
-    // SmartBucket search temporarily disabled - using regular Bucket
-    // TODO: Re-enable when SmartBucket index creation is fixed
-    // For now, fall back to SQL LIKE search
-    const sqlQuery = `
-      SELECT DISTINCT b.id, b.congress, b.bill_type, b.bill_number, b.title,
-             b.short_title, b.status, b.introduced_date, b.sponsor_bioguide_id
-      FROM bills b
-      WHERE b.title LIKE ? OR b.short_title LIKE ?
-      LIMIT ?
-    `;
-    const searchPattern = `%${query}%`;
-    const fallbackResults = await db.prepare(sqlQuery).bind(searchPattern, searchPattern, searchLimit).all();
+    try {
+      // Use SmartBucket semantic search for natural language queries
+      const searchResults = await legislationSearch.search({
+        input: query,
+        requestId: `semantic-search-${Date.now()}`
+      });
 
-    return c.json({
-      success: true,
-      query,
-      bills: fallbackResults.results || [],
-      count: fallbackResults.results?.length || 0,
-      note: 'Using fallback text search - semantic search temporarily disabled'
-    });
+      // Extract bill IDs from search results to get full metadata from DB
+      const billIds: string[] = [];
+      for (const result of searchResults.results.slice(0, searchLimit)) {
+        const metadata = result.source ? extractBillIdFromKey(result.source) : null;
+        if (metadata) {
+          billIds.push(metadata);
+        }
+      }
+
+      if (billIds.length === 0) {
+        return c.json({
+          success: true,
+          query,
+          bills: [],
+          count: 0,
+          searchType: 'semantic'
+        });
+      }
+
+      // Fetch full bill metadata from database
+      const placeholders = billIds.map(() => '?').join(',');
+      const billsResult = await db.prepare(`
+        SELECT id, congress, bill_type, bill_number, title, short_title, status,
+               introduced_date, sponsor_bioguide_id, origin_chamber, latest_action_date
+        FROM bills
+        WHERE id IN (${placeholders})
+      `).bind(...billIds).all();
+
+      // Merge search scores with bill data
+      const billsWithScores = billsResult.results?.map(bill => {
+        const searchResult = searchResults.results.find(r =>
+          r.source && extractBillIdFromKey(r.source) === bill.id
+        );
+        return {
+          ...bill,
+          relevanceScore: searchResult?.score || 0
+        };
+      }) || [];
+
+      // Sort by relevance score
+      billsWithScores.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+      return c.json({
+        success: true,
+        query,
+        bills: billsWithScores,
+        count: billsWithScores.length,
+        searchType: 'semantic',
+        pagination: searchResults.pagination
+      });
+
+    } catch (smartBucketError) {
+      // Fallback to SQL LIKE search if SmartBucket fails
+      console.warn('SmartBucket search failed, using fallback:', smartBucketError);
+      const sqlQuery = `
+        SELECT DISTINCT b.id, b.congress, b.bill_type, b.bill_number, b.title,
+               b.short_title, b.status, b.introduced_date, b.sponsor_bioguide_id
+        FROM bills b
+        WHERE b.title LIKE ? OR b.short_title LIKE ?
+        LIMIT ?
+      `;
+      const searchPattern = `%${query}%`;
+      const fallbackResults = await db.prepare(sqlQuery).bind(searchPattern, searchPattern, searchLimit).all();
+
+      return c.json({
+        success: true,
+        query,
+        bills: fallbackResults.results || [],
+        count: fallbackResults.results?.length || 0,
+        searchType: 'fallback'
+      });
+    }
 
   } catch (error) {
     console.error('Semantic search error:', error);
@@ -229,6 +289,19 @@ app.post('/bills/semantic-search', async (c) => {
     }, 500);
   }
 });
+
+/**
+ * Extract bill ID from SmartBucket key
+ * Key format: bills/{congress}/{type}-{number}.txt
+ * Returns: {congress}-{type}-{number}
+ */
+function extractBillIdFromKey(key: string): string | null {
+  const match = key.match(/bills\/(\d+)\/([a-z]+)-(\d+)\.txt/i);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  return null;
+}
 
 /**
  * POST /bills/smart-query

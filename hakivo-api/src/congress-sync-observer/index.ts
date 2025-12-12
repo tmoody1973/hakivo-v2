@@ -177,7 +177,7 @@ export default class extends Each<SyncMessage, Env> {
                       .bind(plainText, billId)
                       .run();
 
-                    // Upload plain text to SmartBucket
+                    // Upload plain text to regular bucket (legacy)
                     const documentKey = `congress-${congress}/${billType}${billNumber}.txt`;
                     await billTexts.put(documentKey, plainText, {
                       customMetadata: {
@@ -189,7 +189,31 @@ export default class extends Each<SyncMessage, Env> {
                       }
                     });
 
-                    console.log(`    ✓ Saved text for ${billId} (${plainText.length} chars)`);
+                    // Also upload to LEGISLATION_SEARCH SmartBucket for semantic search
+                    // This enables automatic indexing of new bills for RAG and semantic queries
+                    const legislationSearch = this.env.LEGISLATION_SEARCH;
+                    const smartBucketKey = `bills/${congress}/${billType}-${billNumber}.txt`;
+                    const searchableContent = `${bill.title || ''}\n\n${plainText}`;
+
+                    await legislationSearch.put(smartBucketKey, searchableContent, {
+                      httpMetadata: {
+                        contentType: 'text/plain',
+                        contentLanguage: 'en',
+                        cacheControl: 'public, max-age=86400'
+                      },
+                      customMetadata: {
+                        bill_id: billId,
+                        congress: String(congress),
+                        bill_type: billType,
+                        bill_number: String(billNumber),
+                        title: bill.title || '',
+                        sponsor: sponsorBioguideId || '',
+                        introduced_date: introducedDate || '',
+                        policy_area: policyArea || ''
+                      }
+                    });
+
+                    console.log(`    ✓ Saved text for ${billId} (${plainText.length} chars) + indexed to SmartBucket`);
                   } catch (error) {
                     console.warn(`    ⚠️  Failed to upload bill text for ${billId}`);
                   }

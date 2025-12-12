@@ -74,6 +74,9 @@ export default class extends Task<Env> {
           // Generate unique ID
           const actionId = `${bill.congress}-${bill.type}-${bill.number}-${action.actionDate}`;
 
+          // Construct proper Congress.gov website URL (not API URL)
+          const congressGovUrl = this.getCongressGovUrl(bill.congress, bill.type, bill.number);
+
           // Insert or update action
           const result = await db
             .prepare(`
@@ -100,7 +103,7 @@ export default class extends Task<Env> {
               status,
               chamber,
               now,
-              bill.url || `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type}-bill/${bill.number}`
+              congressGovUrl
             )
             .run();
 
@@ -189,5 +192,24 @@ export default class extends Task<Env> {
     if (text.includes('introduced')) return 'Introduced';
 
     return 'Active';
+  }
+
+  /**
+   * Construct proper Congress.gov website URL (not API URL)
+   */
+  private getCongressGovUrl(congress: number, billType: string, billNumber: number): string {
+    // Map bill type to Congress.gov URL format
+    const billTypeUrlMap: Record<string, string> = {
+      'hr': 'house-bill',
+      's': 'senate-bill',
+      'hjres': 'house-joint-resolution',
+      'sjres': 'senate-joint-resolution',
+      'hconres': 'house-concurrent-resolution',
+      'sconres': 'senate-concurrent-resolution',
+      'hres': 'house-resolution',
+      'sres': 'senate-resolution',
+    };
+    const urlBillType = billTypeUrlMap[billType.toLowerCase()] || billType.toLowerCase();
+    return `https://www.congress.gov/bill/${congress}th-congress/${urlBillType}/${billNumber}`;
   }
 }

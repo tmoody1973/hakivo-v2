@@ -148,7 +148,7 @@ export default function HomePage() {
                     onClick={() => setIsVideoPlaying(true)}
                   >
                     <img
-                      src="https://img.youtube.com/vi/Otbml6WIQPo/hqdefault.jpg"
+                      src="/im-just-a-bill.jpg"
                       alt="Schoolhouse Rock - I'm Just a Bill"
                       className="w-full h-full object-cover"
                     />

@@ -344,6 +344,11 @@ application "hakivo-prod" {
   // audio-briefs: stores generated audio files with metadata
   bucket "audio-briefs" {}
 
+  // SmartBucket for semantic search on legislation
+  // Enables RAG and semantic search for congressional assistant and /legislation search
+  // Indexes bill metadata + full text from SQL bills table
+  smartbucket "legislation-search" {}
+
   // KV cache for agent memory (downgraded from SmartMemory due to initialization issues)
   kv_cache "congressional_memory" {}
 }

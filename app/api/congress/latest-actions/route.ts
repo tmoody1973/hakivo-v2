@@ -90,6 +90,21 @@ export async function GET(request: Request) {
       const actionText = bill.latestAction?.text || 'No action recorded';
       const status = extractStatus(actionText);
 
+      // Construct proper Congress.gov website URL (not API URL)
+      // Map bill type to the URL format Congress.gov uses
+      const billTypeUrlMap: Record<string, string> = {
+        'hr': 'house-bill',
+        's': 'senate-bill',
+        'hjres': 'house-joint-resolution',
+        'sjres': 'senate-joint-resolution',
+        'hconres': 'house-concurrent-resolution',
+        'sconres': 'senate-concurrent-resolution',
+        'hres': 'house-resolution',
+        'sres': 'senate-resolution',
+      };
+      const urlBillType = billTypeUrlMap[bill.type.toLowerCase()] || bill.type.toLowerCase();
+      const congressGovUrl = `https://www.congress.gov/bill/${bill.congress}th-congress/${urlBillType}/${bill.number}`;
+
       return {
         id: `${bill.congress}-${bill.type}-${bill.number}`,
         bill: {
@@ -97,7 +112,7 @@ export async function GET(request: Request) {
           type: bill.type,
           number: bill.number,
           title: bill.title,
-          url: bill.url || `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type.toLowerCase()}-bill/${bill.number}`,
+          url: congressGovUrl, // Always use website URL, never API URL
           inDatabase: false, // Direct Congress.gov fallback doesn't know DB status
           dbBillId: null
         },

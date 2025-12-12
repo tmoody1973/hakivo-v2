@@ -7,6 +7,9 @@ import { Env } from './raindrop.gen';
  * Processes batches of bills from bill-indexing-queue and uploads them to SmartBucket.
  * Handles 20 bills per invocation to stay well under the 1,000 subrequest limit.
  *
+ * Uploads to LEGISLATION_SEARCH SmartBucket for semantic search + RAG capabilities.
+ * The SmartBucket automatically indexes content for search(), chunkSearch(), and documentChat().
+ *
  * Each batch message contains:
  * - congress: Congress number
  * - offset: Starting position for this batch
@@ -23,7 +26,8 @@ export default class BillIndexingObserver extends Each<IndexingBatchMessage, Env
 
     const { congress, offset, limit } = message.body;
     const db = this.env.APP_DB;
-    const billTextsBucket = this.env.BILL_TEXTS;
+    // Use SmartBucket for semantic search and RAG capabilities
+    const legislationSearch = this.env.LEGISLATION_SEARCH;
 
     const stats = {
       indexed: 0,
@@ -65,11 +69,14 @@ export default class BillIndexingObserver extends Each<IndexingBatchMessage, Env
             continue;
           }
 
-          // Upload to SmartBucket
+          // Upload to SmartBucket for semantic search indexing
           const key = this.getBillKey(bill);
           const metadata = this.getCustomMetadata(bill);
 
-          await billTextsBucket.put(key, bill.text, {
+          // Create searchable document with title + text for better semantic matching
+          const searchableContent = `${bill.title || ''}\n\n${bill.text}`;
+
+          await legislationSearch.put(key, searchableContent, {
             httpMetadata: {
               contentType: 'text/plain',
               contentLanguage: 'en',

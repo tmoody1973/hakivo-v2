@@ -1531,27 +1531,45 @@ app.get('/latest-actions', async (c) => {
 
     console.log(`✅ Found ${actions.results.length} bill actions`);
 
+    // Map bill type to Congress.gov URL format
+    const billTypeUrlMap: Record<string, string> = {
+      'hr': 'house-bill',
+      's': 'senate-bill',
+      'hjres': 'house-joint-resolution',
+      'sjres': 'senate-joint-resolution',
+      'hconres': 'house-concurrent-resolution',
+      'sconres': 'senate-concurrent-resolution',
+      'hres': 'house-resolution',
+      'sres': 'senate-resolution',
+    };
+
     // Format the actions for frontend consumption
-    const formattedActions = actions.results.map((action: any) => ({
-      id: action.id,
-      bill: {
-        congress: action.bill_congress,
-        type: action.bill_type,
-        number: action.bill_number,
-        title: action.bill_title,
-        url: action.source_url,
-        // Include database info so frontend knows it can link to detail page
-        inDatabase: action.in_database === 1,
-        dbBillId: action.db_bill_id || null
-      },
-      action: {
-        date: action.action_date,
-        text: action.action_text,
-        status: action.latest_action_status
-      },
-      chamber: action.chamber,
-      fetchedAt: action.fetched_at
-    }));
+    const formattedActions = actions.results.map((action: any) => {
+      // Always construct proper Congress.gov website URL (not API URL)
+      const urlBillType = billTypeUrlMap[action.bill_type.toLowerCase()] || action.bill_type.toLowerCase();
+      const congressGovUrl = `https://www.congress.gov/bill/${action.bill_congress}th-congress/${urlBillType}/${action.bill_number}`;
+
+      return {
+        id: action.id,
+        bill: {
+          congress: action.bill_congress,
+          type: action.bill_type,
+          number: action.bill_number,
+          title: action.bill_title,
+          url: congressGovUrl, // Use constructed URL, not source_url from DB
+          // Include database info so frontend knows it can link to detail page
+          inDatabase: action.in_database === 1,
+          dbBillId: action.db_bill_id || null
+        },
+        action: {
+          date: action.action_date,
+          text: action.action_text,
+          status: action.latest_action_status
+        },
+        chamber: action.chamber,
+        fetchedAt: action.fetched_at
+      };
+    });
 
     return c.json({
       actions: formattedActions,
