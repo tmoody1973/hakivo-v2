@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
-import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, X } from 'lucide-react'
+import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, AlertTriangle, Crown, Zap, Bookmark } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { HakivoLogo } from "@/components/hakivo-logo"
@@ -25,6 +25,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/lib/auth/auth-context"
+import { useSubscription } from "@/lib/subscription/subscription-context"
 
 const routes = [
   {
@@ -63,6 +64,23 @@ export function DashboardHeader() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { subscription, usageAlerts, hasUsageAlerts, openCheckout } = useSubscription()
+
+  // Get icon for alert category
+  const getAlertIcon = (category: string) => {
+    switch (category) {
+      case 'briefs':
+        return FileText
+      case 'trackedBills':
+        return Bookmark
+      case 'followedMembers':
+        return Users
+      case 'artifacts':
+        return FileText
+      default:
+        return AlertTriangle
+    }
+  }
 
   const handleLogout = () => {
     // The auth context's logout() handles:
@@ -166,13 +184,106 @@ export function DashboardHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <Badge className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]">
-              3
-            </Badge>
-          </Button>
+          {/* Notification Bell with Usage Alerts */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative">
+                <Bell className="h-5 w-5" />
+                {hasUsageAlerts && (
+                  <Badge
+                    className={cn(
+                      "absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]",
+                      usageAlerts.some(a => a.type === 'limit_reached')
+                        ? "bg-destructive"
+                        : "bg-yellow-500"
+                    )}
+                  >
+                    {usageAlerts.length}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="flex items-center justify-between">
+                <span>Notifications</span>
+                {!subscription.isPro && (
+                  <span className="text-xs font-normal text-muted-foreground">Free Plan</span>
+                )}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
 
+              {/* Usage Alerts for Free Users */}
+              {!subscription.isPro && hasUsageAlerts && (
+                <>
+                  {usageAlerts.map((alert) => {
+                    const IconComponent = getAlertIcon(alert.category)
+                    return (
+                      <DropdownMenuItem
+                        key={alert.id}
+                        className="flex flex-col items-start gap-1 p-3 cursor-pointer"
+                        onClick={openCheckout}
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <div className={cn(
+                            "w-8 h-8 rounded-full flex items-center justify-center",
+                            alert.type === 'limit_reached'
+                              ? "bg-destructive/10 text-destructive"
+                              : "bg-yellow-500/10 text-yellow-600"
+                          )}>
+                            <IconComponent className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{alert.message}</p>
+                            {alert.action && (
+                              <p className="text-xs text-primary">{alert.action}</p>
+                            )}
+                          </div>
+                        </div>
+                      </DropdownMenuItem>
+                    )
+                  })}
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* Pro User or No Alerts */}
+              {(subscription.isPro || !hasUsageAlerts) && (
+                <div className="p-4 text-center">
+                  {subscription.isPro ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <Crown className="w-8 h-8 text-primary" />
+                      <p className="text-sm font-medium">You're on Hakivo Pro</p>
+                      <p className="text-xs text-muted-foreground">Enjoy unlimited access to all features</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Bell className="w-8 h-8 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">No new notifications</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Upgrade CTA for Free Users */}
+              {!subscription.isPro && (
+                <>
+                  <DropdownMenuSeparator />
+                  <div className="p-2">
+                    <Button
+                      onClick={openCheckout}
+                      className="w-full bg-gradient-to-r from-primary to-primary/80"
+                      size="sm"
+                    >
+                      <Zap className="w-4 h-4 mr-2" />
+                      Upgrade to Pro
+                    </Button>
+                  </div>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* User Profile Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">

@@ -3,6 +3,8 @@
 import { FC, useState } from 'react';
 import { ErrorState } from "@/components/ui/error-state";
 import { useOnline } from "@/lib/hooks/use-online";
+import { useSubscription } from "@/lib/subscription/subscription-context";
+import { Crown, Check, Zap, Bell, FileText, Users, Bookmark, Loader2 } from 'lucide-react';
 
 const POLICY_INTERESTS = [
   { id: 'environment-energy', label: 'Environment & Energy', icon: '🌱' },
@@ -41,6 +43,17 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isOnline = useOnline();
+
+  // Subscription state
+  const {
+    subscription,
+    usage,
+    features,
+    isLoading: isSubscriptionLoading,
+    openCheckout,
+    openBillingPortal,
+    getUsagePercentage,
+  } = useSubscription();
 
   // Profile state
   const [firstName, setFirstName] = useState(initialFirstName);
@@ -180,6 +193,17 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
             Profile
           </button>
           <button
+            onClick={() => setActiveTab('subscription')}
+            className={`px-3 py-2 text-sm font-medium rounded-md text-left flex items-center gap-2 ${
+              activeTab === 'subscription'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            <Crown className="w-4 h-4" />
+            Subscription
+          </button>
+          <button
             onClick={() => setActiveTab('interests')}
             className={`px-3 py-2 text-sm font-medium rounded-md text-left ${
               activeTab === 'interests'
@@ -222,6 +246,266 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
         </nav>
 
         <div className="space-y-6">
+          {/* Subscription Tab */}
+          {activeTab === 'subscription' && (
+            <div className="space-y-6">
+              {/* Current Plan Card */}
+              <div className="rounded-lg border bg-card p-6 space-y-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-semibold">
+                        {subscription.isPro ? 'Hakivo Pro' : 'Free Plan'}
+                      </h2>
+                      {subscription.isPro && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                          <Crown className="w-3 h-3" />
+                          Pro
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {subscription.isPro
+                        ? 'Full access to all features'
+                        : 'Limited access with usage restrictions'}
+                    </p>
+                  </div>
+                  {!subscription.isPro && (
+                    <button
+                      onClick={openCheckout}
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium flex items-center gap-2"
+                    >
+                      <Zap className="w-4 h-4" />
+                      Upgrade to Pro
+                    </button>
+                  )}
+                </div>
+
+                {subscription.isPro && subscription.endsAt && (
+                  <div className="bg-muted/50 p-3 rounded-md text-sm">
+                    <p className="text-muted-foreground">
+                      Your subscription renews on{' '}
+                      <span className="text-foreground font-medium">
+                        {new Date(subscription.endsAt).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                {/* Pro Features List */}
+                {!subscription.isPro && (
+                  <div className="border-t pt-6">
+                    <h3 className="font-medium mb-4">Upgrade to Pro for:</h3>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      {[
+                        { icon: FileText, text: 'Unlimited daily briefs' },
+                        { icon: Bookmark, text: 'Unlimited bill tracking' },
+                        { icon: Users, text: 'Unlimited member follows' },
+                        { icon: FileText, text: 'Unlimited document exports' },
+                        { icon: Bell, text: 'Real-time bill alerts' },
+                        { icon: Zap, text: 'Priority AI processing' },
+                      ].map((feature, i) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Check className="w-3 h-3 text-primary" />
+                          </div>
+                          <span>{feature.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-6 p-4 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-bold">$12</span>
+                        <span className="text-muted-foreground">/month</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Cancel anytime. No commitment required.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Usage Statistics */}
+              <div className="rounded-lg border bg-card p-6 space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Usage This Month</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {subscription.isPro
+                      ? 'Unlimited usage on your Pro plan'
+                      : 'Your current usage against free tier limits'}
+                  </p>
+                </div>
+
+                {isSubscriptionLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Briefs Usage */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-muted-foreground" />
+                          Daily Briefs
+                        </span>
+                        <span className="text-muted-foreground">
+                          {subscription.isPro ? (
+                            'Unlimited'
+                          ) : (
+                            `${usage.briefs.used} / ${usage.briefs.limit}`
+                          )}
+                        </span>
+                      </div>
+                      {!subscription.isPro && (
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              getUsagePercentage('briefs') >= 100
+                                ? 'bg-destructive'
+                                : getUsagePercentage('briefs') >= 67
+                                ? 'bg-yellow-500'
+                                : 'bg-primary'
+                            }`}
+                            style={{ width: `${Math.min(100, getUsagePercentage('briefs'))}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tracked Bills Usage */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium flex items-center gap-2">
+                          <Bookmark className="w-4 h-4 text-muted-foreground" />
+                          Tracked Bills
+                        </span>
+                        <span className="text-muted-foreground">
+                          {subscription.isPro ? (
+                            'Unlimited'
+                          ) : (
+                            `${usage.trackedBills.count} / ${usage.trackedBills.limit}`
+                          )}
+                        </span>
+                      </div>
+                      {!subscription.isPro && (
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              getUsagePercentage('trackedBills') >= 100
+                                ? 'bg-destructive'
+                                : getUsagePercentage('trackedBills') >= 67
+                                ? 'bg-yellow-500'
+                                : 'bg-primary'
+                            }`}
+                            style={{ width: `${Math.min(100, getUsagePercentage('trackedBills'))}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Followed Members Usage */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium flex items-center gap-2">
+                          <Users className="w-4 h-4 text-muted-foreground" />
+                          Followed Members
+                        </span>
+                        <span className="text-muted-foreground">
+                          {subscription.isPro ? (
+                            'Unlimited'
+                          ) : (
+                            `${usage.followedMembers.count} / ${usage.followedMembers.limit}`
+                          )}
+                        </span>
+                      </div>
+                      {!subscription.isPro && (
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              getUsagePercentage('followedMembers') >= 100
+                                ? 'bg-destructive'
+                                : getUsagePercentage('followedMembers') >= 67
+                                ? 'bg-yellow-500'
+                                : 'bg-primary'
+                            }`}
+                            style={{ width: `${Math.min(100, getUsagePercentage('followedMembers'))}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Artifacts Usage */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-muted-foreground" />
+                          Documents Created
+                        </span>
+                        <span className="text-muted-foreground">
+                          {subscription.isPro ? (
+                            'Unlimited'
+                          ) : (
+                            `${usage.artifacts.used} / ${usage.artifacts.limit}`
+                          )}
+                        </span>
+                      </div>
+                      {!subscription.isPro && (
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              getUsagePercentage('artifacts') >= 100
+                                ? 'bg-destructive'
+                                : getUsagePercentage('artifacts') >= 67
+                                ? 'bg-yellow-500'
+                                : 'bg-primary'
+                            }`}
+                            style={{ width: `${Math.min(100, getUsagePercentage('artifacts'))}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!subscription.isPro && (
+                  <div className="pt-4 border-t">
+                    <button
+                      onClick={openCheckout}
+                      className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 font-medium flex items-center justify-center gap-2"
+                    >
+                      <Zap className="w-4 h-4" />
+                      Upgrade for Unlimited Access
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Billing Management (Pro only) */}
+              {subscription.isPro && (
+                <div className="rounded-lg border bg-card p-6 space-y-4">
+                  <div>
+                    <h2 className="text-xl font-semibold mb-1">Billing</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Manage your subscription and payment method
+                    </p>
+                  </div>
+                  <button
+                    onClick={openBillingPortal}
+                    className="px-4 py-2 border rounded-md hover:bg-accent font-medium"
+                  >
+                    Manage Billing
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <div className="rounded-lg border bg-card p-6 space-y-6">

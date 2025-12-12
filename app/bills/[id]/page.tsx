@@ -38,8 +38,10 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth/auth-context"
+import { useSubscription } from "@/lib/subscription/subscription-context"
 import { getBillById } from "@/lib/api/backend"
 import { useTracking } from "@/lib/hooks/use-tracking"
+import { UpgradeModal, useUpgradeModal } from "@/components/upgrade-modal"
 
 interface BillData {
   id: string
@@ -147,6 +149,8 @@ export default function BillDetailPage() {
   const [showFullText, setShowFullText] = useState(false)
   const [trackingAction, setTrackingAction] = useState(false)
   const { accessToken, isLoading: authLoading } = useAuth()
+  const { checkLimit } = useSubscription()
+  const { isOpen: isUpgradeModalOpen, trigger: upgradeModalTrigger, showUpgradeModal, setIsOpen: setUpgradeModalOpen } = useUpgradeModal()
 
   // Tracking hook
   const {
@@ -162,6 +166,16 @@ export default function BillDetailPage() {
   // Handle track/untrack
   const handleTrackToggle = async () => {
     if (!bill || !accessToken) return
+
+    // If user is trying to track (not untrack), check limits first
+    if (!isTracked) {
+      const limitCheck = await checkLimit('track_bill')
+      if (!limitCheck.allowed) {
+        // User has hit their tracking limit - show upgrade modal
+        showUpgradeModal('tracked_bills_limit')
+        return
+      }
+    }
 
     setTrackingAction(true)
     try {
@@ -862,6 +876,13 @@ export default function BillDetailPage() {
           </Card>
         )}
       </div>
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        open={isUpgradeModalOpen}
+        onOpenChange={setUpgradeModalOpen}
+        trigger={upgradeModalTrigger}
+      />
     </div>
   )
 }

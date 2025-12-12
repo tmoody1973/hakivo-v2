@@ -8,6 +8,7 @@ import { PodcastWidget } from "@/components/widgets/podcast-widget"
 import { RepresentativesHorizontalWidget } from "@/components/widgets/representatives-horizontal-widget"
 import { LatestActionsWidget } from "@/components/widgets/latest-actions-widget"
 import { PersonalizedContentWidget } from "@/components/widgets/personalized-content-widget"
+import { UsageWidget } from "@/components/widgets/usage-widget"
 import { WelcomeBanner } from "@/components/welcome-banner"
 import { getUserPreferences } from '@/lib/api/backend';
 
@@ -89,7 +90,10 @@ export default function DashboardPage() {
         <div className="grid gap-6 md:grid-cols-2 items-start">
           <LatestActionsWidget userState={userState} token={accessToken} />
 
-          <PersonalizedContentWidget userInterests={userInterests} />
+          <div className="space-y-6">
+            <UsageWidget />
+            <PersonalizedContentWidget userInterests={userInterests} />
+          </div>
         </div>
       </div>
     </div>

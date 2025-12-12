@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { ConditionalNav } from "@/components/conditional-nav"
 import { ConditionalPlayer } from "@/components/conditional-player"
 import { AuthProvider } from "@/lib/auth/auth-context"
+import { SubscriptionProvider } from "@/lib/subscription/subscription-context"
 import { AudioPlayerProvider } from "@/lib/audio/audio-player-context"
 import { C1Provider } from "@/components/c1"
 import { FeaturebaseWidget } from "@/components/featurebase"
@@ -53,7 +54,8 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`} suppressHydrationWarning>
         <C1Provider>
           <AuthProvider>
-            <AudioPlayerProvider>
+            <SubscriptionProvider>
+              <AudioPlayerProvider>
               <div className="flex h-screen flex-col">
                 <ConditionalNav />
 
@@ -65,6 +67,7 @@ export default function RootLayout({
               </div>
               <FeaturebaseWidget />
             </AudioPlayerProvider>
+            </SubscriptionProvider>
           </AuthProvider>
         </C1Provider>
       </body>
