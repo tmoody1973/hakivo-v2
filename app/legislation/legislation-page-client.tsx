@@ -91,7 +91,8 @@ export const LegislationPageClient: FC<LegislationPageClientProps> = ({ initialB
   // Map API response to component format
   const mapApiBillToComponent = (apiBill: any): Bill => {
     // Format bill number (e.g., "hr" + "1397" -> "H.R. 1397")
-    const formatBillNumber = (type: string, number: number): string => {
+    const formatBillNumber = (type: string | undefined, number: number | undefined): string => {
+      if (!type || number === undefined) return 'Unknown Bill';
       const typeMap: Record<string, string> = {
         'hr': 'H.R.',
         's': 'S.',
@@ -106,7 +107,8 @@ export const LegislationPageClient: FC<LegislationPageClientProps> = ({ initialB
     };
 
     // Map party to single letter
-    const formatParty = (party: string): string => {
+    const formatParty = (party: string | undefined): string => {
+      if (!party) return 'U';
       if (party.toLowerCase().includes('democrat')) return 'D';
       if (party.toLowerCase().includes('republican')) return 'R';
       if (party.toLowerCase().includes('independent')) return 'I';
@@ -114,7 +116,7 @@ export const LegislationPageClient: FC<LegislationPageClientProps> = ({ initialB
     };
 
     // Infer status from latest action text (simplified)
-    const inferStatus = (actionText: string | null): string => {
+    const inferStatus = (actionText: string | null | undefined): string => {
       if (!actionText) return 'introduced';
       const text = actionText.toLowerCase();
       if (text.includes('became public law') || text.includes('signed into law')) return 'enacted';
@@ -124,22 +126,26 @@ export const LegislationPageClient: FC<LegislationPageClientProps> = ({ initialB
       return 'introduced';
     };
 
+    // API returns bill_type/bill_number, not type/number
+    const billType = apiBill.bill_type || apiBill.type;
+    const billNumber = apiBill.bill_number || apiBill.number;
+
     return {
       id: apiBill.id,
-      number: formatBillNumber(apiBill.type, apiBill.number),
-      title: apiBill.title,
+      number: formatBillNumber(billType, billNumber),
+      title: apiBill.title || 'Untitled Bill',
       sponsor: {
         name: apiBill.sponsor
-          ? `${apiBill.sponsor.firstName} ${apiBill.sponsor.lastName}`
+          ? `${apiBill.sponsor.firstName || ''} ${apiBill.sponsor.lastName || ''}`.trim() || 'Unknown Sponsor'
           : 'Unknown Sponsor',
-        party: apiBill.sponsor ? formatParty(apiBill.sponsor.party) : 'Unknown',
+        party: apiBill.sponsor ? formatParty(apiBill.sponsor.party) : 'U',
         state: apiBill.sponsor?.state || 'Unknown',
         photo: '' // No photo in API response, will use fallback
       },
-      status: inferStatus(apiBill.latestAction?.text),
+      status: inferStatus(apiBill.latestAction?.text || apiBill.latest_action_text),
       policyAreas: apiBill.policyArea ? [apiBill.policyArea] : [],
-      dateIntroduced: apiBill.introducedDate,
-      summary: apiBill.matchedChunk || apiBill.latestAction?.text || '',
+      dateIntroduced: apiBill.introducedDate || apiBill.introduced_date || '',
+      summary: apiBill.matchedChunk || apiBill.latestAction?.text || apiBill.latest_action_text || '',
       cosponsors: 0 // Not in semantic search response
     };
   };

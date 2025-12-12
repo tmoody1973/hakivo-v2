@@ -202,20 +202,41 @@ app.post('/bills/semantic-search', async (c) => {
     const db = c.env.APP_DB;
 
     try {
-      // Use SmartBucket semantic search for natural language queries
-      const searchResults = await legislationSearch.search({
+      // Use SmartBucket semantic search with timeout to prevent 504s
+      const searchPromise = legislationSearch.search({
         input: query,
         requestId: `semantic-search-${Date.now()}`
       });
+
+      // Timeout after 8 seconds to allow fallback
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('SmartBucket search timeout')), 8000)
+      );
+
+      const searchResults = await Promise.race([searchPromise, timeoutPromise]) as any;
+
+      // Debug: Log raw SmartBucket response
+      console.log('[SemanticSearch] SmartBucket returned:', JSON.stringify({
+        resultCount: searchResults.results?.length || 0,
+        pagination: searchResults.pagination,
+        sampleResults: searchResults.results?.slice(0, 3).map((r: any) => ({
+          source: r.source,
+          score: r.score,
+          text: r.text?.substring(0, 100)
+        }))
+      }));
 
       // Extract bill IDs from search results to get full metadata from DB
       const billIds: string[] = [];
       for (const result of searchResults.results.slice(0, searchLimit)) {
         const metadata = result.source ? extractBillIdFromKey(result.source) : null;
+        console.log(`[SemanticSearch] Source: ${result.source} -> BillID: ${metadata}`);
         if (metadata) {
           billIds.push(metadata);
         }
       }
+
+      console.log('[SemanticSearch] Extracted bill IDs:', billIds);
 
       if (billIds.length === 0) {
         return c.json({
@@ -223,14 +244,18 @@ app.post('/bills/semantic-search', async (c) => {
           query,
           bills: [],
           count: 0,
-          searchType: 'semantic'
+          searchType: 'semantic',
+          debug: {
+            smartBucketResultCount: searchResults.results?.length || 0,
+            sampleSources: searchResults.results?.slice(0, 3).map((r: any) => r.source)
+          }
         });
       }
 
       // Fetch full bill metadata from database
       const placeholders = billIds.map(() => '?').join(',');
       const billsResult = await db.prepare(`
-        SELECT id, congress, bill_type, bill_number, title, status,
+        SELECT id, congress, bill_type, bill_number, title,
                introduced_date, sponsor_bioguide_id, origin_chamber, latest_action_date
         FROM bills
         WHERE id IN (${placeholders})
@@ -238,7 +263,7 @@ app.post('/bills/semantic-search', async (c) => {
 
       // Merge search scores with bill data
       const billsWithScores = billsResult.results?.map(bill => {
-        const searchResult = searchResults.results.find(r =>
+        const searchResult = searchResults.results.find((r: any) =>
           r.source && extractBillIdFromKey(r.source) === bill.id
         );
         return {
@@ -264,7 +289,7 @@ app.post('/bills/semantic-search', async (c) => {
       console.warn('SmartBucket search failed, using fallback:', smartBucketError);
       const sqlQuery = `
         SELECT DISTINCT b.id, b.congress, b.bill_type, b.bill_number, b.title,
-               b.status, b.introduced_date, b.sponsor_bioguide_id
+               b.introduced_date, b.sponsor_bioguide_id
         FROM bills b
         WHERE b.title LIKE ?
         LIMIT ?
@@ -302,6 +327,240 @@ function extractBillIdFromKey(key: string): string | null {
   }
   return null;
 }
+
+/**
+ * Classify query type for hybrid search routing
+ * Returns: 'semantic' | 'structural' | 'hybrid'
+ */
+function classifyQueryType(query: string): 'semantic' | 'structural' | 'hybrid' {
+  const lowerQuery = query.toLowerCase();
+
+  // Structural indicators: dates, numbers, specific filters
+  const structuralPatterns = [
+    /\b(from|in|during|since|before|after)\s+(20\d{2}|19\d{2})/i,  // Year references
+    /\b(119th|118th|117th|\d+th)\s*(congress)?/i,  // Congress references
+    /\b(congress|session)\s*\d+/i,
+    /\b(hr|h\.r\.|s\.|sr|hjres|sjres)\s*\d+/i,  // Bill type + number
+    /\bsponsored\s+by\b/i,  // Sponsor filter
+    /\bfrom\s+(house|senate)/i,  // Chamber filter
+    /\b(passed|enacted|vetoed|introduced)\b/i,  // Status filter
+    /\b(republican|democrat|gop|dem)\s+(bills?|sponsor)/i,  // Party filter
+  ];
+
+  // Semantic indicators: topics, concepts, abstract ideas
+  const semanticPatterns = [
+    /\b(about|regarding|related to|concerning|on the topic of)\b/i,
+    /\b(climate|healthcare|education|immigration|economy|tax|environment|defense)\b/i,
+    /\b(reform|policy|regulation|protection|rights|benefits)\b/i,
+    /\bwhat\s+(bills?|legislation)\b/i,
+    /\bfind\s+.+\s+(bills?|legislation)\b/i,
+  ];
+
+  const hasStructural = structuralPatterns.some(p => p.test(lowerQuery));
+  const hasSemantic = semanticPatterns.some(p => p.test(lowerQuery));
+
+  if (hasStructural && hasSemantic) return 'hybrid';
+  if (hasStructural) return 'structural';
+  return 'semantic';
+}
+
+/**
+ * POST /bills/hybrid-search
+ * Intelligent hybrid search combining SmartBucket (semantic) + SmartSQL (structural)
+ *
+ * Body: {
+ *   query: string,           // Natural language query
+ *   limit: number,           // Max results (default: 10, max: 50)
+ *   forceMode: 'auto' | 'semantic' | 'structural' | 'hybrid'  // Optional override
+ * }
+ *
+ * Automatically routes queries:
+ * - Semantic: "bills about climate change" → SmartBucket vector search
+ * - Structural: "bills from 2024" → SmartSQL AI translation
+ * - Hybrid: "healthcare bills from 2024" → Both engines, merged results
+ */
+app.post('/bills/hybrid-search', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { query, limit = 10, forceMode = 'auto' } = body;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return c.json({ error: 'Query is required' }, 400);
+    }
+
+    const searchLimit = Math.min(limit, 50);
+    const legislationSearch = c.env.LEGISLATION_SEARCH;
+    const smartSql = c.env.CONGRESSIONAL_DB;
+    const db = c.env.APP_DB;
+
+    // Determine query type
+    const queryType = forceMode === 'auto' ? classifyQueryType(query) : forceMode;
+    console.log(`[HybridSearch] Query: "${query}" | Type: ${queryType}`);
+
+    let semanticResults: any[] = [];
+    let structuralResults: any[] = [];
+    let semanticError: Error | null = null;
+    let structuralError: Error | null = null;
+
+    // Execute search based on query type
+    if (queryType === 'semantic' || queryType === 'hybrid') {
+      try {
+        // SmartBucket semantic search with timeout
+        const searchPromise = legislationSearch.search({
+          input: query,
+          requestId: `hybrid-semantic-${Date.now()}`
+        });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('SmartBucket timeout')), 8000)
+        );
+        const searchResults = await Promise.race([searchPromise, timeoutPromise]) as any;
+
+        // Extract bill IDs and fetch metadata
+        const billIds: string[] = [];
+        for (const result of searchResults.results.slice(0, searchLimit)) {
+          const billId = result.source ? extractBillIdFromKey(result.source) : null;
+          if (billId) billIds.push(billId);
+        }
+
+        if (billIds.length > 0) {
+          const placeholders = billIds.map(() => '?').join(',');
+          const billsResult = await db.prepare(`
+            SELECT id, congress, bill_type, bill_number, title,
+                   introduced_date, sponsor_bioguide_id, origin_chamber, latest_action_date
+            FROM bills WHERE id IN (${placeholders})
+          `).bind(...billIds).all();
+
+          semanticResults = (billsResult.results || []).map((bill: any) => {
+            const searchResult = searchResults.results.find((r: any) =>
+              r.source && extractBillIdFromKey(r.source) === bill.id
+            );
+            return { ...bill, relevanceScore: searchResult?.score || 0, source: 'semantic' };
+          });
+        }
+      } catch (err) {
+        semanticError = err instanceof Error ? err : new Error('Semantic search failed');
+        console.warn('[HybridSearch] Semantic failed:', semanticError.message);
+      }
+    }
+
+    if (queryType === 'structural' || queryType === 'hybrid') {
+      try {
+        // Update SmartSQL metadata
+        await smartSql.updateMetadata([
+          {
+            tableName: 'bills',
+            columns: [
+              { columnName: 'id', dataType: 'TEXT', isPrimaryKey: true, nullable: false, sampleData: 'hr-119-1234' },
+              { columnName: 'congress', dataType: 'INTEGER', sampleData: '119', nullable: false, isPrimaryKey: false },
+              { columnName: 'bill_type', dataType: 'TEXT', sampleData: 'hr', nullable: false, isPrimaryKey: false },
+              { columnName: 'bill_number', dataType: 'INTEGER', sampleData: '1234', nullable: false, isPrimaryKey: false },
+              { columnName: 'title', dataType: 'TEXT', sampleData: 'To provide healthcare coverage', nullable: true, isPrimaryKey: false },
+              { columnName: 'origin_chamber', dataType: 'TEXT', sampleData: 'House', nullable: true, isPrimaryKey: false },
+              { columnName: 'introduced_date', dataType: 'TEXT', sampleData: '2025-01-15', nullable: true, isPrimaryKey: false },
+              { columnName: 'latest_action_date', dataType: 'TEXT', sampleData: '2025-02-01', nullable: true, isPrimaryKey: false },
+              { columnName: 'latest_action_text', dataType: 'TEXT', sampleData: 'Referred to committee', nullable: true, isPrimaryKey: false },
+              { columnName: 'sponsor_bioguide_id', dataType: 'TEXT', sampleData: 'P000197', nullable: true, isPrimaryKey: false },
+              { columnName: 'policy_area', dataType: 'TEXT', sampleData: 'Health', nullable: true, isPrimaryKey: false },
+              { columnName: 'status', dataType: 'TEXT', sampleData: 'Introduced', nullable: true, isPrimaryKey: false },
+            ]
+          }
+        ], 'replace');
+
+        // SmartSQL translation
+        const translationResult = await smartSql.executeQuery({
+          textQuery: `${query}. Return at most ${searchLimit} results.`,
+          format: 'json'
+        });
+
+        let generatedSql = translationResult.queryExecuted;
+        if (generatedSql) {
+          // Fix column name mismatches
+          generatedSql = generatedSql
+            .replace(/\bcongress_id\b/gi, 'congress')
+            .replace(/\bbill_id\b/gi, 'id');
+
+          const dbResult = await db.prepare(generatedSql).all();
+          structuralResults = (dbResult.results || []).map((bill: any) => ({
+            ...bill,
+            source: 'structural',
+            generatedSql
+          }));
+        }
+      } catch (err) {
+        structuralError = err instanceof Error ? err : new Error('Structural search failed');
+        console.warn('[HybridSearch] Structural failed:', structuralError.message);
+      }
+    }
+
+    // Merge and deduplicate results
+    const seenIds = new Set<string>();
+    const mergedResults: any[] = [];
+
+    // Prioritize semantic results for hybrid (they have relevance scores)
+    for (const bill of semanticResults) {
+      if (!seenIds.has(bill.id)) {
+        seenIds.add(bill.id);
+        mergedResults.push(bill);
+      }
+    }
+
+    // Add structural results not already seen
+    for (const bill of structuralResults) {
+      if (!seenIds.has(bill.id)) {
+        seenIds.add(bill.id);
+        mergedResults.push({ ...bill, relevanceScore: 0.5 }); // Default score for structural
+      }
+    }
+
+    // Sort by relevance score
+    mergedResults.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+
+    // Fallback to SQL LIKE if both failed
+    if (mergedResults.length === 0 && semanticError && structuralError) {
+      console.warn('[HybridSearch] Both engines failed, using SQL LIKE fallback');
+      const searchPattern = `%${query}%`;
+      const fallbackResults = await db.prepare(`
+        SELECT id, congress, bill_type, bill_number, title,
+               introduced_date, sponsor_bioguide_id, origin_chamber
+        FROM bills WHERE title LIKE ? LIMIT ?
+      `).bind(searchPattern, searchLimit).all();
+
+      return c.json({
+        success: true,
+        query,
+        queryType: 'fallback',
+        bills: fallbackResults.results || [],
+        count: fallbackResults.results?.length || 0,
+        sources: { semantic: false, structural: false, fallback: true }
+      });
+    }
+
+    return c.json({
+      success: true,
+      query,
+      queryType,
+      bills: mergedResults.slice(0, searchLimit),
+      count: mergedResults.length,
+      sources: {
+        semantic: semanticResults.length > 0,
+        structural: structuralResults.length > 0,
+        semanticCount: semanticResults.length,
+        structuralCount: structuralResults.length,
+        errors: {
+          semantic: semanticError?.message || null,
+          structural: structuralError?.message || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('[HybridSearch] Error:', error);
+    return c.json({
+      error: 'Hybrid search failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
 
 /**
  * POST /bills/smart-query
