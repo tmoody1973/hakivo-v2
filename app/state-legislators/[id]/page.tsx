@@ -4,13 +4,11 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { getStateLegislatorById, getStateLegislatorVotingRecord } from '@/lib/api/backend'
-import { VotingRecordTab } from '@/components/representatives'
+import { getStateLegislatorById } from '@/lib/api/backend'
 import {
   Loader2, MapPin, Globe, ExternalLink,
-  BarChart3, CheckCircle2, XCircle, Building2
+  CheckCircle2, Building2
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -23,8 +21,6 @@ export default function StateLegislatorDetailPage({
   const [member, setMember] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [votingStats, setVotingStats] = useState<any>(null)
-  const [votingStatsLoaded, setVotingStatsLoaded] = useState(false)
 
   useEffect(() => {
     params.then(p => setLegislatorId(p.id))
@@ -54,28 +50,6 @@ export default function StateLegislatorDetailPage({
 
     fetchMember()
   }, [legislatorId])
-
-  // Fetch voting stats when member loads
-  const fetchVotingStats = async () => {
-    if (!legislatorId || votingStatsLoaded) return
-
-    try {
-      const response = await getStateLegislatorVotingRecord(legislatorId, { limit: 20 })
-      if (response.success && response.data?.stats) {
-        setVotingStats(response.data.stats)
-      }
-    } catch (err) {
-      console.error('Failed to fetch voting stats:', err)
-    } finally {
-      setVotingStatsLoaded(true)
-    }
-  }
-
-  useEffect(() => {
-    if (member && !votingStatsLoaded) {
-      fetchVotingStats()
-    }
-  }, [member, votingStatsLoaded])
 
   if (loading) {
     return (
@@ -155,7 +129,7 @@ export default function StateLegislatorDetailPage({
       </Card>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -177,70 +151,6 @@ export default function StateLegislatorDetailPage({
           </CardHeader>
           <CardContent>
             <div className="text-2xl md:text-3xl font-bold">{member.district || '—'}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              Votes Cast
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {votingStats ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold">{votingStats.totalVotes || '—'}</div>
-                {votingStats.yeaVotes !== undefined && (
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span className="text-green-600 dark:text-green-400">{votingStats.yeaVotes} Yea</span>
-                    <span>/</span>
-                    <span className="text-red-600 dark:text-red-400">{votingStats.nayVotes} Nay</span>
-                  </div>
-                )}
-              </>
-            ) : votingStatsLoaded ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-                <p className="text-xs text-muted-foreground mt-1">No data available</p>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">...</div>
-                <p className="text-xs text-muted-foreground mt-1">Loading</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <XCircle className="h-4 w-4" />
-              Absent
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {votingStats ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold">{votingStats.absentVotes || votingStats.notVotingCount || 0}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {votingStats.totalVotes > 0
-                    ? `${Math.round(((votingStats.totalVotes - (votingStats.absentVotes || votingStats.notVotingCount || 0)) / votingStats.totalVotes) * 100)}% attendance`
-                    : 'No attendance data'}
-                </p>
-              </>
-            ) : votingStatsLoaded ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-                <p className="text-xs text-muted-foreground mt-1">No data available</p>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">...</div>
-                <p className="text-xs text-muted-foreground mt-1">Loading</p>
-              </>
-            )}
           </CardContent>
         </Card>
       </div>
@@ -281,80 +191,58 @@ export default function StateLegislatorDetailPage({
         </CardContent>
       </Card>
 
-      {/* Tabs for Detailed Information */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="voting">
-            <BarChart3 className="h-4 w-4 mr-1 hidden sm:inline" />
-            <span className="hidden sm:inline">Voting Record</span>
-            <span className="sm:hidden">Votes</span>
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>About {member.fullName}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <span className="text-sm font-semibold text-muted-foreground">Full Name</span>
-                  <p>{member.fullName}</p>
-                </div>
-                <div>
-                  <span className="text-sm font-semibold text-muted-foreground">Party</span>
-                  <p>{member.party}</p>
-                </div>
-                <div>
-                  <span className="text-sm font-semibold text-muted-foreground">State</span>
-                  <p>{member.state}</p>
-                </div>
-                <div>
-                  <span className="text-sm font-semibold text-muted-foreground">Chamber</span>
-                  <p>{chamberName}</p>
-                </div>
-                {member.district && (
-                  <div>
-                    <span className="text-sm font-semibold text-muted-foreground">District</span>
-                    <p>{member.district}</p>
-                  </div>
-                )}
+      {/* About Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>About {member.fullName}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <span className="text-sm font-semibold text-muted-foreground">Full Name</span>
+              <p>{member.fullName}</p>
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-muted-foreground">Party</span>
+              <p>{member.party}</p>
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-muted-foreground">State</span>
+              <p>{member.state}</p>
+            </div>
+            <div>
+              <span className="text-sm font-semibold text-muted-foreground">Chamber</span>
+              <p>{chamberName}</p>
+            </div>
+            {member.district && (
+              <div>
+                <span className="text-sm font-semibold text-muted-foreground">District</span>
+                <p>{member.district}</p>
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>State Legislation</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                This legislator serves in the {member.state} {chamberName}.
-                View their voting record to see how they've voted on state bills.
-              </p>
-              <div className="mt-4">
-                <Button asChild variant="outline">
-                  <Link href={`/state-bills?state=${encodeURIComponent(member.state)}`}>
-                    Browse {member.state} State Bills
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Voting Record Tab */}
-        <TabsContent value="voting" className="space-y-4">
-          <VotingRecordTab
-            memberId={legislatorId}
-            memberChamber={member.chamber}
-            isStateLegislator={true}
-          />
-        </TabsContent>
-      </Tabs>
+      {/* State Legislation */}
+      <Card>
+        <CardHeader>
+          <CardTitle>State Legislation</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">
+            This legislator serves in the {member.state} {chamberName}.
+            Browse state bills to see legislation in their state.
+          </p>
+          <div className="mt-4">
+            <Button asChild variant="outline">
+              <Link href={`/state-bills?state=${encodeURIComponent(member.state)}`}>
+                Browse {member.state} State Bills
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
