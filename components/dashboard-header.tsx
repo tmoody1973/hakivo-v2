@@ -111,7 +111,7 @@ export function DashboardHeader() {
             <SheetContent side="left" className="w-72">
               <SheetHeader>
                 <SheetTitle className="flex items-center">
-                  <HakivoLogo height={28} className="text-primary" />
+                  <HakivoLogo height={28} className="text-primary" showBeta />
                 </SheetTitle>
               </SheetHeader>
               <nav className="flex flex-col gap-1 mt-6">
@@ -163,7 +163,7 @@ export function DashboardHeader() {
 
           {/* Logo */}
           <Link href="/dashboard" className="flex items-center">
-            <HakivoLogo height={28} className="text-primary" />
+            <HakivoLogo height={28} className="text-primary" showBeta />
           </Link>
         </div>
 

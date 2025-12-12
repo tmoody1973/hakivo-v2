@@ -25,7 +25,7 @@ export default function HomePage() {
         <div className="flex h-16 items-center justify-between px-4 md:px-6 lg:px-8 max-w-7xl mx-auto">
           {/* Logo */}
           <Link href="/" className="flex items-center shrink-0">
-            <HakivoLogo height={28} className="text-primary" />
+            <HakivoLogo height={28} className="text-primary" showBeta />
           </Link>
 
           {/* Desktop Navigation - Centered */}
@@ -625,7 +625,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8">
           <div className="flex flex-wrap justify-between items-center gap-6">
             <div>
-              <HakivoLogo height={24} className="text-foreground mb-1" />
+              <HakivoLogo height={24} className="text-foreground mb-1" showBeta />
               <div className="text-sm text-muted-foreground">Civic engagement for the podcast generation.</div>
             </div>
             <div className="flex gap-6">

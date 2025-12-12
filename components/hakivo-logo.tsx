@@ -4,6 +4,8 @@ interface HakivoLogoProps {
   className?: string
   /** Height in pixels - width auto-scales based on SVG aspect ratio (781:382 ≈ 2:1) */
   height?: number
+  /** Show beta badge next to the logo */
+  showBeta?: boolean
 }
 
 /**
@@ -14,12 +16,13 @@ interface HakivoLogoProps {
  *
  * Aspect ratio is approximately 2:1 (width:height)
  */
-export function HakivoLogo({ className, height = 32 }: HakivoLogoProps) {
+export function HakivoLogo({ className, height = 32, showBeta = false }: HakivoLogoProps) {
   // Calculate width based on SVG viewBox aspect ratio (781/382 ≈ 2.04)
   const width = Math.round(height * (781 / 382))
 
   return (
-    <svg
+    <span className="inline-flex items-center gap-1.5">
+      <svg
       width={width}
       height={height}
       viewBox="0 0 781 382"
@@ -61,5 +64,11 @@ export function HakivoLogo({ className, height = 32 }: HakivoLogoProps) {
         </g>
       </g>
     </svg>
+      {showBeta && (
+        <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-inset ring-primary/20">
+          BETA
+        </span>
+      )}
+    </span>
   )
 }

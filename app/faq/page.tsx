@@ -293,7 +293,7 @@ export default function FAQPage() {
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/90 backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between px-6 md:px-8 max-w-7xl mx-auto">
           <Link href="/" className="flex items-center">
-            <HakivoLogo height={32} className="text-primary" />
+            <HakivoLogo height={32} className="text-primary" showBeta />
           </Link>
           <nav className="flex items-center gap-3">
             <Link
@@ -440,7 +440,7 @@ export default function FAQPage() {
         <div className="max-w-7xl mx-auto px-6 md:px-8 py-8">
           <div className="flex flex-wrap justify-between items-center gap-6">
             <div>
-              <HakivoLogo height={24} className="text-foreground mb-1" />
+              <HakivoLogo height={24} className="text-foreground mb-1" showBeta />
               <div className="text-sm text-muted-foreground">Civic engagement for the podcast generation.</div>
             </div>
             <div className="flex gap-6">
