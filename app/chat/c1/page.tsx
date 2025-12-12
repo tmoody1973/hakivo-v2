@@ -1,8 +1,9 @@
 "use client";
 
-import { C1Chat } from "@thesysai/genui-sdk";
+import { C1Chat, ThemeProvider } from "@thesysai/genui-sdk";
 import "@crayonai/react-ui/styles/index.css";
 import { useEffect, useState } from "react";
+import { hakivoLightTheme, hakivoDarkTheme } from "@/lib/c1-theme";
 
 /**
  * C1 Chat Page - Uses Thesys C1 for generative UI with tool calling
@@ -24,18 +25,31 @@ export default function C1ChatPage() {
 
   if (!mounted) {
     return (
-      <div className="h-[calc(100vh-4rem)] w-full bg-zinc-950 flex items-center justify-center">
-        <div className="text-zinc-500">Loading...</div>
+      <div className="h-[calc(100vh-4rem)] w-full bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] w-full bg-zinc-950">
-      <C1Chat
-        apiUrl="/api/chat/c1"
-        agentName="Hakivo"
-      />
-    </div>
+    <>
+      <style>{`
+        /* Hide audio player on this page */
+        .persistent-audio-player {
+          display: none !important;
+        }
+      `}</style>
+      <ThemeProvider
+        theme={hakivoLightTheme}
+        darkTheme={hakivoDarkTheme}
+        mode="dark"
+      >
+        <C1Chat
+          apiUrl="/api/chat/c1"
+          agentName="Hakivo"
+          formFactor="full-page"
+        />
+      </ThemeProvider>
+    </>
   );
 }
