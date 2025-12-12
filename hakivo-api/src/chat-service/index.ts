@@ -940,13 +940,27 @@ app.put('/memory/profile', async (c) => {
  * Start a new working memory session (requires auth)
  */
 app.post('/memory/session/start', async (c) => {
-  // SmartMemory temporarily disabled - using KV cache
-  // TODO: Re-enable when SmartMemory initialization is fixed
-  return c.json({
-    success: false,
-    error: 'Working memory sessions temporarily disabled',
-    message: 'SmartMemory is currently unavailable'
-  }, 503);
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const civicMemory = c.env.CIVIC_MEMORY;
+    const { sessionId, workingMemory } = await civicMemory.startWorkingMemorySession();
+
+    console.log(`✓ SmartMemory session started: ${sessionId} for user: ${auth.userId}`);
+
+    return c.json({
+      success: true,
+      sessionId,
+      message: 'Working memory session started'
+    }, 201);
+  } catch (error) {
+    console.error('Start memory session error:', error);
+    return c.json({
+      error: 'Failed to start memory session',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 /**
@@ -954,12 +968,29 @@ app.post('/memory/session/start', async (c) => {
  * Get working memory context for a session (requires auth)
  */
 app.get('/memory/session/:sessionId', async (c) => {
-  // SmartMemory temporarily disabled
-  return c.json({
-    success: false,
-    error: 'Working memory sessions temporarily disabled',
-    message: 'SmartMemory is currently unavailable'
-  }, 503);
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const sessionId = c.req.param('sessionId');
+    const nMostRecent = parseInt(c.req.query('limit') || '10');
+
+    const civicMemory = c.env.CIVIC_MEMORY;
+    const context = await getConversationContext(civicMemory, sessionId, nMostRecent);
+
+    return c.json({
+      success: true,
+      sessionId,
+      context,
+      count: context.length
+    });
+  } catch (error) {
+    console.error('Get memory session error:', error);
+    return c.json({
+      error: 'Failed to get memory session',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 /**
@@ -967,12 +998,34 @@ app.get('/memory/session/:sessionId', async (c) => {
  * Add a message to working memory (requires auth)
  */
 app.post('/memory/session/:sessionId/message', async (c) => {
-  // SmartMemory temporarily disabled
-  return c.json({
-    success: false,
-    error: 'Working memory sessions temporarily disabled',
-    message: 'SmartMemory is currently unavailable'
-  }, 503);
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const sessionId = c.req.param('sessionId');
+    const body = await c.req.json();
+    const validation = WorkingMemoryMessageSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { content, agent, key } = validation.data;
+    const civicMemory = c.env.CIVIC_MEMORY;
+
+    await storeInWorkingMemory(civicMemory, sessionId, content, agent || 'congressional-assistant');
+
+    return c.json({
+      success: true,
+      message: 'Message stored in working memory'
+    });
+  } catch (error) {
+    console.error('Store memory message error:', error);
+    return c.json({
+      error: 'Failed to store message',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 /**
@@ -980,38 +1033,112 @@ app.post('/memory/session/:sessionId/message', async (c) => {
  * End a working memory session and optionally flush to episodic memory (requires auth)
  */
 app.post('/memory/session/:sessionId/end', async (c) => {
-  // SmartMemory temporarily disabled
-  return c.json({
-    success: false,
-    error: 'Working memory sessions temporarily disabled',
-    message: 'SmartMemory is currently unavailable'
-  }, 503);
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const sessionId = c.req.param('sessionId');
+    const body = await c.req.json().catch(() => ({}));
+    const flush = body.flush === true;
+
+    const civicMemory = c.env.CIVIC_MEMORY;
+    const workingMemory = await civicMemory.getWorkingMemorySession(sessionId);
+    await workingMemory.endSession(flush);
+
+    console.log(`✓ SmartMemory session ended: ${sessionId}, flush: ${flush}`);
+
+    return c.json({
+      success: true,
+      message: flush ? 'Session ended and flushed to episodic memory' : 'Session ended'
+    });
+  } catch (error) {
+    console.error('End memory session error:', error);
+    return c.json({
+      error: 'Failed to end memory session',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 /**
  * POST /memory/episodic/search
- * Search episodic memory for past sessions (requires auth)
+ * Search episodic memory for past sessions and briefs (requires auth)
+ * This enables the assistant to reference past briefs and conversation history
  */
 app.post('/memory/episodic/search', async (c) => {
-  // SmartMemory temporarily disabled
-  return c.json({
-    success: false,
-    error: 'Episodic memory search temporarily disabled',
-    message: 'SmartMemory is currently unavailable'
-  }, 503);
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const body = await c.req.json();
+    const validation = EpisodicSearchSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { terms, nMostRecent } = validation.data;
+    const civicMemory = c.env.CIVIC_MEMORY;
+
+    // Search episodic memory for matching entries (past sessions and briefs)
+    const response = await civicMemory.searchEpisodicMemory(terms, {
+      nMostRecent: nMostRecent || 10
+    });
+
+    return c.json({
+      success: true,
+      results: response.results || [],
+      count: response.results?.length || 0,
+      pagination: response.pagination
+    });
+  } catch (error) {
+    console.error('Search episodic memory error:', error);
+    return c.json({
+      error: 'Failed to search episodic memory',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 /**
  * GET /memory/semantic/search
- * Search semantic memory for knowledge (requires auth)
+ * Search semantic memory for structured knowledge (requires auth)
  */
 app.get('/memory/semantic/search', async (c) => {
-  // SmartMemory temporarily disabled
-  return c.json({
-    success: false,
-    error: 'Semantic memory search temporarily disabled',
-    message: 'SmartMemory is currently unavailable'
-  }, 503);
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const query = c.req.query('q');
+    if (!query) {
+      return c.json({ error: 'Search query required (use ?q=...)' }, 400);
+    }
+
+    const civicMemory = c.env.CIVIC_MEMORY;
+
+    // Search semantic memory for structured knowledge documents
+    const response = await civicMemory.searchSemanticMemory(query);
+
+    if (!response.success) {
+      return c.json({
+        success: false,
+        error: response.error || 'Search failed'
+      }, 500);
+    }
+
+    const results = response.documentSearchResponse?.results || [];
+    return c.json({
+      success: true,
+      results,
+      count: results.length
+    });
+  } catch (error) {
+    console.error('Search semantic memory error:', error);
+    return c.json({
+      error: 'Failed to search semantic memory',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
 });
 
 export default class extends Service<Env> {

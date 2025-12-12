@@ -388,6 +388,47 @@ export default class extends Each<Body, Env> {
       console.warn(`⚠️ [BRIEF-GEN] Failed to trigger audio processor immediately:`, audioError);
     }
 
+    // ==================== STAGE 9: SAVE BRIEF TO SMARTMEMORY ====================
+    // Save brief episode to SmartMemory for AI assistant context
+    // This enables the congressional assistant to reference past briefs and learn user interests
+    console.log(`[STAGE-9] Saving brief episode to SmartMemory...`);
+    try {
+      const civicMemory = this.env.CIVIC_MEMORY;
+
+      // Start a working memory session for this brief episode
+      const { sessionId, workingMemory } = await civicMemory.startWorkingMemorySession();
+
+      // Create a structured episodic memory entry with brief details
+      const billTitles = billsWithActions.slice(0, 5).map((b: any) => b.title || 'Untitled').join('; ');
+      const newsSummary = newsArticles.slice(0, 3).map((n: any) => n.title || '').filter(Boolean).join('; ');
+
+      // Format the episodic content - this becomes searchable history
+      const episodeContent = [
+        `Brief: ${type} brief for ${userName} (${userState || 'US'})`,
+        `Topic: ${headline}`,
+        `Policy Interests: ${policyInterests.join(', ')}`,
+        `Featured Bills: ${billTitles}`,
+        newsArticles.length > 0 ? `News: ${newsSummary}` : null,
+        stateBills && stateBills.length > 0 ? `State Bills: ${stateBills.length} from ${userState}` : null
+      ].filter(Boolean).join('\n');
+
+      // Add the brief episode to working memory
+      await workingMemory.putMemory({
+        content: episodeContent,
+        key: `brief:${briefId}`,
+        agent: 'brief-generator',
+        timeline: `user:${userId}`
+      });
+
+      // End session and flush to episodic memory for permanent storage
+      await workingMemory.endSession(true);
+
+      console.log(`✅ [STAGE-9] Brief episode saved to SmartMemory (session: ${sessionId})`);
+    } catch (memoryError) {
+      // Non-fatal - brief generation still succeeds even if memory save fails
+      console.warn(`⚠️ [STAGE-9] SmartMemory save failed (non-fatal):`, memoryError);
+    }
+
     // Brief generation complete
     console.log(`✅ [BRIEF-GEN] Script saved with status='script_ready'. Audio processing initiated.`);
     console.log(`✅ [BRIEF-GEN] Total time: ${Date.now() - startTime}ms`);

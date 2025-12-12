@@ -349,6 +349,14 @@ application "hakivo-prod" {
   // Indexes bill metadata + full text from SQL bills table
   smartbucket "legislation-search" {}
 
-  // KV cache for agent memory (downgraded from SmartMemory due to initialization issues)
+  // SmartMemory for multi-layered AI memory (congressional assistant + briefs)
+  // Enables:
+  // - Working Memory: Active session context (current conversation, playback state)
+  // - Episodic Memory: Past session summaries, brief episodes (searchable history)
+  // - Semantic Memory: User civic knowledge profiles, preferences
+  // - Procedural Memory: System prompts, legislative expertise templates
+  smartmemory "civic_memory" {}
+
+  // KV cache for agent memory (legacy fallback - keep for backwards compatibility)
   kv_cache "congressional_memory" {}
 }

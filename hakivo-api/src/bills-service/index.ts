@@ -230,7 +230,7 @@ app.post('/bills/semantic-search', async (c) => {
       // Fetch full bill metadata from database
       const placeholders = billIds.map(() => '?').join(',');
       const billsResult = await db.prepare(`
-        SELECT id, congress, bill_type, bill_number, title, short_title, status,
+        SELECT id, congress, bill_type, bill_number, title, status,
                introduced_date, sponsor_bioguide_id, origin_chamber, latest_action_date
         FROM bills
         WHERE id IN (${placeholders})
@@ -264,13 +264,13 @@ app.post('/bills/semantic-search', async (c) => {
       console.warn('SmartBucket search failed, using fallback:', smartBucketError);
       const sqlQuery = `
         SELECT DISTINCT b.id, b.congress, b.bill_type, b.bill_number, b.title,
-               b.short_title, b.status, b.introduced_date, b.sponsor_bioguide_id
+               b.status, b.introduced_date, b.sponsor_bioguide_id
         FROM bills b
-        WHERE b.title LIKE ? OR b.short_title LIKE ?
+        WHERE b.title LIKE ?
         LIMIT ?
       `;
       const searchPattern = `%${query}%`;
-      const fallbackResults = await db.prepare(sqlQuery).bind(searchPattern, searchPattern, searchLimit).all();
+      const fallbackResults = await db.prepare(sqlQuery).bind(searchPattern, searchLimit).all();
 
       return c.json({
         success: true,
