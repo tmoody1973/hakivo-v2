@@ -1,33 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-import { transformStream } from "@crayonai/stream";
-import { defaultTools } from "@/lib/c1/tools";
-import { HAKIVO_SYSTEM_PROMPT } from "@/lib/c1/system-prompt";
-import { buildSystemPromptWithContext, UserContext } from "@/lib/c1/user-context";
+import { c1CongressionalAssistant } from "@/mastra";
+import { UserContext } from "@/lib/c1/user-context";
+import type { CoreMessage } from "ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120; // Increased timeout for tool execution
 
 /**
- * C1 Chat API Route - OpenAI SDK with Tool Calling
+ * C1 Chat API Route - Mastra Agent with Thesys C1 Generative UI
  *
- * Uses OpenAI SDK with runTools for C1 generative UI with Hakivo tools.
- * Based on thesys template-c1-next pattern.
+ * Uses c1CongressionalAssistant Mastra agent with 30+ tools.
+ * Tools include SmartSQL, SmartBucket, SmartMemory, Perplexity, OpenStates, C1 Artifacts.
  *
  * Features:
- * - Tool calling for news, bills, members, and images
- * - Persists messages to backend database when authenticated
- * - Falls back to in-memory storage for anonymous users
- * - User-isolated chat history
- * - System prompt guides tone, tool usage, and component selection
+ * - Full tool orchestration via Mastra
+ * - Proper streaming with timeout handling
+ * - User context personalization
+ * - Message persistence
  */
 
-// Uses NEXT_PUBLIC_CHAT_API_URL from .env.local
+// Backend service URLs
 const CHAT_SERVICE_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
   "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
-// Uses NEXT_PUBLIC_DASHBOARD_API_URL from .env.local
 const DASHBOARD_SERVICE_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
   "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
@@ -41,47 +37,29 @@ interface ChatRequest {
   prompt: DBMessage;
   threadId: string;
   responseId: string;
-  useTools?: boolean; // Option to enable/disable tools
-  userContext?: UserContext; // User profile, preferences, representatives
+  useTools?: boolean;
+  userContext?: UserContext;
 }
-
-// System prompt is now imported from lib/c1/system-prompt.ts
 
 // In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
 
-function getMessageStore(threadId: string, userContext?: UserContext) {
+function getMessageStore(threadId: string) {
   if (!messageStores.has(threadId)) {
-    // Initialize with empty array
     messageStores.set(threadId, []);
   }
-
-  // Build personalized system prompt with user context
-  const systemPrompt = buildSystemPromptWithContext(HAKIVO_SYSTEM_PROMPT, userContext || null);
 
   return {
     addMessage: (msg: DBMessage) => {
       const store = messageStores.get(threadId)!;
       store.push(msg);
     },
-    getOpenAICompatibleMessageList: (includeSystemPrompt: boolean = true): OpenAI.Chat.ChatCompletionMessageParam[] => {
-      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-
-      // Add personalized system prompt if requested
-      if (includeSystemPrompt) {
-        messages.push({
-          role: "system",
-          content: systemPrompt,
-        });
-      }
-
-      // Add conversation history
-      messages.push(...messageStores.get(threadId)!.map(m => ({
-        role: m.role as "user" | "assistant" | "system",
+    getMessages: () => messageStores.get(threadId)!,
+    getMastraMessages: (): CoreMessage[] => {
+      return messageStores.get(threadId)!.map(m => ({
+        role: m.role,
         content: m.content,
-      })));
-
-      return messages;
+      })) as CoreMessage[];
     }
   };
 }
@@ -116,7 +94,6 @@ async function persistMessage(
     }
   } catch (error) {
     console.warn("[C1 API] Error persisting message:", error);
-    // Non-blocking - continue even if persistence fails
   }
 }
 
@@ -139,7 +116,6 @@ async function loadMessagesFromBackend(
 
     if (!response.ok) {
       if (response.status === 404) {
-        // Thread doesn't exist in backend yet - that's ok
         return null;
       }
       console.warn("[C1 API] Failed to load messages:", response.status);
@@ -159,12 +135,40 @@ async function loadMessagesFromBackend(
 }
 
 /**
+ * Fetch user interests from SmartMemory profile
+ */
+async function fetchUserInterests(accessToken: string): Promise<string[]> {
+  try {
+    const response = await fetch(
+      `${CHAT_SERVICE_URL}/memory/profile`,
+      {
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.warn("[C1 API] Failed to fetch user interests:", response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    if (data.success && data.profile && data.profile.interests) {
+      return data.profile.interests;
+    }
+    return [];
+  } catch (error) {
+    console.warn("[C1 API] Error fetching user interests:", error);
+    return [];
+  }
+}
+
+/**
  * Fetch user context (profile, preferences, representatives) from backend
- * This is used to personalize the system prompt for each user
  */
 async function fetchUserContext(accessToken: string): Promise<UserContext | null> {
   try {
-    // Fetch representatives (which includes user's state/district info)
     const repsResponse = await fetch(
       `${DASHBOARD_SERVICE_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`,
       {
@@ -181,11 +185,10 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
 
     const repsData = await repsResponse.json();
 
-    // Build user context from representatives response
     const userContext: UserContext = {
       profile: {
-        id: "", // Will be extracted from token if needed
-        name: "", // Not returned from this endpoint
+        id: "",
+        name: "",
         email: "",
         location: {
           state: repsData.state || undefined,
@@ -195,7 +198,6 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
       representatives: [],
     };
 
-    // Map senators
     if (repsData.senators && Array.isArray(repsData.senators)) {
       for (const senator of repsData.senators) {
         userContext.representatives!.push({
@@ -211,7 +213,6 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
       }
     }
 
-    // Map house representative
     if (repsData.representative) {
       const rep = repsData.representative;
       userContext.representatives!.push({
@@ -250,16 +251,17 @@ export async function POST(req: NextRequest) {
       ? authHeader.substring(7)
       : null;
 
-    const client = new OpenAI({
-      baseURL: "https://api.thesys.dev/v1/embed/",
-      apiKey: process.env.THESYS_API_KEY,
-    });
-
-    // Fetch user context server-side when authenticated
-    // This ensures the assistant knows the user's representatives, location, etc.
+    // Fetch user context and interests server-side when authenticated
     let userContext: UserContext | null = clientUserContext || null;
-    if (accessToken && !userContext) {
-      userContext = await fetchUserContext(accessToken);
+    let userInterests: string[] = [];
+    if (accessToken) {
+      // Fetch in parallel for performance
+      const [context, interests] = await Promise.all([
+        userContext ? Promise.resolve(userContext) : fetchUserContext(accessToken),
+        fetchUserInterests(accessToken),
+      ]);
+      userContext = context;
+      userInterests = interests;
     }
 
     // DEV ONLY: Use mock data for testing when not authenticated
@@ -306,46 +308,98 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // Get or create message store with user context for personalized system prompt
-    const messageStore = getMessageStore(threadId, userContext || undefined);
+    // Get or create message store
+    const messageStore = getMessageStore(threadId);
 
-    // If authenticated, try to load history from backend and persist new message
+    // If authenticated, try to load history from backend
     if (accessToken) {
-      // Ensure thread exists and load previous messages if this is a new session
       const backendMessages = await loadMessagesFromBackend(threadId, accessToken);
       if (backendMessages && backendMessages.length > 0) {
-        // Replace in-memory store with backend messages (NO system message)
         messageStores.set(threadId, backendMessages.filter(m => m.role !== "system"));
       }
-
-      // Persist the user message
+      // Persist the user message (non-blocking)
       persistMessage(threadId, prompt, accessToken);
     }
 
     messageStore.addMessage(prompt);
 
-    // Use runTools for tool calling - follows C1 template pattern
-    // Tools return data, C1 renders as UI components (Cards, Reports, etc.)
-    const llmStream = await client.beta.chat.completions.runTools({
-      model: "c1/anthropic/claude-sonnet-4/v-20251130",
-      temperature: 0.5,
-      messages: messageStore.getOpenAICompatibleMessageList(),
-      stream: true,
-      tool_choice: defaultTools.length > 0 ? "auto" : "none",
-      tools: defaultTools,
+    // Build messages for Mastra agent
+    const messages = messageStore.getMastraMessages();
+
+    // Build system message with user data so C1 has it upfront
+    // This prevents C1 from showing "find representatives" forms
+    let systemContent = "";
+
+    const hasReps = userContext && userContext.representatives && userContext.representatives.length > 0;
+    const hasInterests = userInterests && userInterests.length > 0;
+
+    if (hasReps || hasInterests) {
+      let userDataParts: string[] = [];
+
+      if (hasReps) {
+        const repsInfo = userContext!.representatives!.map(rep => {
+          const partyFull = rep.party === "D" ? "Democrat" : rep.party === "R" ? "Republican" : rep.party;
+          return `- ${rep.name} (${partyFull}, ${rep.chamber}${rep.district ? `, District ${rep.district}` : ""})`;
+        }).join("\n");
+
+        userDataParts.push(`Location:
+State: ${userContext!.profile?.location?.state || "unknown"}
+District: ${userContext!.profile?.location?.district || "unknown"}
+
+Representatives:
+${repsInfo}`);
+      }
+
+      if (hasInterests) {
+        userDataParts.push(`Policy Interests: ${userInterests.join(", ")}`);
+      }
+
+      systemContent = `USER DATA (already fetched - DO NOT ask for location or show location forms):
+${userDataParts.join("\n\n")}
+
+IMPORTANT: Use this data when responding to personalized queries:
+- When they ask "who are my representatives", display the representatives listed above directly. DO NOT show a form asking for their location.
+- When they ask about "bills related to my interests", search for bills matching their policy interests: ${userInterests.join(", ") || "not specified"}.
+- When personalizing responses, consider their location and interests.`;
+
+      console.log("[C1 API] Injected user data - reps:", hasReps ? userContext!.representatives!.length : 0, "interests:", userInterests.length);
+    }
+
+    // Add system message with user data at the start
+    const messagesWithContext: CoreMessage[] = [];
+    if (systemContent) {
+      messagesWithContext.push({
+        role: "system",
+        content: systemContent,
+      } as CoreMessage);
+    }
+    messagesWithContext.push(...messages);
+
+    console.log("[C1 API] Streaming with Mastra agent, messages:", messagesWithContext.length, "hasUserData:", !!systemContent);
+
+    // Use Mastra agent stream with context-enriched messages
+    const stream = await c1CongressionalAssistant.stream(messagesWithContext, {
+      maxSteps: 10, // Allow multiple tool calls
+      toolChoice: "auto",
     });
 
-    const responseStream = transformStream(
-      llmStream,
-      (chunk) => {
-        return chunk.choices?.[0]?.delta?.content ?? "";
-      },
-      {
-        onEnd: ({ accumulated }) => {
-          const message = accumulated.filter((m) => m).join("");
+    // Create ReadableStream following Thesys/Mastra pattern
+    const encoder = new TextEncoder();
+    let fullText = "";
+
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Stream text chunks using textStream property
+          for await (const chunk of stream.textStream) {
+            fullText += chunk;
+            controller.enqueue(encoder.encode(chunk));
+          }
+
+          // Store assistant message after streaming completes
           const assistantMessage: DBMessage = {
             role: "assistant",
-            content: message,
+            content: fullText,
             id: responseId,
           };
 
@@ -355,15 +409,21 @@ export async function POST(req: NextRequest) {
           if (accessToken) {
             persistMessage(threadId, assistantMessage, accessToken);
           }
-        },
-      }
-    ) as ReadableStream<string>;
 
-    return new NextResponse(responseStream, {
+          console.log("[C1 API] Stream completed, response length:", fullText.length);
+          controller.close();
+        } catch (error) {
+          console.error("[C1 API] Stream error:", error);
+          controller.error(error);
+        }
+      },
+    });
+
+    return new NextResponse(readableStream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        "Connection": "keep-alive",
       },
     });
   } catch (error) {

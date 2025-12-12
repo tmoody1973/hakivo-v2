@@ -2,97 +2,184 @@
 
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Play, Mic, Headphones } from 'lucide-react'
+import { ArrowRight, Play, Mic, Headphones, Menu, X } from 'lucide-react'
 import { useState } from "react"
 import { HakivoLogo } from "@/components/hakivo-logo"
+import Image from "next/image"
 
 export default function HomePage() {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const navLinks = [
+    { href: "/podcast", label: "Podcast" },
+    { href: "/about", label: "About" },
+    { href: "/pricing", label: "Pricing" },
+    { href: "/faq", label: "FAQ" },
+  ]
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/90 backdrop-blur-xl">
-        <div className="flex h-16 items-center justify-between px-6 md:px-8 max-w-7xl mx-auto">
-          <Link href="/" className="flex items-center">
-            <HakivoLogo height={32} className="text-primary" />
+      {/* Navigation - Craft-style centered layout */}
+      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-xl">
+        <div className="flex h-16 items-center justify-between px-4 md:px-6 lg:px-8 max-w-7xl mx-auto">
+          {/* Logo */}
+          <Link href="/" className="flex items-center shrink-0">
+            <HakivoLogo height={28} className="text-primary" />
           </Link>
-          <nav className="flex items-center gap-3">
-            <Link
-              href="/podcast"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
-            >
-              Podcast
-            </Link>
-            <Link
-              href="/about"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
-            >
-              About
-            </Link>
-            <Link
-              href="/pricing"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
-            >
-              Pricing
-            </Link>
-            <Link
-              href="/faq"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
-            >
-              FAQ
-            </Link>
+
+          {/* Desktop Navigation - Centered */}
+          <div className="hidden md:flex items-center justify-center flex-1 px-8">
+            <div className="flex items-center gap-1">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-4 py-2 rounded-lg hover:bg-accent"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Desktop Auth Buttons */}
+          <div className="hidden md:flex items-center gap-2 shrink-0">
             <Link
               href="/auth/signin"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
             >
               Log In
             </Link>
-            <Button asChild className="rounded-full px-5">
+            <Button asChild size="sm" className="rounded-full px-5">
               <Link href="/auth/signup">Get Started</Link>
             </Button>
-          </nav>
+          </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
+
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-border/50 bg-background/98 backdrop-blur-xl">
+            <div className="px-4 py-4 space-y-1">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-base font-medium text-muted-foreground hover:text-foreground transition-colors px-4 py-3 rounded-lg hover:bg-accent"
+                >
+                  {link.label}
+                </Link>
+              ))}
+              <div className="pt-4 mt-4 border-t border-border/50 space-y-2">
+                <Link
+                  href="/auth/signin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block text-base font-medium text-muted-foreground hover:text-foreground transition-colors px-4 py-3 rounded-lg hover:bg-accent"
+                >
+                  Log In
+                </Link>
+                <Button asChild className="w-full rounded-full">
+                  <Link href="/auth/signup" onClick={() => setMobileMenuOpen(false)}>
+                    Get Started
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Hero Section */}
-      <section className="min-h-screen flex flex-col justify-center px-6 md:px-8 pt-24 pb-16">
-        <div className="max-w-4xl mx-auto">
+      <section className="pt-24 pb-8 md:pt-28 md:pb-12">
+        {/* Text Content - Centered */}
+        <div className="max-w-4xl mx-auto px-6 md:px-8 text-center">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-8 animate-fade-in">
+          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6 animate-fade-in">
             <span className="text-base">🎵</span>
             Inspired by a classic you already know
           </div>
 
           {/* Headline */}
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6 leading-[1.1]">
             Your personal<br />
             <span className="relative inline-block">
               <span className="relative z-10">civic command center.</span>
-              <span className="absolute bottom-2 left-0 right-0 h-4 bg-primary/30 -z-0 rounded" />
+              <span className="absolute bottom-2 left-0 right-0 h-3 md:h-4 bg-primary/30 -z-0 rounded" />
             </span>
           </h1>
 
           {/* Subtitle */}
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mb-10 leading-relaxed">
+          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed">
             Track legislation, hear daily audio briefings, and take action on the issues that matter to you —
             all in one place. AI-powered civic engagement for the podcast generation.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-wrap gap-4">
-            <Button size="lg" asChild className="rounded-full px-8 h-14 text-base font-semibold bg-primary hover:bg-primary/90">
+          {/* CTA Buttons - Centered */}
+          <div className="flex flex-wrap justify-center gap-4 mb-12 md:mb-16">
+            <Button size="lg" asChild className="rounded-full px-8 h-12 md:h-14 text-base font-semibold bg-primary hover:bg-primary/90">
               <Link href="/auth/signup">
                 <AudioWave />
                 Get Started Free
               </Link>
             </Button>
-            <Button size="lg" variant="outline" asChild className="rounded-full px-8 h-14 text-base font-semibold border-2">
+            <Button size="lg" variant="outline" asChild className="rounded-full px-8 h-12 md:h-14 text-base font-semibold border-2">
               <Link href="#how-it-works">
                 See How It Works
               </Link>
             </Button>
           </div>
+        </div>
+
+        {/* Product Mockup - Full width with perspective */}
+        <div className="relative max-w-6xl mx-auto px-4 md:px-8">
+          {/* Glow effect behind image */}
+          <div className="absolute inset-0 bg-gradient-to-t from-primary/20 via-primary/5 to-transparent blur-3xl -z-10" />
+
+          {/* Browser mockup frame */}
+          <div className="relative rounded-xl md:rounded-2xl overflow-hidden border border-border/50 shadow-2xl shadow-black/40 bg-card">
+            {/* Browser top bar */}
+            <div className="flex items-center gap-2 px-4 py-3 bg-card border-b border-border/50">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                <div className="w-3 h-3 rounded-full bg-green-500/80" />
+              </div>
+              <div className="flex-1 flex justify-center">
+                <div className="bg-muted/50 rounded-md px-4 py-1 text-xs text-muted-foreground flex items-center gap-2">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  hakivo.com/dashboard
+                </div>
+              </div>
+              <div className="w-16" /> {/* Spacer for balance */}
+            </div>
+
+            {/* Dashboard screenshot */}
+            <div className="relative">
+              <Image
+                src="/hakivo-shot.png"
+                alt="Hakivo Dashboard - Track your representatives, daily briefs, and podcast"
+                width={1920}
+                height={1080}
+                className="w-full h-auto"
+                priority
+              />
+            </div>
+          </div>
+
+          {/* Fade to background at bottom */}
+          <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-background to-transparent pointer-events-none" />
         </div>
       </section>
 

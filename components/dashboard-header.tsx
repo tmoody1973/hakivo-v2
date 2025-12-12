@@ -56,7 +56,7 @@ const routes = [
   {
     label: "Congressional Assistant",
     icon: MessageSquare,
-    href: "/chat",
+    href: "/chat/c1",
   },
 ]
 
