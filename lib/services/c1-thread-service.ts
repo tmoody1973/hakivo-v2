@@ -32,30 +32,39 @@ function getAuthToken(): string | null {
 
 /**
  * Create a new thread
+ * Falls back to local thread if backend is unavailable
  */
 export async function createThread(firstMessage: string): Promise<C1Thread> {
   const token = getAuthToken();
+  const title = firstMessage.substring(0, 50) + (firstMessage.length > 50 ? "..." : "");
 
-  const response = await fetch(`${API_BASE}/threads`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
-      title: firstMessage.substring(0, 50) + (firstMessage.length > 50 ? "..." : ""),
-    }),
-  });
+  try {
+    const response = await fetch(`${API_BASE}/threads`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ title }),
+    });
 
-  if (!response.ok) {
-    throw new Error("Failed to create thread");
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        threadId: data.threadId || data.id,
+        title: data.title || data.name || title,
+        createdAt: new Date(data.createdAt || Date.now()),
+      };
+    }
+  } catch (error) {
+    console.warn("[C1 Thread Service] Backend unavailable, using local thread:", error);
   }
 
-  const data = await response.json();
+  // Fallback to local thread (works without backend persistence)
   return {
-    threadId: data.threadId || data.id,
-    title: data.title || data.name || firstMessage.substring(0, 50),
-    createdAt: new Date(data.createdAt || Date.now()),
+    threadId: `local-${crypto.randomUUID()}`,
+    title,
+    createdAt: new Date(),
   };
 }
 
