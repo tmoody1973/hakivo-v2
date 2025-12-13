@@ -29,6 +29,8 @@ import Link from "next/link"
 import { getStateBillById, StateBillDetail } from "@/lib/api/backend"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useTracking } from "@/lib/hooks/use-tracking"
+import { useSubscription } from "@/lib/hooks/use-subscription"
+import { useUpgradeModal } from "@/lib/hooks/use-upgrade-modal"
 
 // US State names mapping
 const STATE_NAMES: Record<string, string> = {
@@ -71,7 +73,10 @@ interface StateBillAnalysis {
 
 export default function StateBillDetailPage() {
   const params = useParams()
-  const billId = params?.id as string
+  // Decode the bill ID in case it was double-encoded in the URL
+  // (e.g., %252F from tracked items should become / )
+  const rawBillId = params?.id as string
+  const billId = rawBillId ? decodeURIComponent(rawBillId) : rawBillId
   const [bill, setBill] = useState<StateBillDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +85,8 @@ export default function StateBillDetailPage() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const [trackingAction, setTrackingAction] = useState(false)
   const { accessToken, isLoading: authLoading } = useAuth()
+  const { checkLimit } = useSubscription()
+  const { showUpgradeModal } = useUpgradeModal()
 
   // Tracking hook
   const {
@@ -96,12 +103,30 @@ export default function StateBillDetailPage() {
   const handleTrackToggle = async () => {
     if (!bill || !accessToken) return
 
+    // If user is trying to track (not untrack), check limits first
+    if (!isTracked) {
+      const limitCheck = await checkLimit('track_bill')
+      if (!limitCheck.allowed) {
+        // User has hit their tracking limit - show upgrade modal
+        showUpgradeModal('tracked_bills_limit')
+        return
+      }
+    }
+
     setTrackingAction(true)
     try {
       if (isTracked && trackingId) {
         await untrackStateBill(billId, trackingId)
       } else {
-        await trackStateBill(billId, bill.state || '', bill.identifier)
+        // Pass full metadata when tracking
+        await trackStateBill(billId, bill.state || '', bill.identifier, {
+          title: bill.title || undefined,
+          session: bill.session || undefined,
+          chamber: bill.chamber || undefined,
+          latestActionDate: bill.latestAction?.date || undefined,
+          latestActionDescription: bill.latestAction?.description || undefined,
+          subjects: bill.subjects || undefined,
+        })
       }
     } catch (err) {
       console.error('Error toggling track status:', err)

@@ -663,7 +663,7 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <Link
-                                href={`/state-bills/${encodeURIComponent(stateBill.billId)}`}
+                                href={`/state-bills/${stateBill.billId}`}
                                 className="hover:underline"
                               >
                                 <div className="flex items-center gap-2 mb-1">

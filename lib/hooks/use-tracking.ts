@@ -88,7 +88,15 @@ interface UseTrackingReturn {
   trackStateBill: (
     billId: string,
     state: string,
-    identifier: string
+    identifier: string,
+    metadata?: {
+      title?: string;
+      session?: string;
+      chamber?: string;
+      latestActionDate?: string;
+      latestActionDescription?: string;
+      subjects?: string[];
+    }
   ) => Promise<boolean>;
   untrackStateBill: (billId: string, trackingId: string) => Promise<boolean>;
 
@@ -245,7 +253,15 @@ export function useTracking(options: UseTrackingOptions = {}): UseTrackingReturn
     async (
       billId: string,
       state: string,
-      identifier: string
+      identifier: string,
+      metadata?: {
+        title?: string;
+        session?: string;
+        chamber?: string;
+        latestActionDate?: string;
+        latestActionDescription?: string;
+        subjects?: string[];
+      }
     ): Promise<boolean> => {
       if (!token) return false;
 
@@ -257,7 +273,7 @@ export function useTracking(options: UseTrackingOptions = {}): UseTrackingReturn
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ state, identifier }),
+          body: JSON.stringify({ state, identifier, ...metadata }),
         });
 
         if (!response.ok) {

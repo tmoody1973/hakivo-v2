@@ -12,7 +12,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: billId } = await params;
+    const { id: rawBillId } = await params;
+    // Decode in case the ID came with encoded characters (e.g., %2F should be /)
+    const billId = decodeURIComponent(rawBillId);
     const authorization = request.headers.get('authorization');
 
     if (!authorization) {
@@ -56,7 +58,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: billId } = await params;
+    const { id: rawBillId } = await params;
+    // Decode in case the ID came with encoded characters (e.g., %2F should be /)
+    const billId = decodeURIComponent(rawBillId);
     const authorization = request.headers.get('authorization');
     const body = await request.json();
 
@@ -74,6 +78,13 @@ export async function POST(
         billId, // OCD ID
         state: body.state,
         identifier: body.identifier,
+        // Include metadata if provided
+        title: body.title,
+        session: body.session,
+        chamber: body.chamber,
+        latestActionDate: body.latestActionDate,
+        latestActionDescription: body.latestActionDescription,
+        subjects: body.subjects,
       }),
     });
 

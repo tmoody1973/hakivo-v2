@@ -21,7 +21,9 @@ export async function POST(
       );
     }
 
-    const { id: billId } = await params;
+    const { id: rawBillId } = await params;
+    // Decode in case the ID came with encoded characters (e.g., %2F should be /)
+    const billId = decodeURIComponent(rawBillId);
 
     console.log('[API /state-bills/:id/analyze] Analyzing state bill:', billId);
 
