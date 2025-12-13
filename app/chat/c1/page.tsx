@@ -27,6 +27,7 @@ import {
   updateThread,
   C1Thread,
 } from "@/lib/services/c1-thread-service";
+import { useAuth } from "@/lib/auth/auth-context";
 
 /**
  * C1 Chat Page - Uses Thesys C1 for generative UI with tool calling
@@ -45,6 +46,14 @@ function C1ChatContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+
+  // Redirect to sign-in if not authenticated
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/auth/signin");
+    }
+  }, [isAuthenticated, authLoading, router]);
 
   // Prevent hydration mismatch by only rendering on client
   useEffect(() => {
@@ -162,10 +171,20 @@ function C1ChatContent() {
     }
   }, [searchParams, threadListManager]);
 
-  if (!mounted) {
+  // Show loading while checking auth or mounting
+  if (!mounted || authLoading) {
     return (
       <div className="h-[calc(100vh-4rem)] w-full bg-background flex items-center justify-center">
         <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render chat if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return (
+      <div className="h-[calc(100vh-4rem)] w-full bg-background flex items-center justify-center">
+        <div className="text-muted-foreground">Redirecting to sign in...</div>
       </div>
     );
   }
