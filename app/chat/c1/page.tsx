@@ -101,6 +101,10 @@ function C1ChatContent() {
     }): Promise<Response> => {
       const token = localStorage.getItem("hakivo_access_token");
 
+      // Backend expects 'prompt' (single message), not 'messages' (array)
+      // Get the last user message as the prompt
+      const lastMessage = params.messages[params.messages.length - 1];
+
       return fetch("/api/chat/c1", {
         method: "POST",
         headers: {
@@ -109,7 +113,7 @@ function C1ChatContent() {
         },
         body: JSON.stringify({
           threadId: params.threadId,
-          messages: params.messages,
+          prompt: lastMessage, // Backend expects 'prompt' not 'messages'
           responseId: params.responseId,
         }),
         signal: params.abortController.signal,
