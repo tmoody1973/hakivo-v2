@@ -1,5 +1,6 @@
 import { createCongressionalAssistant } from "@/mastra/agents/congressional-assistant";
 import { generateArtifactWithToolsStream, generateArtifactId } from "@/mastra/tools/thesys";
+import { chatProtection, handleArcjetDecision } from "@/lib/security/arcjet";
 
 // Tool descriptions for thinking states
 const TOOL_DESCRIPTIONS: Record<string, { title: string; description: string }> = {
@@ -197,6 +198,16 @@ Generate a well-structured, professional document using C1 DSL format. The docum
 
 export async function POST(request: Request) {
   try {
+    // Arcjet rate limiting and bot protection
+    const decision = await chatProtection.protect(request);
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return new Response(
+        JSON.stringify({ error: arcjetResult.message }),
+        { status: arcjetResult.status, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const body: ChatRequest = await request.json();
     const { messages } = body;
 

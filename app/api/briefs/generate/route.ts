@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  briefGenerationProtection,
+  handleArcjetDecision,
+  extractUserIdFromAuth,
+} from '@/lib/security/arcjet';
 
 // Dashboard service URL (contains the brief generation endpoint)
 // Uses NEXT_PUBLIC_DASHBOARD_API_URL from .env.local
@@ -8,6 +13,10 @@ const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
 /**
  * POST /api/briefs/generate
  * Trigger on-demand brief generation if user doesn't have today's brief
+ *
+ * Protected by Arcjet AI Quota Control:
+ * - Token bucket: 2 briefs per hour, max 5 queued
+ * - User-based rate limiting
  */
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +27,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Extract user ID for quota tracking
+    const userId = extractUserIdFromAuth(authorization);
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Invalid authorization token' },
+        { status: 401 }
+      );
+    }
+
+    // Arcjet AI quota control - limit brief generation per user
+    const decision = await briefGenerationProtection.protect(request, { userId });
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      console.warn('[API /briefs/generate] Quota exceeded for user:', userId);
+      return NextResponse.json(
+        { error: 'Brief generation quota exceeded. Please try again later.' },
+        { status: arcjetResult.status }
       );
     }
 

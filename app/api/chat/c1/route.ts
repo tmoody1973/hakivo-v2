@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { c1CongressionalAssistant } from "@/mastra";
 import { UserContext } from "@/lib/c1/user-context";
 import type { CoreMessage } from "ai";
+import {
+  chatProtection,
+  authenticatedChatProtection,
+  handleArcjetDecision,
+  extractUserIdFromAuth,
+} from "@/lib/security/arcjet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -243,13 +249,30 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
 
 export async function POST(req: NextRequest) {
   try {
-    const { prompt, threadId, responseId, userContext: clientUserContext } = (await req.json()) as ChatRequest;
-
-    // Check for auth token
+    // Check for auth token first (needed for rate limiting)
     const authHeader = req.headers.get("Authorization");
     const accessToken = authHeader?.startsWith("Bearer ")
       ? authHeader.substring(7)
       : null;
+    const userId = extractUserIdFromAuth(authHeader);
+
+    // Arcjet rate limiting - use user-based limits for authenticated users
+    let decision;
+    if (userId) {
+      decision = await authenticatedChatProtection.protect(req, { userId });
+    } else {
+      decision = await chatProtection.protect(req);
+    }
+
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return new Response(
+        JSON.stringify({ error: arcjetResult.message }),
+        { status: arcjetResult.status, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const { prompt, threadId, responseId, userContext: clientUserContext } = (await req.json()) as ChatRequest;
 
     // Fetch user context and interests server-side when authenticated
     let userContext: UserContext | null = clientUserContext || null;

@@ -16,6 +16,7 @@
     "@ai-sdk/openai": "^2.0.77",
     "@ai-sdk/openai-compatible": "^1.0.28",
     "@ai-sdk/provider": "^2.0.0",
+    "@arcjet/next": "^1.0.0-beta.15",
     "@aws-sdk/client-s3": "^3.940.0",
     "@crayonai/react-core": "^0.7.6",
     "@crayonai/react-ui": "^0.9.5",
