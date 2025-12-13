@@ -145,6 +145,8 @@ async function loadMessagesFromBackend(
  */
 async function fetchUserInterests(accessToken: string): Promise<string[]> {
   try {
+    console.log("[C1 API] Fetching user interests from:", `${CHAT_SERVICE_URL}/memory/profile`);
+
     const response = await fetch(
       `${CHAT_SERVICE_URL}/memory/profile`,
       {
@@ -155,14 +157,19 @@ async function fetchUserInterests(accessToken: string): Promise<string[]> {
     );
 
     if (!response.ok) {
-      console.warn("[C1 API] Failed to fetch user interests:", response.status);
+      console.warn("[C1 API] Failed to fetch user interests:", response.status, await response.text());
       return [];
     }
 
     const data = await response.json();
+    console.log("[C1 API] User profile response:", JSON.stringify(data));
+
     if (data.success && data.profile && data.profile.interests) {
+      console.log("[C1 API] Found interests:", data.profile.interests);
       return data.profile.interests;
     }
+
+    console.log("[C1 API] No interests found in profile");
     return [];
   } catch (error) {
     console.warn("[C1 API] Error fetching user interests:", error);
@@ -175,6 +182,8 @@ async function fetchUserInterests(accessToken: string): Promise<string[]> {
  */
 async function fetchUserContext(accessToken: string): Promise<UserContext | null> {
   try {
+    console.log("[C1 API] Fetching representatives from:", `${DASHBOARD_SERVICE_URL}/dashboard/representatives`);
+
     const repsResponse = await fetch(
       `${DASHBOARD_SERVICE_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`,
       {
@@ -185,7 +194,8 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
     );
 
     if (!repsResponse.ok) {
-      console.warn("[C1 API] Failed to fetch representatives:", repsResponse.status);
+      const errorText = await repsResponse.text();
+      console.warn("[C1 API] Failed to fetch representatives:", repsResponse.status, errorText);
       return null;
     }
 
@@ -255,6 +265,8 @@ export async function POST(req: NextRequest) {
       ? authHeader.substring(7)
       : null;
     const userId = extractUserIdFromAuth(authHeader);
+
+    console.log("[C1 API] Request received - Auth token present:", !!accessToken, "userId:", userId);
 
     // Arcjet rate limiting - use user-based limits for authenticated users
     let decision;
