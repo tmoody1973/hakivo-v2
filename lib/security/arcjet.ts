@@ -6,9 +6,16 @@ import arcjet, {
   ArcjetDecision,
 } from "@arcjet/next";
 
+// Log Arcjet initialization
+if (!process.env.ARCJET_KEY) {
+  console.warn("[Arcjet] WARNING: ARCJET_KEY is not set! Security protection disabled.");
+} else {
+  console.log("[Arcjet] Initialized with key:", process.env.ARCJET_KEY.substring(0, 15) + "...");
+}
+
 // Base Arcjet client with global Shield protection
 export const aj = arcjet({
-  key: process.env.ARCJET_KEY!,
+  key: process.env.ARCJET_KEY || "missing_key",
   characteristics: ["ip.src"], // Default to IP-based identification
   rules: [
     // Global Shield WAF protection against common attacks
@@ -177,6 +184,13 @@ export function handleArcjetDecision(decision: ArcjetDecision): {
   status: number;
   message: string;
 } {
+  // Log decision for debugging
+  console.log("[Arcjet] Decision:", {
+    conclusion: decision.conclusion,
+    isDenied: decision.isDenied(),
+    reason: decision.reason,
+  });
+
   if (decision.isDenied()) {
     if (decision.reason.isRateLimit()) {
       return {
