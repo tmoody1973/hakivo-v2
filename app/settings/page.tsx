@@ -1040,7 +1040,7 @@ function SettingsPageContent() {
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
                                 <Link
-                                  href={`/state-bills/${bill.billId}`}
+                                  href={`/state-bills/${encodeURIComponent(bill.billId)}`}
                                   className="font-medium hover:underline block"
                                 >
                                   {bill.identifier}: {bill.title || 'Untitled'}

@@ -240,7 +240,7 @@ export function TrackedBillsWidget({ token }: TrackedBillsWidgetProps) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <Link
-                        href={`/state-bills/${bill.billId}`}
+                        href={`/state-bills/${encodeURIComponent(bill.billId)}`}
                         className="hover:underline"
                       >
                         <h4 className="font-medium text-sm line-clamp-2">
