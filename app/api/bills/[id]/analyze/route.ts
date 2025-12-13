@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { analysisProtection, handleArcjetDecision } from "@/lib/security/arcjet";
 
 // Server-side API route needs actual bills-service URL
 const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
@@ -9,6 +10,16 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Arcjet rate limiting - 10 analyses per minute per IP
+    const decision = await analysisProtection.protect(request);
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return NextResponse.json(
+        { error: arcjetResult.message },
+        { status: arcjetResult.status }
+      );
+    }
+
     const { id: billId } = await params;
 
     console.log('[API /bills/:id/analyze] Analyzing federal bill:', billId);

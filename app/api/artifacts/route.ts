@@ -4,9 +4,16 @@
  * GET - List user's artifacts (with pagination)
  * PATCH - Update artifact (share toggle)
  * DELETE - Delete artifact
+ *
+ * Protected by Arcjet: 30 req/min per user
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import {
+  authenticatedDataProtection,
+  handleArcjetDecision,
+  extractUserIdFromAuth,
+} from "@/lib/security/arcjet";
 
 // Database service URL
 const DB_SERVICE_URL = process.env.DB_ADMIN_SERVICE_URL || "http://localhost:8787";
@@ -28,30 +35,23 @@ interface ArtifactRecord {
 }
 
 /**
- * Extract user ID from JWT token
- */
-function getUserIdFromToken(authHeader: string | null): string | null {
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return null;
-  }
-
-  try {
-    const token = authHeader.replace("Bearer ", "");
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
-    return payload.sub || payload.userId || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * GET - List user's artifacts
  */
 export async function GET(request: NextRequest) {
   try {
-    const userId = getUserIdFromToken(request.headers.get("authorization"));
+    const userId = extractUserIdFromAuth(request.headers.get("authorization"));
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Arcjet rate limiting - 30 req/min per user
+    const decision = await authenticatedDataProtection.protect(request, { userId });
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return NextResponse.json(
+        { error: arcjetResult.message },
+        { status: arcjetResult.status }
+      );
     }
 
     const searchParams = request.nextUrl.searchParams;
@@ -125,9 +125,19 @@ export async function GET(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const userId = getUserIdFromToken(request.headers.get("authorization"));
+    const userId = extractUserIdFromAuth(request.headers.get("authorization"));
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Arcjet rate limiting - 30 req/min per user
+    const decision = await authenticatedDataProtection.protect(request, { userId });
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return NextResponse.json(
+        { error: arcjetResult.message },
+        { status: arcjetResult.status }
+      );
     }
 
     const body = await request.json();
@@ -216,9 +226,19 @@ export async function PATCH(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const userId = getUserIdFromToken(request.headers.get("authorization"));
+    const userId = extractUserIdFromAuth(request.headers.get("authorization"));
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Arcjet rate limiting - 30 req/min per user
+    const decision = await authenticatedDataProtection.protect(request, { userId });
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return NextResponse.json(
+        { error: arcjetResult.message },
+        { status: arcjetResult.status }
+      );
     }
 
     const searchParams = request.nextUrl.searchParams;

@@ -156,6 +156,28 @@ export const subscriptionProtection = arcjet({
 });
 
 // ============================================================================
+// AUTHENTICATED DATA ENDPOINTS - Medium protection
+// ============================================================================
+
+/**
+ * General authenticated endpoint protection
+ * - 30 requests per minute per user
+ * - For briefs, artifacts, tracked items
+ */
+export const authenticatedDataProtection = arcjet({
+  key: process.env.ARCJET_KEY || "missing_key",
+  characteristics: ["userId"],
+  rules: [
+    shield({ mode: "LIVE" }),
+    slidingWindow({
+      mode: "LIVE",
+      interval: "1m",
+      max: 30, // 30 requests per minute per user
+    }),
+  ],
+});
+
+// ============================================================================
 // PUBLIC ENDPOINTS - Lighter protection
 // ============================================================================
 

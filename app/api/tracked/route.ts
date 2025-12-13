@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  authenticatedDataProtection,
+  handleArcjetDecision,
+  extractUserIdFromAuth,
+} from '@/lib/security/arcjet';
 
 // Uses NEXT_PUBLIC_DASHBOARD_API_URL from .env.local
 const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
@@ -7,14 +12,27 @@ const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || 'https://
  * GET /api/tracked
  * Get all tracked items (federal bills, state bills, bookmarked articles)
  * for the authenticated user
+ *
+ * Protected by Arcjet: 30 req/min per user
  */
 export async function GET(request: NextRequest) {
   try {
-    const authorization = request.headers.get('authorization');
-
-    if (!authorization) {
+    const userId = extractUserIdFromAuth(request.headers.get('authorization'));
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Arcjet rate limiting - 30 req/min per user
+    const decision = await authenticatedDataProtection.protect(request, { userId });
+    const arcjetResult = handleArcjetDecision(decision);
+    if (arcjetResult.blocked) {
+      return NextResponse.json(
+        { error: arcjetResult.message },
+        { status: arcjetResult.status }
+      );
+    }
+
+    const authorization = request.headers.get('authorization')!
 
     const response = await fetch(`${DASHBOARD_API_URL}/dashboard/tracked`, {
       method: 'GET',
