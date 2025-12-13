@@ -42,6 +42,7 @@ import { useSubscription } from "@/lib/subscription/subscription-context"
 import { getBillById } from "@/lib/api/backend"
 import { useTracking } from "@/lib/hooks/use-tracking"
 import { UpgradeModal, useUpgradeModal } from "@/components/upgrade-modal"
+import { analytics } from "@/lib/analytics"
 
 interface BillData {
   id: string
@@ -181,8 +182,10 @@ export default function BillDetailPage() {
     try {
       if (isTracked && trackingId) {
         await untrackFederalBill(billId, trackingId)
+        analytics.billUntracked(billId)
       } else {
         await trackFederalBill(billId, bill.congress, bill.type, bill.number)
+        analytics.billTracked(billId, bill.title)
       }
     } catch (err) {
       console.error('Error toggling track status:', err)
@@ -207,8 +210,12 @@ export default function BillDetailPage() {
         console.log('[BillDetailPage] Response:', response)
 
         if (response.success && response.data) {
-          setBill(response.data.bill as BillData)
+          const billData = response.data.bill as BillData
+          setBill(billData)
           setLoading(false)
+
+          // Track bill view in analytics
+          analytics.billViewed(billId, billData.title, billData.originChamber || undefined)
         } else {
           setError(response.error?.message || "Failed to load bill details")
           setLoading(false)

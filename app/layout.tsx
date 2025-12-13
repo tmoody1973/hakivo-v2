@@ -8,6 +8,7 @@ import { SubscriptionProvider } from "@/lib/subscription/subscription-context"
 import { AudioPlayerProvider } from "@/lib/audio/audio-player-context"
 import { C1Provider } from "@/components/c1"
 import { FeaturebaseWidget } from "@/components/featurebase"
+import { PostHogProvider, PostHogPageview } from "@/lib/analytics"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -52,24 +53,27 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`} suppressHydrationWarning>
-        <C1Provider>
-          <AuthProvider>
-            <SubscriptionProvider>
-              <AudioPlayerProvider>
-              <div className="flex h-screen flex-col">
-                <ConditionalNav />
+        <PostHogProvider>
+          <C1Provider>
+            <AuthProvider>
+              <SubscriptionProvider>
+                <AudioPlayerProvider>
+                  <PostHogPageview />
+                  <div className="flex h-screen flex-col">
+                    <ConditionalNav />
 
-                <main className="flex-1 overflow-auto pb-24">
-                  {children}
-                </main>
+                    <main className="flex-1 overflow-auto pb-24">
+                      {children}
+                    </main>
 
-                <ConditionalPlayer />
-              </div>
-              <FeaturebaseWidget />
-            </AudioPlayerProvider>
-            </SubscriptionProvider>
-          </AuthProvider>
-        </C1Provider>
+                    <ConditionalPlayer />
+                  </div>
+                  <FeaturebaseWidget />
+                </AudioPlayerProvider>
+              </SubscriptionProvider>
+            </AuthProvider>
+          </C1Provider>
+        </PostHogProvider>
       </body>
     </html>
   )

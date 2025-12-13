@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useEffect } from "react"
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Crown, Check, Zap, FileText, Bookmark, Users, Radio, Sparkles, X } from 'lucide-react'
 import { useSubscription } from "@/lib/subscription/subscription-context"
+import { analytics } from "@/lib/analytics"
 
 export type UpgradeModalTrigger =
   | 'briefs_limit'
@@ -70,7 +71,15 @@ export function UpgradeModal({ open, onOpenChange, trigger = 'general' }: Upgrad
   const triggerInfo = triggerMessages[trigger]
   const TriggerIcon = triggerInfo.icon
 
+  // Track when upgrade modal is viewed
+  useEffect(() => {
+    if (open) {
+      analytics.upgradeModalViewed(trigger)
+    }
+  }, [open, trigger])
+
   const handleUpgrade = useCallback(() => {
+    analytics.checkoutStarted('upgrade_modal')
     onOpenChange(false)
     openCheckout()
   }, [onOpenChange, openCheckout])

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { refreshAccessToken } from '@/lib/api/backend';
+import { analytics } from '@/lib/analytics';
 
 // User type matching backend response
 export interface User {
@@ -253,6 +254,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: false,
       });
 
+      // Identify user in PostHog analytics
+      analytics.identify(tokens.user.id, {
+        email: tokens.user.email,
+        firstName: tokens.user.firstName,
+        lastName: tokens.user.lastName,
+        name: `${tokens.user.firstName} ${tokens.user.lastName}`,
+        onboardingCompleted: tokens.user.onboardingCompleted,
+      });
+
       // Schedule proactive token refresh
       scheduleTokenRefresh(tokens.accessToken, tokens.refreshToken);
     } catch (error) {
@@ -271,6 +281,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const sessionId = localStorage.getItem(STORAGE_KEYS.SESSION_ID);
       const workosSessionId = localStorage.getItem(STORAGE_KEYS.WORKOS_SESSION_ID);
+
+      // Reset PostHog user identity
+      analytics.reset();
 
       // Clear localStorage
       localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
