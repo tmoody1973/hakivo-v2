@@ -7,12 +7,10 @@ const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string[] }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: idSegments } = await params;
-    // Handle catch-all route: join segments to reconstruct the OCD ID
-    const rawBillId = idSegments.join('/');
+    const { id: rawBillId } = await params;
     // Decode in case it was double-encoded
     const billId = decodeURIComponent(rawBillId);
 
