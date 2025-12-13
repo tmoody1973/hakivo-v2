@@ -2131,8 +2131,8 @@ export async function getStateBillById(billId: string): Promise<APIResponse<{
   try {
     const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-    // billId should already be URL-encoded from the route param
-    const url = `${BILLS_API_URL}/state-bills/${billId}`;
+    // URL encode the bill ID since OCD IDs contain special characters like /
+    const url = `${BILLS_API_URL}/state-bills/${encodeURIComponent(billId)}`;
     console.log('[getStateBillById] Fetching from:', url);
 
     const response = await fetch(url, {
