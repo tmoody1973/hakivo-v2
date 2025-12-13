@@ -349,12 +349,19 @@ export async function POST(req: NextRequest) {
     // Build messages for Mastra agent
     const messages = messageStore.getMastraMessages();
 
-    // Build system message with user data so C1 has it upfront
+    // Build system message with user data and auth token for SmartMemory tools
     // This prevents C1 from showing "find representatives" forms
     let systemContent = "";
 
     const hasReps = userContext && userContext.representatives && userContext.representatives.length > 0;
     const hasInterests = userInterests && userInterests.length > 0;
+
+    // Always inject auth token if available so agent can use SmartMemory tools
+    if (accessToken) {
+      systemContent = `[AUTH_TOKEN: ${accessToken}]
+
+`;
+    }
 
     if (hasReps || hasInterests) {
       let userDataParts: string[] = [];
@@ -377,7 +384,7 @@ ${repsInfo}`);
         userDataParts.push(`Policy Interests: ${userInterests.join(", ")}`);
       }
 
-      systemContent = `USER DATA (already fetched - DO NOT ask for location or show location forms):
+      systemContent += `USER DATA (already fetched - DO NOT ask for location or show location forms):
 ${userDataParts.join("\n\n")}
 
 IMPORTANT: Use this data when responding to personalized queries:
@@ -386,6 +393,9 @@ IMPORTANT: Use this data when responding to personalized queries:
 - When personalizing responses, consider their location and interests.`;
 
       console.log("[C1 API] Injected user data - reps:", hasReps ? userContext!.representatives!.length : 0, "interests:", userInterests.length);
+    } else if (accessToken) {
+      // If authenticated but no data fetched, still tell agent to use tools
+      systemContent += `The user is authenticated. Use SmartMemory tools (getUserContext, getUserRepresentatives) to fetch their profile and personalization data when they ask personalized questions like "who are my representatives" or "what are my interests".`;
     }
 
     // Add system message with user data at the start
