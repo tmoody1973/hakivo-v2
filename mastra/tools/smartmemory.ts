@@ -14,14 +14,10 @@ import { z } from "zod";
  * the agent with persistent memory capabilities.
  */
 
-// Backend service URLs
-// From Raindrop deployment:
-// - auth-service = svc-...q15
-// - chat-service = svc-...q18
-// - dashboard-service = svc-...q19
+// Backend service URLs from Raindrop deployment
 const DASHBOARD_SERVICE_URL =
   process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 const AUTH_SERVICE_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL ||
@@ -29,7 +25,7 @@ const AUTH_SERVICE_URL =
 
 const CHAT_SERVICE_URL =
   process.env.NEXT_PUBLIC_CHAT_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz18.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 // Type definitions for memory responses
 interface UserContext {
