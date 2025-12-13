@@ -15,7 +15,7 @@ type Thread = {
   createdAt: Date;
 };
 import "@crayonai/react-ui/styles/index.css";
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { hakivoLightTheme, hakivoDarkTheme } from "@/lib/c1-theme";
 import {
@@ -40,7 +40,7 @@ import {
  * - Streaming responses
  */
 
-export default function C1ChatPage() {
+function C1ChatContent() {
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -161,5 +161,23 @@ export default function C1ChatPage() {
         />
       </ThemeProvider>
     </>
+  );
+}
+
+// Loading fallback for Suspense
+function C1ChatLoading() {
+  return (
+    <div className="h-[calc(100vh-4rem)] w-full bg-background flex items-center justify-center">
+      <div className="text-muted-foreground">Loading...</div>
+    </div>
+  );
+}
+
+// Main page component with Suspense boundary for useSearchParams
+export default function C1ChatPage() {
+  return (
+    <Suspense fallback={<C1ChatLoading />}>
+      <C1ChatContent />
+    </Suspense>
   );
 }
