@@ -21,22 +21,13 @@ export interface C1Message {
 }
 
 /**
- * Get auth token from cookie or localStorage
+ * Get auth token from localStorage (matching auth-context.tsx storage keys)
  */
 function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
 
-  // Try cookie first
-  const cookies = document.cookie.split(";");
-  for (const cookie of cookies) {
-    const [name, value] = cookie.trim().split("=");
-    if (name === "auth_token") {
-      return decodeURIComponent(value);
-    }
-  }
-
-  // Fallback to localStorage
-  return localStorage.getItem("auth_token");
+  // Use the same key as auth-context.tsx
+  return localStorage.getItem("hakivo_access_token");
 }
 
 /**
