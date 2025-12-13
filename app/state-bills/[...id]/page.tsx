@@ -73,9 +73,11 @@ interface StateBillAnalysis {
 
 export default function StateBillDetailPage() {
   const params = useParams()
-  // Decode the bill ID in case it was double-encoded in the URL
-  // (e.g., %252F from tracked items should become / )
-  const rawBillId = params?.id as string
+  // Handle catch-all route: params.id is an array of path segments
+  // e.g., /state-bills/ocd-bill/uuid -> ['ocd-bill', 'uuid'] -> 'ocd-bill/uuid'
+  const idSegments = params?.id as string[] | string
+  const rawBillId = Array.isArray(idSegments) ? idSegments.join('/') : idSegments
+  // Decode in case it was double-encoded in the URL
   const billId = rawBillId ? decodeURIComponent(rawBillId) : rawBillId
   const [bill, setBill] = useState<StateBillDetail | null>(null)
   const [loading, setLoading] = useState(true)

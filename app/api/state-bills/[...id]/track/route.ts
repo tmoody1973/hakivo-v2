@@ -9,11 +9,13 @@ const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL || 'https://svc-01kc
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string[] }> }
 ) {
   try {
-    const { id: rawBillId } = await params;
-    // Decode in case the ID came with encoded characters (e.g., %2F should be /)
+    const { id: idSegments } = await params;
+    // Handle catch-all route: join segments to reconstruct the OCD ID
+    const rawBillId = idSegments.join('/');
+    // Decode in case it was double-encoded
     const billId = decodeURIComponent(rawBillId);
     const authorization = request.headers.get('authorization');
 
@@ -55,11 +57,13 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string[] }> }
 ) {
   try {
-    const { id: rawBillId } = await params;
-    // Decode in case the ID came with encoded characters (e.g., %2F should be /)
+    const { id: idSegments } = await params;
+    // Handle catch-all route: join segments to reconstruct the OCD ID
+    const rawBillId = idSegments.join('/');
+    // Decode in case it was double-encoded
     const billId = decodeURIComponent(rawBillId);
     const authorization = request.headers.get('authorization');
     const body = await request.json();
@@ -111,7 +115,7 @@ export async function POST(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string[] }> }
 ) {
   try {
     await params; // Consume params even if not used

@@ -8,7 +8,7 @@ const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string[] }> }
 ) {
   try {
     // Arcjet rate limiting - 10 analyses per minute per IP
@@ -21,8 +21,10 @@ export async function POST(
       );
     }
 
-    const { id: rawBillId } = await params;
-    // Decode in case the ID came with encoded characters (e.g., %2F should be /)
+    const { id: idSegments } = await params;
+    // Handle catch-all route: join segments to reconstruct the OCD ID
+    const rawBillId = idSegments.join('/');
+    // Decode in case it was double-encoded
     const billId = decodeURIComponent(rawBillId);
 
     console.log('[API /state-bills/:id/analyze] Analyzing state bill:', billId);
