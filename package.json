@@ -18,6 +18,7 @@
     "@ai-sdk/provider": "^2.0.0",
     "@arcjet/next": "^1.0.0-beta.15",
     "@aws-sdk/client-s3": "^3.940.0",
+    "@bufbuild/protobuf": "^1.10.1",
     "@crayonai/react-core": "^0.7.6",
     "@crayonai/react-ui": "^0.9.5",
     "@crayonai/stream": "^0.6.4",
