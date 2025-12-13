@@ -9,7 +9,7 @@
 Hakivo is a comprehensive civic intelligence platform that connects citizens with their government at both federal and state levels. The platform provides:
 
 - **Personalized Daily Briefings** - AI-generated audio briefings tailored to your policy interests
-- **100 Laws That Shaped America Podcast** - Weekly AI-generated episodes exploring landmark legislation, auto-published to Spreaker
+- **100 Laws That Shaped America Podcast** - Daily AI-generated episodes exploring landmark legislation, auto-published to Spreaker
 - **Federal & State Bill Tracking** - Monitor legislation from Congress and your state legislature
 - **AI-Powered Bill Analysis** - Deep forensic analysis of bills using Claude AI with extended thinking
 - **Personalized News Feed** - News aggregated from Perplexity AI based on your policy interests
