@@ -5,9 +5,15 @@ import {
   ThemeProvider,
   useThreadListManager,
   useThreadManager,
-  Thread,
   Message,
 } from "@thesysai/genui-sdk";
+
+// Define Thread type locally since SDK doesn't export it
+type Thread = {
+  threadId: string;
+  title: string;
+  createdAt: Date;
+};
 import "@crayonai/react-ui/styles/index.css";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
