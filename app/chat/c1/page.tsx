@@ -91,6 +91,33 @@ function C1ChatContent() {
     ),
   });
 
+  // Custom processMessage to include auth headers in chat API requests
+  const processMessage = useCallback(
+    async (params: {
+      threadId: string;
+      messages: { id: string; role: "user" | "assistant"; content: string }[];
+      responseId: string;
+      abortController: AbortController;
+    }): Promise<Response> => {
+      const token = localStorage.getItem("hakivo_access_token");
+
+      return fetch("/api/chat/c1", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          threadId: params.threadId,
+          messages: params.messages,
+          responseId: params.responseId,
+        }),
+        signal: params.abortController.signal,
+      });
+    },
+    []
+  );
+
   // Thread manager for message handling within a thread
   const threadManager = useThreadManager({
     threadListManager,
@@ -158,6 +185,7 @@ function C1ChatContent() {
           formFactor="full-page"
           threadListManager={threadListManager}
           threadManager={threadManager}
+          processMessage={processMessage}
         />
       </ThemeProvider>
     </>
