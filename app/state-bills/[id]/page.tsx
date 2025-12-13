@@ -29,8 +29,8 @@ import Link from "next/link"
 import { getStateBillById, StateBillDetail } from "@/lib/api/backend"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useTracking } from "@/lib/hooks/use-tracking"
-import { useSubscription } from "@/lib/hooks/use-subscription"
-import { useUpgradeModal } from "@/lib/hooks/use-upgrade-modal"
+import { useSubscription } from "@/lib/subscription/subscription-context"
+import { useUpgradeModal } from "@/components/upgrade-modal"
 
 // US State names mapping
 const STATE_NAMES: Record<string, string> = {
