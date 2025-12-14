@@ -176,6 +176,10 @@ function C1ChatContent() {
     if (threadId && threadListManager.selectedThreadId !== threadId) {
       console.log("[C1 Page] Calling selectThread from URL effect");
       threadListManager.selectThread(threadId);
+    } else if (!threadId && threadListManager.selectedThreadId) {
+      // No threadId in URL but we have a selected thread - switch to new
+      console.log("[C1 Page] Clearing selection for new chat");
+      threadListManager.switchToNewThread();
     }
   }, [searchParams, threadListManager]);
 
