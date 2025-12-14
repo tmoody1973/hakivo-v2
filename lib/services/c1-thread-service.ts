@@ -32,11 +32,14 @@ function getAuthToken(): string | null {
 
 /**
  * Create a new thread
- * Falls back to local thread if backend is unavailable
+ * Note: Backend will auto-create threads on first message if needed,
+ * so local threads will still be persisted when messages are sent.
  */
 export async function createThread(firstMessage: string): Promise<C1Thread> {
   const token = getAuthToken();
   const title = firstMessage.substring(0, 50) + (firstMessage.length > 50 ? "..." : "");
+
+  console.log("[C1 Thread Service] Creating thread - token present:", !!token);
 
   try {
     const response = await fetch(`${API_BASE}/threads`, {
@@ -50,19 +53,25 @@ export async function createThread(firstMessage: string): Promise<C1Thread> {
 
     if (response.ok) {
       const data = await response.json();
+      console.log("[C1 Thread Service] Thread created:", data.threadId || data.id);
       return {
         threadId: data.threadId || data.id,
         title: data.title || data.name || title,
         createdAt: new Date(data.createdAt || Date.now()),
       };
+    } else {
+      console.warn("[C1 Thread Service] Thread creation failed:", response.status);
     }
   } catch (error) {
-    console.warn("[C1 Thread Service] Backend unavailable, using local thread:", error);
+    console.warn("[C1 Thread Service] Backend unavailable:", error);
   }
 
-  // Fallback to local thread (works without backend persistence)
+  // Generate a local thread ID - backend will auto-create when first message is sent
+  const localThreadId = crypto.randomUUID();
+  console.log("[C1 Thread Service] Using local thread ID (will sync on first message):", localThreadId);
+
   return {
-    threadId: `local-${crypto.randomUUID()}`,
+    threadId: localThreadId,
     title,
     createdAt: new Date(),
   };

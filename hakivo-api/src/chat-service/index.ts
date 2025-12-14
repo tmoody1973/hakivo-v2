@@ -686,6 +686,7 @@ app.get('/chat/c1/threads/:threadId/messages', async (c) => {
 /**
  * POST /chat/c1/threads/:threadId/messages
  * Save a message to a C1 thread (requires auth)
+ * Auto-creates the thread if it doesn't exist (for seamless persistence)
  */
 app.post('/chat/c1/threads/:threadId/messages', async (c) => {
   try {
@@ -705,14 +706,28 @@ app.post('/chat/c1/threads/:threadId/messages', async (c) => {
 
     const { role, content, messageId } = validation.data;
 
-    // Verify thread ownership
-    const thread = await db
+    // Check if thread exists
+    let thread = await db
       .prepare('SELECT user_id FROM c1_chat_threads WHERE id = ?')
       .bind(threadId)
       .first();
 
+    // Auto-create thread if it doesn't exist (handles local-* IDs and race conditions)
     if (!thread) {
-      return c.json({ error: 'Thread not found' }, 404);
+      const now = Date.now();
+      // Use the first user message as the title
+      const title = role === 'user' ? content.substring(0, 100) : null;
+
+      await db
+        .prepare(`
+          INSERT INTO c1_chat_threads (id, user_id, title, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?)
+        `)
+        .bind(threadId, auth.userId, title, now, now)
+        .run();
+
+      console.log(`✓ Auto-created C1 chat thread: ${threadId}`);
+      thread = { user_id: auth.userId };
     }
 
     if (thread.user_id !== auth.userId) {
