@@ -4,7 +4,7 @@ import { useEffect, useState, use, useCallback } from "react";
 import { C1ChatViewer, ThemeProvider, Message } from "@thesysai/genui-sdk";
 import "@crayonai/react-ui/styles/index.css";
 import { hakivoLightTheme, hakivoDarkTheme } from "@/lib/c1-theme";
-import { CongressIcon } from "@/components/icons/congress-icon";
+import { HakivoLogo } from "@/components/hakivo-logo";
 import { Loader2, AlertCircle, Clock, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -115,11 +115,8 @@ export default function SharedThreadPage({ params }: PageProps) {
         <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
           <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
             <Link href="https://hakivo.com" className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                <CongressIcon className="h-5 w-5 text-white" />
-              </div>
+              <HakivoLogo height={32} className="text-primary" />
               <div>
-                <h1 className="font-semibold text-lg">Hakivo</h1>
                 <p className="text-xs text-muted-foreground flex items-center gap-2">
                   <MessageSquare className="h-3 w-3" />
                   {thread.messages.length} messages
@@ -161,11 +158,8 @@ export default function SharedThreadPage({ params }: PageProps) {
         {/* Footer - Promote Hakivo */}
         <footer className="border-t border-border py-8 bg-card/30">
           <div className="max-w-4xl mx-auto px-4 text-center space-y-4">
-            <div className="flex items-center justify-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                <CongressIcon className="h-4 w-4 text-white" />
-              </div>
-              <span className="font-semibold text-lg">Hakivo</span>
+            <div className="flex items-center justify-center">
+              <HakivoLogo height={28} className="text-primary" />
             </div>
             <p className="text-muted-foreground">
               Your intelligent congressional assistant. Stay informed about
