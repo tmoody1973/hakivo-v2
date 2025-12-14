@@ -173,7 +173,7 @@ async function loadMessagesFromBackend(
           "Authorization": `Bearer ${accessToken}`,
         },
       },
-      3000 // 3 second timeout
+      5000 // 5 second timeout
     );
 
     if (!response.ok) {
@@ -214,7 +214,7 @@ async function fetchUserInterests(accessToken: string): Promise<string[]> {
           "Authorization": `Bearer ${accessToken}`,
         },
       },
-      3000 // 3 second timeout
+      5000 // 5 second timeout (increased from 3s)
     );
 
     if (!response.ok) {
@@ -250,13 +250,13 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
     console.log("[C1 API] Fetching representatives from:", `${DASHBOARD_SERVICE_URL}/dashboard/representatives`);
 
     const repsResponse = await fetchWithTimeout(
-      `${DASHBOARD_SERVICE_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`,
+      `${DASHBOARD_SERVICE_URL}/dashboard/representatives`,
       {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
         },
       },
-      3000 // 3 second timeout
+      5000 // 5 second timeout (increased from 3s)
     );
 
     if (!repsResponse.ok) {
