@@ -8,6 +8,7 @@ import {
   handleArcjetDecision,
   extractUserIdFromAuth,
 } from "@/lib/security/arcjet";
+import { makeC1Response } from "@thesysai/genui-sdk/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -474,77 +475,109 @@ IMPORTANT: Use this data when responding to personalized queries:
       toolChoice: "auto",
     });
 
-    // Create ReadableStream with artifact-aware streaming
-    // Uses fullStream to capture both text and tool results
-    const encoder = new TextEncoder();
+    // Track message content for persistence
     let fullText = "";
     let artifactContent = ""; // Track artifact content separately
 
     // Artifact tool names that return C1 DSL content
     const ARTIFACT_TOOLS = ["createArtifact", "editArtifact", "generateBillReport", "generateBriefingSlides"];
 
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        try {
-          // Use fullStream to get all parts including tool results
-          for await (const part of stream.fullStream) {
-            if (part.type === "text-delta") {
-              // Stream text chunks as before - access via payload
-              const payload = part.payload as { textDelta?: string };
-              const text = payload.textDelta || "";
-              fullText += text;
-              controller.enqueue(encoder.encode(text));
-            } else if (part.type === "tool-result") {
-              // Check if this is an artifact tool result - access via payload
-              const payload = part.payload as { toolName?: string; result?: unknown };
-              const toolName = payload.toolName || "";
-              if (ARTIFACT_TOOLS.includes(toolName)) {
-                console.log("[C1 API] Artifact tool result detected:", toolName);
-                const result = payload.result as { success?: boolean; content?: string; id?: string; type?: string };
+    // Tool name to friendly thinking state message mapping
+    const TOOL_THINKING_STATES: Record<string, { title: string; description: string }> = {
+      // Data lookup tools
+      getMemberDetail: { title: "Looking up legislator", description: "Searching congressional member database..." },
+      getBillDetail: { title: "Fetching bill details", description: "Retrieving legislation information..." },
+      smartSql: { title: "Querying database", description: "Running database query for congressional data..." },
+      // Search tools
+      semanticSearch: { title: "Searching documents", description: "Performing semantic search across bills and documents..." },
+      searchNews: { title: "Searching news", description: "Finding recent news and updates..." },
+      webSearch: { title: "Searching the web", description: "Looking up information online..." },
+      // Memory tools
+      getUserContext: { title: "Loading your profile", description: "Retrieving your preferences and location..." },
+      getUserRepresentatives: { title: "Finding your representatives", description: "Looking up your elected officials..." },
+      getConversationHistory: { title: "Loading history", description: "Retrieving past conversation context..." },
+      storeWorkingMemory: { title: "Saving context", description: "Storing session information..." },
+      // Artifact tools
+      createArtifact: { title: "Creating document", description: "Generating your document..." },
+      editArtifact: { title: "Editing document", description: "Updating your document..." },
+      generateBillReport: { title: "Generating report", description: "Creating comprehensive bill analysis..." },
+      generateBriefingSlides: { title: "Building presentation", description: "Creating briefing slides..." },
+    };
 
-                if (result && result.success && result.content) {
-                  // Stream artifact content as C1 DSL for C1Chat to render
-                  // C1Chat automatically detects C1 DSL format and renders it
-                  artifactContent = result.content;
+    // Use makeC1Response for proper thinking state support
+    const c1Response = makeC1Response();
 
-                  // Stream the C1 DSL content directly - C1Chat will detect and render
-                  // Add newlines to separate from text content
-                  controller.enqueue(encoder.encode("\n\n"));
-                  controller.enqueue(encoder.encode(result.content));
-                  controller.enqueue(encoder.encode("\n\n"));
+    // Process stream in background and write to c1Response
+    (async () => {
+      try {
+        // Use fullStream to get all parts including tool calls and results
+        for await (const part of stream.fullStream) {
+          if (part.type === "text-delta") {
+            // Stream text chunks
+            const payload = part.payload as { textDelta?: string };
+            const text = payload.textDelta || "";
+            fullText += text;
+            await c1Response.writeContent(text);
+          } else if (part.type === "tool-call") {
+            // Show thinking state when tool is called
+            const payload = part.payload as { toolName?: string };
+            const toolName = payload.toolName || "";
+            const thinkState = TOOL_THINKING_STATES[toolName];
+            if (thinkState) {
+              console.log("[C1 API] Writing thinking state for tool:", toolName);
+              await c1Response.writeThinkItem({
+                title: thinkState.title,
+                description: thinkState.description,
+                ephemeral: true, // Disappears when tool completes
+              });
+            }
+          } else if (part.type === "tool-result") {
+            // Check if this is an artifact tool result
+            const payload = part.payload as { toolName?: string; result?: unknown };
+            const toolName = payload.toolName || "";
+            if (ARTIFACT_TOOLS.includes(toolName)) {
+              console.log("[C1 API] Artifact tool result detected:", toolName);
+              const result = payload.result as { success?: boolean; content?: string; id?: string; type?: string };
 
-                  console.log("[C1 API] Streamed artifact content, id:", result.id, "type:", result.type, "length:", result.content.length);
-                }
+              if (result && result.success && result.content) {
+                // Stream artifact content as C1 DSL for C1Chat to render
+                artifactContent = result.content;
+                await c1Response.writeContent("\n\n");
+                await c1Response.writeContent(result.content);
+                await c1Response.writeContent("\n\n");
+                console.log("[C1 API] Streamed artifact content, id:", result.id, "type:", result.type, "length:", result.content.length);
               }
             }
-            // Ignore other part types (tool-call, etc.)
           }
-
-          // Build full message content including any artifacts
-          const fullContent = artifactContent ? `${fullText}\n\n${artifactContent}` : fullText;
-
-          // Store assistant message after streaming completes
-          const assistantMessage: DBMessage = {
-            role: "assistant",
-            content: fullContent,
-            id: responseId,
-          };
-
-          messageStore.addMessage(assistantMessage);
-
-          // Persist assistant response if authenticated
-          if (accessToken) {
-            persistMessage(threadId, assistantMessage, accessToken);
-          }
-
-          console.log("[C1 API] Stream completed, text length:", fullText.length, "artifact length:", artifactContent.length);
-          controller.close();
-        } catch (error) {
-          console.error("[C1 API] Stream error:", error);
-          controller.error(error);
         }
-      },
-    });
+
+        // Build full message content including any artifacts
+        const fullContent = artifactContent ? `${fullText}\n\n${artifactContent}` : fullText;
+
+        // Store assistant message after streaming completes
+        const assistantMessage: DBMessage = {
+          role: "assistant",
+          content: fullContent,
+          id: responseId,
+        };
+
+        messageStore.addMessage(assistantMessage);
+
+        // Persist assistant response if authenticated
+        if (accessToken) {
+          persistMessage(threadId, assistantMessage, accessToken);
+        }
+
+        console.log("[C1 API] Stream completed, text length:", fullText.length, "artifact length:", artifactContent.length);
+        await c1Response.end();
+      } catch (error) {
+        console.error("[C1 API] Stream error:", error);
+        await c1Response.end();
+      }
+    })();
+
+    // Return the C1 response stream
+    const readableStream = c1Response.responseStream;
 
     return new NextResponse(readableStream, {
       headers: {
