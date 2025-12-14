@@ -513,12 +513,17 @@ async function loadMessagesFromBackend(
   }
 }
 
+// Main backend URL for auth/settings (different from dashboard service!)
+const MAIN_BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzg.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+
 /**
- * Fetch user interests from SmartMemory profile
+ * Fetch user interests - tries SmartMemory first, then main backend as fallback
  */
 async function fetchUserInterests(accessToken: string): Promise<string[]> {
+  // Try SmartMemory first
   try {
-    console.log("[C1 API] Fetching user interests from:", `${CHAT_SERVICE_URL}/memory/profile`);
+    console.log("[C1 API] Fetching user interests from SmartMemory:", `${CHAT_SERVICE_URL}/memory/profile`);
 
     const response = await fetchWithTimeout(
       `${CHAT_SERVICE_URL}/memory/profile`,
@@ -527,32 +532,56 @@ async function fetchUserInterests(accessToken: string): Promise<string[]> {
           "Authorization": `Bearer ${accessToken}`,
         },
       },
-      5000 // 5 second timeout (increased from 3s)
+      5000
     );
 
-    if (!response.ok) {
-      console.warn("[C1 API] Failed to fetch user interests:", response.status);
-      return [];
-    }
+    if (response.ok) {
+      const data = await response.json();
+      console.log("[C1 API] SmartMemory profile response:", JSON.stringify(data));
 
-    const data = await response.json();
-    console.log("[C1 API] User profile response:", JSON.stringify(data));
-
-    if (data.success && data.profile && data.profile.interests) {
-      console.log("[C1 API] Found interests:", data.profile.interests);
-      return data.profile.interests;
-    }
-
-    console.log("[C1 API] No interests found in profile");
-    return [];
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      console.warn("[C1 API] Timeout fetching user interests");
+      if (data.success && data.profile && data.profile.interests && data.profile.interests.length > 0) {
+        console.log("[C1 API] Found interests in SmartMemory:", data.profile.interests);
+        return data.profile.interests;
+      }
     } else {
-      console.warn("[C1 API] Error fetching user interests:", error);
+      console.warn("[C1 API] SmartMemory returned:", response.status);
     }
-    return [];
+  } catch (error) {
+    console.warn("[C1 API] SmartMemory fetch failed:", error instanceof Error ? error.message : error);
   }
+
+  // Fallback to main backend /auth/settings
+  try {
+    console.log("[C1 API] Falling back to main backend:", `${MAIN_BACKEND_URL}/auth/settings`);
+
+    // Use token in query param (same pattern as settings page to avoid CORS)
+    const response = await fetchWithTimeout(
+      `${MAIN_BACKEND_URL}/auth/settings?token=${encodeURIComponent(accessToken)}`,
+      {
+        method: "GET",
+      },
+      5000
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log("[C1 API] Main backend settings response:", JSON.stringify(data));
+
+      // Main backend returns { preferences: { policyInterests: [...] }, user: {...} }
+      const interests = data.preferences?.policyInterests || data.preferences?.interests || [];
+      if (interests.length > 0) {
+        console.log("[C1 API] Found interests in main backend:", interests);
+        return interests;
+      }
+    } else {
+      console.warn("[C1 API] Main backend returned:", response.status);
+    }
+  } catch (error) {
+    console.warn("[C1 API] Main backend fetch failed:", error instanceof Error ? error.message : error);
+  }
+
+  console.log("[C1 API] No interests found in either source");
+  return [];
 }
 
 /**
