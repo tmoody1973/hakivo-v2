@@ -5,6 +5,7 @@ export const runtime = "edge";
 
 const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
   'https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hakivo.com";
 
 async function getBriefData(briefId: string) {
   try {
@@ -72,37 +73,14 @@ export async function GET(
             marginBottom: "40px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div
-              style={{
-                width: "48px",
-                height: "48px",
-                backgroundColor: "#3b82f6",
-                borderRadius: "12px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <svg
-                width="28"
-                height="28"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-              </svg>
-            </div>
-            <span
-              style={{ fontSize: "32px", fontWeight: "bold", color: "white" }}
-            >
-              Hakivo
-            </span>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`${SITE_URL}/hakivo.png`}
+            width="180"
+            height="80"
+            alt="Hakivo"
+            style={{ objectFit: "contain" }}
+          />
 
           {/* Date Badge */}
           {createdAt && (
