@@ -152,6 +152,35 @@ export default function OnboardingPage() {
 
       console.log('[OnboardingPage] Response successful, data:', response.data);
 
+      // Sync interests to chat service's memory/profile (for C1 chat personalization)
+      // C1 chat reads from /memory/profile, so we need to keep both in sync
+      const chatServiceUrl = process.env.NEXT_PUBLIC_CHAT_API_URL ||
+        "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+
+      try {
+        const memoryResponse = await fetch(`${chatServiceUrl}/memory/profile`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            interests: selectedInterests,
+            briefingTime: '08:00',
+            emailNotifications: true,
+          }),
+        });
+
+        if (!memoryResponse.ok) {
+          console.warn('[OnboardingPage] Failed to sync interests to chat service:', memoryResponse.status);
+        } else {
+          console.log('[OnboardingPage] Interests synced to chat service memory/profile');
+        }
+      } catch (memoryError) {
+        // Don't fail onboarding if chat service sync fails
+        console.warn('[OnboardingPage] Error syncing to chat service:', memoryError);
+      }
+
       // Store representatives, state legislators, and district info from response
       // The backend returns representatives and district at the root level of response.data
       const responseData = response.data as any;

@@ -119,20 +119,34 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
     setSuccessMessage(null);
 
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/user/preferences', {
-      //   method: 'PUT',
-      //   body: JSON.stringify({
-      //     policyInterests: selectedInterests,
-      //     briefingTime,
-      //     emailNotifications,
-      //     playbackSpeed,
-      //     autoplay,
-      //   }),
-      // });
+      // Get auth token
+      const token = localStorage.getItem("hakivo_access_token");
+      if (!token) {
+        setError("Please sign in to save preferences.");
+        return;
+      }
 
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Save interests to SmartMemory profile via chat service
+      const chatServiceUrl = process.env.NEXT_PUBLIC_CHAT_API_URL ||
+        "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+
+      const response = await fetch(`${chatServiceUrl}/memory/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          interests: selectedInterests,
+          briefingTime,
+          emailNotifications,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to save: ${response.status}`);
+      }
 
       setSuccessMessage('Preferences saved successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);

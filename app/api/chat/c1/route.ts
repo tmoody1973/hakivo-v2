@@ -330,6 +330,7 @@ export async function POST(req: NextRequest) {
     let userContext: UserContext | null = clientUserContext || null;
     let userInterests: string[] = [];
     if (accessToken) {
+      console.log("[C1 API] Fetching user data with token (first 20 chars):", accessToken.substring(0, 20) + "...");
       // Fetch in parallel for performance
       const [context, interests] = await Promise.all([
         userContext ? Promise.resolve(userContext) : fetchUserContext(accessToken),
@@ -337,6 +338,11 @@ export async function POST(req: NextRequest) {
       ]);
       userContext = context;
       userInterests = interests;
+      console.log("[C1 API] Fetch results - userContext:", userContext ? "found" : "null",
+        "reps:", userContext?.representatives?.length ?? 0,
+        "interests:", userInterests.length, userInterests);
+    } else {
+      console.log("[C1 API] No access token - skipping user data fetch");
     }
 
     // DEV ONLY: Use mock data for testing when not authenticated

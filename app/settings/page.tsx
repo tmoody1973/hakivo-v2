@@ -450,6 +450,7 @@ function SettingsPageContent() {
 
     setIsSaving(true);
     try {
+      // Save to main auth/preferences endpoint (for dashboard)
       await updateUserPreferences(accessToken, {
         policyInterests: selectedInterests,
         briefingTime,
@@ -457,6 +458,36 @@ function SettingsPageContent() {
         playbackSpeed,
         autoPlay: autoplay,
       });
+
+      // ALSO sync interests to chat service's memory/profile (for C1 chat personalization)
+      // C1 chat reads from /memory/profile, so we need to keep both in sync
+      const chatServiceUrl = process.env.NEXT_PUBLIC_CHAT_API_URL ||
+        "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+
+      try {
+        const memoryResponse = await fetch(`${chatServiceUrl}/memory/profile`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            interests: selectedInterests,
+            briefingTime,
+            emailNotifications,
+          }),
+        });
+
+        if (!memoryResponse.ok) {
+          console.warn('[Settings] Failed to sync interests to chat service:', memoryResponse.status);
+        } else {
+          console.log('[Settings] Interests synced to chat service memory/profile');
+        }
+      } catch (memoryError) {
+        // Don't fail the whole save if chat service sync fails
+        console.warn('[Settings] Error syncing to chat service:', memoryError);
+      }
+
       alert('Preferences saved successfully!');
     } catch (error) {
       console.error('Error saving preferences:', error);
