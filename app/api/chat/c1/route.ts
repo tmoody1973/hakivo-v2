@@ -671,26 +671,18 @@ IMPORTANT: Use this data when responding to personalized queries:
     // Track message content for persistence
     let fullText = "";
 
-    // Tool name to friendly thinking state message mapping
+    // Tool name to friendly thinking state message mapping (7 tools only)
     const TOOL_THINKING_STATES: Record<string, { title: string; description: string }> = {
-      // Data lookup tools
+      // Core data lookup (3)
+      smartSql: { title: "Querying database", description: "Running database query for congressional data..." },
       getMemberDetail: { title: "Looking up legislator", description: "Searching congressional member database..." },
       getBillDetail: { title: "Fetching bill details", description: "Retrieving legislation information..." },
-      smartSql: { title: "Querying database", description: "Running database query for congressional data..." },
-      // Search tools
-      semanticSearch: { title: "Searching documents", description: "Performing semantic search across bills and documents..." },
+      // Search (2)
+      semanticSearch: { title: "Searching documents", description: "Performing semantic search across bills..." },
       searchNews: { title: "Searching news", description: "Finding recent news and updates..." },
-      webSearch: { title: "Searching the web", description: "Looking up information online..." },
-      // Memory tools
+      // SmartMemory fallback (2)
       getUserContext: { title: "Loading your profile", description: "Retrieving your preferences and location..." },
       getUserRepresentatives: { title: "Finding your representatives", description: "Looking up your elected officials..." },
-      getConversationHistory: { title: "Loading history", description: "Retrieving past conversation context..." },
-      storeWorkingMemory: { title: "Saving context", description: "Storing session information..." },
-      // Artifact tools
-      createArtifact: { title: "Creating document", description: "Generating your document..." },
-      editArtifact: { title: "Editing document", description: "Updating your document..." },
-      generateBillReport: { title: "Generating report", description: "Creating comprehensive bill analysis..." },
-      generateBriefingSlides: { title: "Building presentation", description: "Creating briefing slides..." },
     };
 
     // Use makeC1Response for proper thinking state support

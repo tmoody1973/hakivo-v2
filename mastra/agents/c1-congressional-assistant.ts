@@ -2,23 +2,23 @@ import { Agent } from "@mastra/core/agent";
 import { createOpenAI } from "@ai-sdk/openai";
 import { congressionalSystemPrompt } from "./congressional-assistant";
 
-// Import only essential tools for C1 (minimized for performance)
+/**
+ * MINIMAL TOOL SET for C1 Congressional Assistant (7 tools)
+ *
+ * Speed-optimized for better UX:
+ * - User data (reps, interests) is pre-fetched in API route
+ * - Artifacts (reports, slides) use direct C1 Artifact API (no tool needed)
+ * - Removed: webSearch (overlaps searchNews), conversation history, working memory
+ */
+
+// Core data lookup (3 tools)
 import { getMemberDetailTool, getBillDetailTool, smartSqlTool } from "../tools/smartsql";
+// Semantic search for bills (1 tool)
 import { semanticSearchTool } from "../tools/smartbucket";
-import { searchNewsTool, webSearchTool } from "../tools/perplexity";
-import {
-  getUserContextTool,
-  getUserRepresentativesTool,
-  getConversationHistoryTool,
-  storeWorkingMemoryTool,
-} from "../tools/smartmemory";
-// Import C1 Artifacts tools for native document generation
-import {
-  createArtifactTool,
-  editArtifactTool,
-  generateBillReportTool,
-  generateBriefingSlidesTool,
-} from "../tools/c1-artifacts";
+// News search via Perplexity (1 tool)
+import { searchNewsTool } from "../tools/perplexity";
+// SmartMemory - fallback for user personalization (2 tools)
+import { getUserContextTool, getUserRepresentativesTool } from "../tools/smartmemory";
 
 /**
  * C1 Congressional Assistant Agent
@@ -33,122 +33,63 @@ const thesysC1 = createOpenAI({
   baseURL: "https://api.thesys.dev/v1/embed",
 });
 
-// Enhanced system prompt for C1 generative UI
+// Streamlined system prompt for C1 generative UI (speed-optimized)
 const c1SystemPrompt = `${congressionalSystemPrompt}
 
-## CRITICAL: SmartMemory Tools for User Personalization
+## User Personalization
 
-**ALWAYS use SmartMemory tools FIRST when the user asks personalized questions.**
+User data (representatives, interests, location) is typically provided in the system context.
+If user data is NOT in the context, use SmartMemory tools as fallback:
+- \`getUserContext\` - Get user's location, policy interests, tracked bills
+- \`getUserRepresentatives\` - Get user's senators and house representative
 
-When user asks about:
-- "Who are my representatives?" → FIRST call \`getUserRepresentatives\` tool
-- "My senators/congressperson" → FIRST call \`getUserRepresentatives\` tool
-- "Bills related to my interests" → FIRST call \`getUserContext\` tool
-- "What's happening in my district?" → FIRST call \`getUserContext\` tool
-- Any "my" query → Call SmartMemory tools FIRST before responding
+Look for \`[AUTH_TOKEN: xxx]\` in the context to use with SmartMemory tools.
 
-**Tool Usage:**
-- \`getUserContext\` - Returns user's location (state, district), policy interests, tracked bills count
-- \`getUserRepresentatives\` - Returns user's federal senators and house representative
+## C1 Generative UI Components
 
-**IMPORTANT: The authToken is provided in the conversation context.**
-Look for \`[AUTH_TOKEN: xxx]\` in the message - use this token when calling SmartMemory tools.
+Use these component types for rich responses:
 
-**Workflow for "Who are my representatives?":**
-1. Extract authToken from conversation context
-2. Call \`getUserRepresentatives\` with the authToken
-3. Present the representatives with their details
-4. DO NOT ask for location if the tools return data
+**Data Display:** Cards, Tables, Steps, Accordions
+**Charts:** Bar Chart, Pie Chart, Line Chart
+**Interactive:** Buttons, Tags, Badges
 
-**Only ask for location if:**
-- The SmartMemory tools return an error (no auth token)
-- The user has not completed onboarding (no location saved)
+**Layout Rules:**
+1. Lead with the most important visual
+2. Use Tables for comparisons
+3. Include action buttons for next steps
+4. Be concise - let the UI tell the story
 
-## C1 Generative UI Output Format
+## Reports & Presentations
 
-You have access to C1's component generation capabilities. Use these component types:
-
-### Data Display
-- **Cards**: For bills, legislators, news items - with title, description, badges
-- **Tables**: For structured data - voting records, bill comparisons, lists
-- **Steps**: For processes like "How a Bill Becomes Law"
-- **Accordions**: For expandable content with multiple sections
-
-### Charts (use for visualizations)
-- **Bar Chart**: For vote counts by party, bill counts by category
-- **Pie Chart**: For percentage breakdowns
-- **Line Chart**: For trends over time
-
-### Interactive Elements
-- **Buttons**: For actions like "Track Bill", "View Details", "Contact Rep"
-- **Tags**: For status badges, party affiliations, policy areas
-
-### Layout Rules
-1. Lead with the most important visual (chart or key card)
-2. Use Tables for comparisons (2+ items)
-3. Use Steps for explaining processes
-4. Include action buttons for next steps
-5. End with suggested follow-up questions
-
-### Important
-- Generate components directly, not in code blocks
-- Include source citations as links
-- Be concise - let the UI tell the story
-
-## C1 Artifacts - Document Generation
-
-You can generate interactive documents (reports and slide presentations) using artifact tools:
-
-### Available Artifact Tools:
-- \`generateBillReport\`: Create comprehensive bill analysis reports with executive summary, key provisions, fiscal impact, stakeholder analysis
-- \`generateBriefingSlides\`: Create slide presentations for district briefings, week in congress summaries, bill comparisons
-- \`createArtifact\`: General-purpose document generation with templates
-- \`editArtifact\`: Modify an existing artifact based on user instructions
-
-### When to Use Artifacts:
-- User asks for a "report" or "analysis" on a bill → Use \`generateBillReport\`
-- User asks for "slides" or "presentation" → Use \`generateBriefingSlides\`
-- User wants a "detailed breakdown" or "comprehensive overview" → Use \`generateBillReport\`
-- User says "create a document" or "generate a report" → Use \`createArtifact\`
-- User wants to "edit" or "modify" an existing document → Use \`editArtifact\`
-
-### CRITICAL: After calling an artifact tool:
-1. DO NOT include the artifact content in your text response
-2. The C1 frontend automatically renders the artifact
-3. Simply confirm the document was created, e.g., "Here's your bill analysis report."
-4. Offer to edit or refine the document if the user wants changes`;
+When users ask for reports, analysis, slides, or presentations - just describe what you would create.
+The system handles artifact generation separately for optimal performance.`;
 
 /**
- * Tool set for C1 - includes essential tools plus artifact generation
- * Artifacts use native C1 API for optimal rendering
+ * MINIMAL Tool Set for C1 (7 tools - 50% reduction from 14)
+ *
+ * Speed optimizations:
+ * - User data pre-fetched in route, SmartMemory tools are fallback only
+ * - Artifacts handled via direct C1 API (no tools needed)
+ * - Removed overlapping tools (webSearch duplicates searchNews)
  */
 const c1Tools = {
-  // Core data lookup
-  getMemberDetail: getMemberDetailTool,  // For congress member lookups (e.g., AOC)
-  getBillDetail: getBillDetailTool,      // For specific bill lookups
-  smartSql: smartSqlTool,                // For database queries
-  // Search
-  semanticSearch: semanticSearchTool,    // For topic-based bill search
-  // News
-  searchNews: searchNewsTool,            // For current news
-  webSearch: webSearchTool,              // For general web search
-  // SmartMemory - user personalization
-  getUserContext: getUserContextTool,           // Get user location/preferences
-  getUserRepresentatives: getUserRepresentativesTool,  // Get user's reps
-  getConversationHistory: getConversationHistoryTool,  // Get past conversations
-  storeWorkingMemory: storeWorkingMemoryTool,          // Save session context
-  // C1 Artifacts - native document generation
-  createArtifact: createArtifactTool,              // General document generation
-  editArtifact: editArtifactTool,                  // Edit existing artifacts
-  generateBillReport: generateBillReportTool,     // Bill analysis reports
-  generateBriefingSlides: generateBriefingSlidesTool,  // Slide presentations
+  // Core data lookup (3)
+  smartSql: smartSqlTool,                // Database queries for bills, members, votes
+  getMemberDetail: getMemberDetailTool,  // Congress member lookups
+  getBillDetail: getBillDetailTool,      // Bill details and status
+  // Search (2)
+  semanticSearch: semanticSearchTool,    // Topic-based bill search
+  searchNews: searchNewsTool,            // Current news via Perplexity
+  // SmartMemory fallback (2)
+  getUserContext: getUserContextTool,           // Fallback: user location/preferences
+  getUserRepresentatives: getUserRepresentativesTool,  // Fallback: user's reps
 };
 
 /**
- * C1 Congressional Assistant - Mastra Agent with thesys C1 model
+ * C1 Congressional Assistant - Speed-optimized Mastra Agent
  *
- * This agent combines Mastra's tool orchestration with C1's generative UI.
- * Includes artifact tools for native C1 document generation.
+ * 7 tools (50% reduction) for faster response times.
+ * Artifacts are handled via direct C1 API in the route handler.
  */
 export const c1CongressionalAssistant = new Agent({
   name: "c1-congressional-assistant",
