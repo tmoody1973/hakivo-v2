@@ -8,6 +8,7 @@ const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
 /**
  * GET /api/briefs/:id
  * Get brief details (proxies to briefs-service)
+ * Auth is optional - allows public viewing for shared briefs
  */
 export async function GET(
   request: NextRequest,
@@ -16,25 +17,23 @@ export async function GET(
   try {
     const { id: briefId } = await params;
 
-    // Get authorization header
+    // Get authorization header (optional for public viewing)
     const authorization = request.headers.get('authorization');
-
-    if (!authorization) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
 
     const url = `${BRIEFS_API_URL}/briefs/${briefId}`;
     console.log('[API /briefs/:id] Fetching from:', url);
 
+    // Build headers - include auth if available
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (authorization) {
+      headers['Authorization'] = authorization;
+    }
+
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': authorization,
-      },
+      headers,
     });
 
     console.log('[API /briefs/:id] Response status:', response.status);

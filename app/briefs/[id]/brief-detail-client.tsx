@@ -242,7 +242,7 @@ interface Brief {
 export function BriefDetailClient() {
   const params = useParams()
   const id = params.id as string
-  const { accessToken, isAuthenticated, isLoading: authLoading } = useAuth()
+  const { accessToken, isLoading: authLoading } = useAuth()
   const { play, pause, currentTrack, isPlaying } = useAudioPlayer()
 
   const [brief, setBrief] = useState<Brief | null>(null)
@@ -254,21 +254,22 @@ export function BriefDetailClient() {
   useEffect(() => {
     if (authLoading) return
 
-    if (!isAuthenticated || !accessToken) {
-      setIsLoading(false)
-      setError('Please log in to view briefs')
-      return
-    }
-
+    // Allow public viewing - fetch without requiring authentication
     fetchBrief()
-  }, [id, isAuthenticated, accessToken, authLoading])
+  }, [id, accessToken, authLoading])
 
   const fetchBrief = async () => {
     try {
+      // Build headers - include auth if available (for personalized features)
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`
+      }
+
       const response = await fetch(`/api/briefs/${id}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        headers,
       })
 
       if (!response.ok) {
