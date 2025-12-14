@@ -71,6 +71,28 @@ function getMessageStore(threadId: string) {
 }
 
 /**
+ * Fetch with timeout helper to prevent blocking
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = 3000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Persist message to backend database
  */
 async function persistMessage(
@@ -114,13 +136,14 @@ async function loadMessagesFromBackend(
   accessToken: string
 ): Promise<DBMessage[] | null> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${CHAT_SERVICE_URL}/chat/c1/threads/${threadId}/messages`,
       {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
         },
-      }
+      },
+      3000 // 3 second timeout
     );
 
     if (!response.ok) {
@@ -138,7 +161,11 @@ async function loadMessagesFromBackend(
       content: m.content,
     })) || null;
   } catch (error) {
-    console.warn("[C1 API] Error loading messages:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      console.warn("[C1 API] Timeout loading messages");
+    } else {
+      console.warn("[C1 API] Error loading messages:", error);
+    }
     return null;
   }
 }
@@ -150,17 +177,18 @@ async function fetchUserInterests(accessToken: string): Promise<string[]> {
   try {
     console.log("[C1 API] Fetching user interests from:", `${CHAT_SERVICE_URL}/memory/profile`);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${CHAT_SERVICE_URL}/memory/profile`,
       {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
         },
-      }
+      },
+      3000 // 3 second timeout
     );
 
     if (!response.ok) {
-      console.warn("[C1 API] Failed to fetch user interests:", response.status, await response.text());
+      console.warn("[C1 API] Failed to fetch user interests:", response.status);
       return [];
     }
 
@@ -175,7 +203,11 @@ async function fetchUserInterests(accessToken: string): Promise<string[]> {
     console.log("[C1 API] No interests found in profile");
     return [];
   } catch (error) {
-    console.warn("[C1 API] Error fetching user interests:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      console.warn("[C1 API] Timeout fetching user interests");
+    } else {
+      console.warn("[C1 API] Error fetching user interests:", error);
+    }
     return [];
   }
 }
@@ -187,13 +219,14 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
   try {
     console.log("[C1 API] Fetching representatives from:", `${DASHBOARD_SERVICE_URL}/dashboard/representatives`);
 
-    const repsResponse = await fetch(
+    const repsResponse = await fetchWithTimeout(
       `${DASHBOARD_SERVICE_URL}/dashboard/representatives?token=${encodeURIComponent(accessToken)}`,
       {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
         },
-      }
+      },
+      3000 // 3 second timeout
     );
 
     if (!repsResponse.ok) {
@@ -255,7 +288,11 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
 
     return userContext;
   } catch (error) {
-    console.warn("[C1 API] Error fetching user context:", error);
+    if (error instanceof Error && error.name === "AbortError") {
+      console.warn("[C1 API] Timeout fetching user context");
+    } else {
+      console.warn("[C1 API] Error fetching user context:", error);
+    }
     return null;
   }
 }
