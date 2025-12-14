@@ -12,6 +12,13 @@ import {
   getConversationHistoryTool,
   storeWorkingMemoryTool,
 } from "../tools/smartmemory";
+// Import C1 Artifacts tools for native document generation
+import {
+  createArtifactTool,
+  editArtifactTool,
+  generateBillReportTool,
+  generateBriefingSlidesTool,
+} from "../tools/c1-artifacts";
 
 /**
  * C1 Congressional Assistant Agent
@@ -86,13 +93,36 @@ You have access to C1's component generation capabilities. Use these component t
 ### Important
 - Generate components directly, not in code blocks
 - Include source citations as links
-- Be concise - let the UI tell the story`;
+- Be concise - let the UI tell the story
+
+## C1 Artifacts - Document Generation
+
+You can generate interactive documents (reports and slide presentations) using artifact tools:
+
+### Available Artifact Tools:
+- \`generateBillReport\`: Create comprehensive bill analysis reports with executive summary, key provisions, fiscal impact, stakeholder analysis
+- \`generateBriefingSlides\`: Create slide presentations for district briefings, week in congress summaries, bill comparisons
+- \`createArtifact\`: General-purpose document generation with templates
+- \`editArtifact\`: Modify an existing artifact based on user instructions
+
+### When to Use Artifacts:
+- User asks for a "report" or "analysis" on a bill → Use \`generateBillReport\`
+- User asks for "slides" or "presentation" → Use \`generateBriefingSlides\`
+- User wants a "detailed breakdown" or "comprehensive overview" → Use \`generateBillReport\`
+- User says "create a document" or "generate a report" → Use \`createArtifact\`
+- User wants to "edit" or "modify" an existing document → Use \`editArtifact\`
+
+### CRITICAL: After calling an artifact tool:
+1. DO NOT include the artifact content in your text response
+2. The C1 frontend automatically renders the artifact
+3. Simply confirm the document was created, e.g., "Here's your bill analysis report."
+4. Offer to edit or refine the document if the user wants changes`;
 
 /**
- * Minimal tool set for C1 - essential tools only for performance
- * This reduces API overhead and improves response times
+ * Tool set for C1 - includes essential tools plus artifact generation
+ * Artifacts use native C1 API for optimal rendering
  */
-const c1MinimalTools = {
+const c1Tools = {
   // Core data lookup
   getMemberDetail: getMemberDetailTool,  // For congress member lookups (e.g., AOC)
   getBillDetail: getBillDetailTool,      // For specific bill lookups
@@ -107,19 +137,24 @@ const c1MinimalTools = {
   getUserRepresentatives: getUserRepresentativesTool,  // Get user's reps
   getConversationHistory: getConversationHistoryTool,  // Get past conversations
   storeWorkingMemory: storeWorkingMemoryTool,          // Save session context
+  // C1 Artifacts - native document generation
+  createArtifact: createArtifactTool,              // General document generation
+  editArtifact: editArtifactTool,                  // Edit existing artifacts
+  generateBillReport: generateBillReportTool,     // Bill analysis reports
+  generateBriefingSlides: generateBriefingSlidesTool,  // Slide presentations
 };
 
 /**
  * C1 Congressional Assistant - Mastra Agent with thesys C1 model
  *
  * This agent combines Mastra's tool orchestration with C1's generative UI.
- * Uses minimal toolset (6 tools) for better performance.
+ * Includes artifact tools for native C1 document generation.
  */
 export const c1CongressionalAssistant = new Agent({
   name: "c1-congressional-assistant",
   instructions: c1SystemPrompt,
   model: thesysC1.chat("c1/anthropic/claude-sonnet-4/v-20251130"),
-  tools: c1MinimalTools,
+  tools: c1Tools,
 });
 
 /**
@@ -133,7 +168,7 @@ export function createC1CongressionalAssistant(_options?: {
     name: "c1-congressional-assistant",
     instructions: c1SystemPrompt,
     model: thesysC1.chat("c1/anthropic/claude-sonnet-4/v-20251130"),
-    tools: c1MinimalTools,
+    tools: c1Tools,
   });
 }
 

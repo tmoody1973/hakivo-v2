@@ -474,23 +474,59 @@ IMPORTANT: Use this data when responding to personalized queries:
       toolChoice: "auto",
     });
 
-    // Create ReadableStream following Thesys/Mastra pattern
+    // Create ReadableStream with artifact-aware streaming
+    // Uses fullStream to capture both text and tool results
     const encoder = new TextEncoder();
     let fullText = "";
+    let artifactContent = ""; // Track artifact content separately
+
+    // Artifact tool names that return C1 DSL content
+    const ARTIFACT_TOOLS = ["createArtifact", "editArtifact", "generateBillReport", "generateBriefingSlides"];
 
     const readableStream = new ReadableStream({
       async start(controller) {
         try {
-          // Stream text chunks using textStream property
-          for await (const chunk of stream.textStream) {
-            fullText += chunk;
-            controller.enqueue(encoder.encode(chunk));
+          // Use fullStream to get all parts including tool results
+          for await (const part of stream.fullStream) {
+            if (part.type === "text-delta") {
+              // Stream text chunks as before - access via payload
+              const payload = part.payload as { textDelta?: string };
+              const text = payload.textDelta || "";
+              fullText += text;
+              controller.enqueue(encoder.encode(text));
+            } else if (part.type === "tool-result") {
+              // Check if this is an artifact tool result - access via payload
+              const payload = part.payload as { toolName?: string; result?: unknown };
+              const toolName = payload.toolName || "";
+              if (ARTIFACT_TOOLS.includes(toolName)) {
+                console.log("[C1 API] Artifact tool result detected:", toolName);
+                const result = payload.result as { success?: boolean; content?: string; id?: string; type?: string };
+
+                if (result && result.success && result.content) {
+                  // Stream artifact content as C1 DSL for C1Chat to render
+                  // C1Chat automatically detects C1 DSL format and renders it
+                  artifactContent = result.content;
+
+                  // Stream the C1 DSL content directly - C1Chat will detect and render
+                  // Add newlines to separate from text content
+                  controller.enqueue(encoder.encode("\n\n"));
+                  controller.enqueue(encoder.encode(result.content));
+                  controller.enqueue(encoder.encode("\n\n"));
+
+                  console.log("[C1 API] Streamed artifact content, id:", result.id, "type:", result.type, "length:", result.content.length);
+                }
+              }
+            }
+            // Ignore other part types (tool-call, etc.)
           }
+
+          // Build full message content including any artifacts
+          const fullContent = artifactContent ? `${fullText}\n\n${artifactContent}` : fullText;
 
           // Store assistant message after streaming completes
           const assistantMessage: DBMessage = {
             role: "assistant",
-            content: fullText,
+            content: fullContent,
             id: responseId,
           };
 
@@ -501,7 +537,7 @@ IMPORTANT: Use this data when responding to personalized queries:
             persistMessage(threadId, assistantMessage, accessToken);
           }
 
-          console.log("[C1 API] Stream completed, response length:", fullText.length);
+          console.log("[C1 API] Stream completed, text length:", fullText.length, "artifact length:", artifactContent.length);
           controller.close();
         } catch (error) {
           console.error("[C1 API] Stream error:", error);
