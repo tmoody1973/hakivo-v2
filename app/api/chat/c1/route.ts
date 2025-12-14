@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { c1CongressionalAssistant } from "@/mastra";
 import { UserContext } from "@/lib/c1/user-context";
-import type { CoreMessage } from "ai";
 import {
   chatProtection,
   authenticatedChatProtection,
@@ -10,6 +8,309 @@ import {
 } from "@/lib/security/arcjet";
 import { makeC1Response } from "@thesysai/genui-sdk/server";
 import { generateArtifactStream, type ArtifactType } from "@/mastra/tools/thesys";
+import OpenAI from "openai";
+import type { RunnableToolFunctionWithParse } from "openai/lib/RunnableFunction";
+import type { JSONSchema } from "openai/lib/jsonschema";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+
+// Create OpenAI client pointing to C1 API
+const c1Client = new OpenAI({
+  apiKey: process.env.THESYS_API_KEY,
+  baseURL: "https://api.thesys.dev/v1/embed",
+});
+
+// C1 Model to use
+const C1_MODEL = "c1/anthropic/claude-sonnet-4/v-20251130";
+
+// System prompt for C1 Congressional Assistant (streamlined for speed)
+const C1_SYSTEM_PROMPT = `You are Hakivo, an intelligent, non-partisan congressional assistant that helps citizens understand and engage with their government.
+
+## Your Identity
+- Name: Hakivo
+- Role: Congressional Assistant
+- Tone: Professional, accessible, non-partisan, helpful
+
+## Core Capabilities
+1. **Bill Information**: Search and explain bills in plain language
+2. **Representative Lookup**: Find representatives by location
+3. **Vote Tracking**: Display how representatives voted
+4. **News Context**: Provide current news via web search
+
+## User Personalization
+User data (representatives, interests, location) is typically provided in the system context.
+If user data is NOT in the context, use SmartMemory tools as fallback:
+- \`getUserContext\` - Get user's location, policy interests
+- \`getUserRepresentatives\` - Get user's senators and house representative
+
+Look for \`[AUTH_TOKEN: xxx]\` in the context to use with SmartMemory tools.
+
+## C1 Generative UI
+Use rich UI components: Cards, Tables, Charts, Accordions.
+Lead with the most important visual. Be concise - let the UI tell the story.
+
+## Reports & Presentations
+When users ask for reports, analysis, slides, or presentations - describe what you would create.
+The system handles artifact generation separately.`;
+
+// Service URLs for tool execution
+const BILLS_SERVICE_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const SMART_MEMORY_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+
+// Tool execution functions (direct service calls, no Mastra dependency)
+async function executeSmartSql(params: { query: string; customSql?: string }): Promise<string> {
+  try {
+    const url = `${BILLS_SERVICE_URL}/search/query`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: params.query, customSql: params.customSql }),
+    });
+    if (!response.ok) throw new Error(`SmartSQL error: ${response.status}`);
+    return JSON.stringify(await response.json());
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function executeGetMemberDetail(params: { bioguideId: string }): Promise<string> {
+  try {
+    const url = `${BILLS_SERVICE_URL}/members/${params.bioguideId}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Member not found: ${params.bioguideId}`);
+    return JSON.stringify(await response.json());
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function executeGetBillDetail(params: { congress: number; billType: string; billNumber: number }): Promise<string> {
+  try {
+    const url = `${BILLS_SERVICE_URL}/bills/${params.congress}/${params.billType}/${params.billNumber}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Bill not found: ${params.congress}-${params.billType}-${params.billNumber}`);
+    return JSON.stringify(await response.json());
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function executeSemanticSearch(params: { query: string; limit?: number; congress?: number }): Promise<string> {
+  try {
+    const url = `${BILLS_SERVICE_URL}/search/semantic`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: params.query,
+        limit: params.limit || 10,
+        congress: params.congress,
+      }),
+    });
+    if (!response.ok) throw new Error(`Semantic search error: ${response.status}`);
+    return JSON.stringify(await response.json());
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function executeSearchNews(params: { query: string; topic?: string; focus?: string }): Promise<string> {
+  try {
+    if (!PERPLEXITY_API_KEY) {
+      return JSON.stringify({ error: "Perplexity API key not configured" });
+    }
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-sonar-small-128k-online",
+        messages: [
+          { role: "system", content: "You are a helpful news research assistant focused on U.S. politics and legislation." },
+          { role: "user", content: params.query },
+        ],
+        return_citations: true,
+      }),
+    });
+    if (!response.ok) throw new Error(`News search error: ${response.status}`);
+    const data = await response.json();
+    return JSON.stringify({
+      answer: data.choices?.[0]?.message?.content || "No results found",
+      citations: data.citations || [],
+    });
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function executeGetUserContext(params: { authToken?: string }): Promise<string> {
+  try {
+    if (!params.authToken) return JSON.stringify({ error: "Auth token required" });
+    const url = `${SMART_MEMORY_URL}/memory/profile`;
+    const response = await fetch(url, {
+      headers: { "Authorization": `Bearer ${params.authToken}` },
+    });
+    if (!response.ok) throw new Error(`User context error: ${response.status}`);
+    return JSON.stringify(await response.json());
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+async function executeGetUserRepresentatives(params: { authToken?: string; includeState?: boolean }): Promise<string> {
+  try {
+    if (!params.authToken) return JSON.stringify({ error: "Auth token required" });
+    const dashboardUrl = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
+      "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+    const url = `${dashboardUrl}/dashboard/representatives`;
+    const response = await fetch(url, {
+      headers: { "Authorization": `Bearer ${params.authToken}` },
+    });
+    if (!response.ok) throw new Error(`Representatives error: ${response.status}`);
+    return JSON.stringify(await response.json());
+  } catch (error) {
+    return JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" });
+  }
+}
+
+// Tool type definitions for type safety
+type SmartSqlParams = { query: string; customSql?: string };
+type MemberDetailParams = { bioguideId: string };
+type BillDetailParams = { congress: number; billType: string; billNumber: number };
+type SemanticSearchParams = { query: string; limit?: number; congress?: number };
+type SearchNewsParams = { query: string; topic?: string; focus?: string };
+type UserContextParams = { authToken?: string };
+type UserRepsParams = { authToken?: string; includeState?: boolean };
+
+// 7 Tools for C1 using OpenAI's RunnableToolFunctionWithParse format
+// These are compatible with c1Client.beta.chat.completions.runTools()
+const smartSqlTool: RunnableToolFunctionWithParse<SmartSqlParams> = {
+  type: "function",
+  function: {
+    name: "smartSql",
+    description: `Search the Hakivo database for bill lookups and member queries.
+Best for: Bills by sponsor name, specific bill numbers, members by state.
+For topic searches like "agriculture bills", use semanticSearch instead.`,
+    parameters: zodToJsonSchema(z.object({
+      query: z.string().describe("Natural language query"),
+      customSql: z.string().optional().describe("Advanced: Direct SQL query"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as SmartSqlParams,
+    function: executeSmartSql,
+    strict: true,
+  },
+};
+
+const getMemberDetailTool: RunnableToolFunctionWithParse<MemberDetailParams> = {
+  type: "function",
+  function: {
+    name: "getMemberDetail",
+    description: "Get detailed information about a congressional member by bioguide ID.",
+    parameters: zodToJsonSchema(z.object({
+      bioguideId: z.string().describe("Bioguide ID of the member, e.g., P000197"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as MemberDetailParams,
+    function: executeGetMemberDetail,
+    strict: true,
+  },
+};
+
+const getBillDetailTool: RunnableToolFunctionWithParse<BillDetailParams> = {
+  type: "function",
+  function: {
+    name: "getBillDetail",
+    description: "Get comprehensive details about a specific federal bill.",
+    parameters: zodToJsonSchema(z.object({
+      congress: z.number().describe("Congress number (119 for current)"),
+      billType: z.string().describe("Bill type: hr, s, hjres, sjres, etc."),
+      billNumber: z.number().describe("Bill number"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as BillDetailParams,
+    function: executeGetBillDetail,
+    strict: true,
+  },
+};
+
+const semanticSearchTool: RunnableToolFunctionWithParse<SemanticSearchParams> = {
+  type: "function",
+  function: {
+    name: "semanticSearch",
+    description: `PREFERRED for topic-based bill searches like "agriculture bills" or "healthcare legislation".
+Uses AI semantic similarity to find relevant bills even when exact keywords don't match.`,
+    parameters: zodToJsonSchema(z.object({
+      query: z.string().describe("Natural language topic query"),
+      limit: z.number().optional().describe("Max results (1-50), default 10"),
+      congress: z.number().optional().describe("Filter by Congress number"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as SemanticSearchParams,
+    function: executeSemanticSearch,
+    strict: true,
+  },
+};
+
+const searchNewsTool: RunnableToolFunctionWithParse<SearchNewsParams> = {
+  type: "function",
+  function: {
+    name: "searchNews",
+    description: `Search for current news about legislation, representatives, or political topics.
+Returns AI-summarized answer with citations and source articles.`,
+    parameters: zodToJsonSchema(z.object({
+      query: z.string().describe("News search query"),
+      topic: z.enum(["bills", "legislators", "votes", "policy", "state"]).optional(),
+      focus: z.enum(["news", "general", "policy"]).optional().describe("Focus area, default news"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as SearchNewsParams,
+    function: executeSearchNews,
+    strict: true,
+  },
+};
+
+const getUserContextTool: RunnableToolFunctionWithParse<UserContextParams> = {
+  type: "function",
+  function: {
+    name: "getUserContext",
+    description: `Get user's location, policy interests, and tracked bills. Use when personalizing responses.
+Requires auth token from context [AUTH_TOKEN: xxx].`,
+    parameters: zodToJsonSchema(z.object({
+      authToken: z.string().optional().describe("Auth token from context [AUTH_TOKEN: xxx]"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as UserContextParams,
+    function: executeGetUserContext,
+    strict: true,
+  },
+};
+
+const getUserRepresentativesTool: RunnableToolFunctionWithParse<UserRepsParams> = {
+  type: "function",
+  function: {
+    name: "getUserRepresentatives",
+    description: `Get user's federal representatives based on their location.
+Requires auth token from context [AUTH_TOKEN: xxx].`,
+    parameters: zodToJsonSchema(z.object({
+      authToken: z.string().optional().describe("Auth token from context [AUTH_TOKEN: xxx]"),
+      includeState: z.boolean().optional().describe("Include state officials, default true"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as UserRepsParams,
+    function: executeGetUserRepresentatives,
+    strict: true,
+  },
+};
+
+// Array of all tools for runTools()
+const c1Tools = [
+  smartSqlTool,
+  getMemberDetailTool,
+  getBillDetailTool,
+  semanticSearchTool,
+  searchNewsTool,
+  getUserContextTool,
+  getUserRepresentativesTool,
+];
 
 // Detect artifact intent from user message
 function detectArtifactIntent(message: string): { isArtifact: boolean; type?: "slides" | "report"; topic?: string } {
@@ -44,14 +345,21 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120; // Increased timeout for tool execution
 
 /**
- * C1 Chat API Route - Mastra Agent with Thesys C1 Generative UI
+ * C1 Chat API Route - Native C1 Tool Calling with Thesys Generative UI
  *
- * Uses c1CongressionalAssistant Mastra agent with 30+ tools.
- * Tools include SmartSQL, SmartBucket, SmartMemory, Perplexity, OpenStates, C1 Artifacts.
+ * Uses OpenAI-compatible runTools() API with 7 optimized tools:
+ * - SmartSQL: Database queries for bills, members, votes
+ * - getMemberDetail: Congress member lookups by bioguide ID
+ * - getBillDetail: Bill details and status
+ * - semanticSearch: Topic-based bill search via embeddings
+ * - searchNews: Current news via Perplexity
+ * - getUserContext: User profile from SmartMemory
+ * - getUserRepresentatives: User's elected officials
  *
  * Features:
- * - Full tool orchestration via Mastra
- * - Proper streaming with timeout handling
+ * - Native C1 runTools() for reliable tool execution
+ * - Thinking states for tool progress visualization
+ * - Direct artifact generation (reports/slides)
  * - User context personalization
  * - Message persistence
  */
@@ -80,6 +388,12 @@ interface ChatRequest {
 // In-memory message store per thread (fallback for anonymous users)
 const messageStores = new Map<string, DBMessage[]>();
 
+// OpenAI message type for C1 API
+type OpenAIMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+};
+
 function getMessageStore(threadId: string) {
   if (!messageStores.has(threadId)) {
     messageStores.set(threadId, []);
@@ -91,11 +405,11 @@ function getMessageStore(threadId: string) {
       store.push(msg);
     },
     getMessages: () => messageStores.get(threadId)!,
-    getMastraMessages: (): CoreMessage[] => {
+    getOpenAIMessages: (): OpenAIMessage[] => {
       return messageStores.get(threadId)!.map(m => ({
         role: m.role,
         content: m.content,
-      })) as CoreMessage[];
+      }));
     }
   };
 }
@@ -580,25 +894,23 @@ export async function POST(req: NextRequest) {
 
     messageStore.addMessage(prompt);
 
-    // Build messages for Mastra agent
-    const messages = messageStore.getMastraMessages();
+    // Build messages for C1 API (OpenAI format)
+    const messages = messageStore.getOpenAIMessages();
 
     // Build system message with user data and auth token for SmartMemory tools
     // This prevents C1 from showing "find representatives" forms
-    let systemContent = "";
+    let systemContent = C1_SYSTEM_PROMPT + "\n\n";
 
     const hasReps = userContext && userContext.representatives && userContext.representatives.length > 0;
     const hasInterests = userInterests && userInterests.length > 0;
 
     // Always inject auth token if available so agent can use SmartMemory tools
     if (accessToken) {
-      systemContent = `[AUTH_TOKEN: ${accessToken}]
-
-`;
+      systemContent += `[AUTH_TOKEN: ${accessToken}]\n\n`;
     }
 
     if (hasReps || hasInterests) {
-      let userDataParts: string[] = [];
+      const userDataParts: string[] = [];
 
       if (hasReps) {
         const repsInfo = userContext!.representatives!.map(rep => {
@@ -632,20 +944,19 @@ IMPORTANT: Use this data when responding to personalized queries:
       systemContent += `The user is authenticated. Use SmartMemory tools (getUserContext, getUserRepresentatives) to fetch their profile and personalization data when they ask personalized questions like "who are my representatives" or "what are my interests".`;
     }
 
-    // Add system message with user data at the start
-    const messagesWithContext: CoreMessage[] = [];
-    if (systemContent) {
-      messagesWithContext.push({
-        role: "system",
-        content: systemContent,
-      } as CoreMessage);
-    }
-    messagesWithContext.push(...messages);
+    // Build messages for C1 API with system message at start
+    const messagesWithContext: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: "system", content: systemContent },
+      ...messages.map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    ];
 
-    console.log("[C1 API] Streaming with Mastra agent, messages:", messagesWithContext.length, "hasUserData:", !!systemContent);
+    console.log("[C1 API] Streaming with native C1 runTools, messages:", messagesWithContext.length, "hasUserData:", hasReps || hasInterests);
 
     // Check if user is requesting an artifact (report/slides)
-    // If so, use direct C1 Artifact API instead of Mastra to avoid timeouts
+    // If so, use direct C1 Artifact API instead of tool calling to avoid timeouts
     const userMessage = prompt.content;
     const artifactIntent = detectArtifactIntent(userMessage);
 
@@ -662,10 +973,13 @@ IMPORTANT: Use this data when responding to personalized queries:
       );
     }
 
-    // Use Mastra agent stream for regular conversations (no artifact generation)
-    const stream = await c1CongressionalAssistant.stream(messagesWithContext, {
-      maxSteps: 10, // Allow multiple tool calls
-      toolChoice: "auto",
+    // Use native C1 runTools() for tool calling with streaming
+    // This replaces Mastra agent streaming for better control and performance
+    const runner = c1Client.beta.chat.completions.runTools({
+      model: C1_MODEL,
+      messages: messagesWithContext,
+      tools: c1Tools,
+      stream: true,
     });
 
     // Track message content for persistence
@@ -691,31 +1005,58 @@ IMPORTANT: Use this data when responding to personalized queries:
     // Process stream in background and write to c1Response
     // IMPORTANT: Don't await this - let it run while we return the stream
     const processStream = async () => {
+      // Add overall timeout for stream processing (90 seconds for tool calls)
+      const streamTimeout = setTimeout(async () => {
+        console.error("[C1 API] Stream timeout - forcing end");
+        try {
+          await c1Response.writeContent("\n\nI apologize, but the request timed out. Please try again.");
+          await c1Response.end();
+        } catch {
+          // Ignore
+        }
+      }, 90000);
+
       try {
-        // Use fullStream to get all parts including tool calls and results
-        for await (const part of stream.fullStream) {
-          if (part.type === "text-delta") {
-            // Stream text chunks
-            const payload = part.payload as { textDelta?: string };
-            const text = payload.textDelta || "";
-            fullText += text;
-            await c1Response.writeContent(text);
-          } else if (part.type === "tool-call") {
-            // Show thinking state when tool is called
-            const payload = part.payload as { toolName?: string };
-            const toolName = payload.toolName || "";
-            const thinkState = TOOL_THINKING_STATES[toolName];
-            if (thinkState) {
-              console.log("[C1 API] Writing thinking state for tool:", toolName);
-              await c1Response.writeThinkItem({
-                title: thinkState.title,
-                description: thinkState.description,
-                ephemeral: true, // Disappears when tool completes
-              });
-            }
+        // Set up event handlers for the runner
+        runner.on("functionCall", (functionCall) => {
+          const toolName = functionCall.name;
+          console.log("[C1 API] Tool call:", toolName);
+          const thinkState = TOOL_THINKING_STATES[toolName];
+          if (thinkState) {
+            // Fire and forget - don't await
+            c1Response.writeThinkItem({
+              title: thinkState.title,
+              description: thinkState.description,
+              ephemeral: true,
+            }).catch(() => {});
           }
-          // Note: Artifact tools are handled via direct C1 API path (handleDirectArtifactGeneration)
-          // Tool results here are for non-artifact tools only
+        });
+
+        runner.on("functionCallResult", (result) => {
+          console.log("[C1 API] Tool result received, length:", result?.length || 0);
+        });
+
+        // Stream content as it arrives (ChatCompletionChunk format)
+        for await (const chunk of runner) {
+          // Each chunk has choices array with delta
+          const delta = chunk.choices?.[0]?.delta;
+          if (delta?.content) {
+            fullText += delta.content;
+            await c1Response.writeContent(delta.content);
+          }
+        }
+
+        clearTimeout(streamTimeout);
+
+        // Get final message if streaming didn't capture all content
+        const finalContent = await runner.finalContent();
+        if (finalContent && finalContent !== fullText) {
+          // Write any remaining content not captured during streaming
+          const remaining = finalContent.substring(fullText.length);
+          if (remaining) {
+            fullText = finalContent;
+            await c1Response.writeContent(remaining);
+          }
         }
 
         // Store assistant message after streaming completes
@@ -735,6 +1076,7 @@ IMPORTANT: Use this data when responding to personalized queries:
         console.log("[C1 API] Stream completed, text length:", fullText.length);
         await c1Response.end();
       } catch (error) {
+        clearTimeout(streamTimeout);
         console.error("[C1 API] Stream error:", error);
         // Try to write error to stream before closing
         try {
