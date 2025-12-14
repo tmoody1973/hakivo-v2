@@ -78,28 +78,31 @@ async function persistMessage(
   message: DBMessage,
   accessToken: string
 ): Promise<void> {
+  const url = `${CHAT_SERVICE_URL}/chat/c1/threads/${threadId}/messages`;
+  console.log("[C1 API] Persisting message to:", url, "role:", message.role);
+
   try {
-    const response = await fetch(
-      `${CHAT_SERVICE_URL}/chat/c1/threads/${threadId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          role: message.role,
-          content: message.content,
-          messageId: message.id,
-        }),
-      }
-    );
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        role: message.role,
+        content: message.content,
+        messageId: message.id,
+      }),
+    });
 
     if (!response.ok) {
-      console.warn("[C1 API] Failed to persist message:", response.status);
+      const errorText = await response.text();
+      console.error("[C1 API] Failed to persist message:", response.status, errorText);
+    } else {
+      console.log("[C1 API] Message persisted successfully");
     }
   } catch (error) {
-    console.warn("[C1 API] Error persisting message:", error);
+    console.error("[C1 API] Error persisting message:", error);
   }
 }
 
