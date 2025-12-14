@@ -39,11 +39,17 @@ const C1_SYSTEM_PROMPT = `You are Hakivo, an intelligent, non-partisan congressi
 
 ## User Personalization
 User data (representatives, interests, location) is typically provided in the system context.
-If user data is NOT in the context, use SmartMemory tools as fallback:
-- \`getUserContext\` - Get user's location, policy interests
-- \`getUserRepresentatives\` - Get user's senators and house representative
 
-Look for \`[AUTH_TOKEN: xxx]\` in the context to use with SmartMemory tools.
+CRITICAL: When users ask about their own data (interests, representatives, profile, location):
+1. FIRST check if the data is already in the system context below
+2. If NOT in context, you MUST call SmartMemory tools to fetch it - NEVER show forms to collect this data
+3. NEVER generate UI forms asking users to select interests or enter location when they ask "what are my interests" or "who are my representatives"
+
+Available SmartMemory tools (require auth token from context):
+- \`getUserContext\` - REQUIRED for: interests, tracked bills, policy preferences
+- \`getUserRepresentatives\` - REQUIRED for: senators, representatives, location
+
+Look for \`[AUTH_TOKEN: xxx]\` in the context. Pass this token to the tools.
 
 ## C1 Generative UI
 Use rich UI components: Cards, Tables, Charts, Accordions.
@@ -790,8 +796,19 @@ IMPORTANT: Use this data when responding to personalized queries:
 
       console.log("[C1 API] Injected user data - reps:", hasReps ? userContext!.representatives!.length : 0, "interests:", userInterests.length);
     } else if (accessToken) {
-      // If authenticated but no data fetched, still tell agent to use tools
-      systemContent += `The user is authenticated. Use SmartMemory tools (getUserContext, getUserRepresentatives) to fetch their profile and personalization data when they ask personalized questions like "who are my representatives" or "what are my interests".`;
+      // If authenticated but data wasn't pre-fetched, agent MUST use tools
+      systemContent += `AUTHENTICATED USER - DATA NOT PRE-LOADED
+The user is logged in but their profile data was not pre-fetched.
+
+WHEN USER ASKS ABOUT THEIR DATA (interests, representatives, location, tracked bills):
+1. You MUST call getUserContext or getUserRepresentatives tools using the AUTH_TOKEN above
+2. Display the results from the tool call
+3. NEVER show forms asking them to select interests or enter location
+4. If tools return empty, say "I couldn't find your saved preferences. You can update them in Settings."
+
+Example: User asks "what are my interests?"
+✅ CORRECT: Call getUserContext with authToken, then display their interests
+❌ WRONG: Show a form with checkboxes to select interests`;
     }
 
     // Build messages for C1 API with system message at start
