@@ -173,6 +173,41 @@ function C1ChatContent() {
   // This prevents race conditions when SDK internally clears selection before URL updates
   const lastUrlThreadId = useRef<string | null | undefined>(undefined);
 
+  // Generate share link for current thread
+  const generateShareLink = useCallback(
+    async (messages: Message[]): Promise<string> => {
+      // Get thread title from first user message
+      const firstUserMessage = messages.find((m) => m.role === "user");
+      const content = firstUserMessage?.content || "";
+      const title = content
+        ? content.substring(0, 50) + (content.length > 50 ? "..." : "")
+        : "Shared Conversation";
+
+      // Create share via API
+      const response = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: threadListManager.selectedThreadId || "unknown",
+          title,
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create share link");
+      }
+
+      const data = await response.json();
+      const baseUrl = window.location.origin;
+      return `${baseUrl}/share/${data.token}`;
+    },
+    [threadListManager.selectedThreadId]
+  );
+
   // Handle URL threadId param on mount and changes
   useEffect(() => {
     const threadId = searchParams.get("threadId");
@@ -237,6 +272,7 @@ function C1ChatContent() {
           formFactor="full-page"
           threadListManager={threadListManager}
           threadManager={threadManager}
+          generateShareLink={generateShareLink}
         />
       </ThemeProvider>
     </>
