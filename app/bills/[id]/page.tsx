@@ -53,9 +53,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const billNumber = `${bill.type.toUpperCase()}.${bill.number}`;
   const title = `${billNumber}: ${bill.title} | Hakivo`;
-  const description =
-    bill.enrichment?.plainLanguageSummary ||
-    `Learn about ${billNumber} - ${bill.title}. Track this bill from the ${bill.congress}th Congress on Hakivo.`;
+
+  // Build description - ensure at least 100 characters for LinkedIn
+  let description = bill.enrichment?.plainLanguageSummary || "";
+  if (!description || description.length < 100) {
+    const sponsorInfo = bill.sponsor ? ` sponsored by ${bill.sponsor.fullName} (${bill.sponsor.party}-${bill.sponsor.state})` : "";
+    const policyInfo = bill.policyArea ? ` in ${bill.policyArea}` : "";
+    const fallback = `${billNumber}: ${bill.title}. Learn about this legislation from the ${bill.congress}th Congress${sponsorInfo}${policyInfo}. Track bills, read AI summaries, and stay informed on Hakivo.`;
+    description = description && description.length > fallback.length ? description : fallback;
+  }
 
   const ogImageUrl = `${SITE_URL}/api/og/bill/${id}`;
   const pageUrl = `${SITE_URL}/bills/${id}`;

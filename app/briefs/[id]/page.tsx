@@ -59,8 +59,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const dateStr = brief.created_at ? formatDate(brief.created_at) : "";
   const title = `${brief.title} | Hakivo`;
-  const description = brief.headline ||
-    `Daily congressional brief from ${dateStr}. ${brief.interests?.slice(0, 3).join(", ") || ""}`.trim();
+
+  // Build description - ensure at least 100 characters for LinkedIn
+  let description = brief.headline || "";
+  if (!description || description.length < 100) {
+    const interestsStr = brief.interests?.slice(0, 3).join(", ") || "";
+    const fallback = `Your daily congressional news brief from Hakivo covering the latest legislative updates${dateStr ? ` from ${dateStr}` : ""}${interestsStr ? `. Topics include ${interestsStr}` : ""}.`;
+    description = description && description.length > fallback.length ? description : fallback;
+  }
 
   const ogImageUrl = `${SITE_URL}/api/og/brief/${id}`;
   const pageUrl = `${SITE_URL}/briefs/${id}`;

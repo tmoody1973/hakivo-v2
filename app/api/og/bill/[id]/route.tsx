@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 export const runtime = "edge";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://svc-01k66gywmx8x4r0w31fdjjfekf.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hakivo.com";
 
 async function getBillData(billId: string) {
   try {
@@ -20,7 +21,7 @@ async function getBillData(billId: string) {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;

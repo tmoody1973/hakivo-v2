@@ -54,7 +54,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ? `${member.state} District ${member.district}`
     : member.state;
 
-  const description = `Learn about ${member.fullName}, ${partyFull} ${member.chamber === "House" ? "Representative" : "Senator"} from ${location}. View voting records, sponsored legislation, and more on Hakivo.`;
+  // Build description - ensure at least 100 characters for LinkedIn
+  const roleTitle = member.chamber === "House" ? "U.S. Representative" : "U.S. Senator";
+  const description = `Learn about ${member.fullName}, ${partyFull} ${roleTitle} from ${location}. View voting records, campaign finance data, sponsored legislation, and committee assignments on Hakivo.`;
 
   const ogImageUrl = `${SITE_URL}/api/og/representative/${id}`;
   const pageUrl = `${SITE_URL}/representatives/${id}`;
