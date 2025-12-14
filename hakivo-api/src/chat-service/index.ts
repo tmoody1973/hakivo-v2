@@ -1156,6 +1156,204 @@ app.get('/memory/semantic/search', async (c) => {
   }
 });
 
+// ============================================================================
+// Thread Sharing API Endpoints
+// ============================================================================
+
+// Validation schema for creating shares
+const CreateShareSchema = z.object({
+  threadId: z.string().optional(),
+  title: z.string().min(1).max(200),
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    content: z.string()
+  })).min(1)
+});
+
+/**
+ * Generate a random token for share links
+ */
+function generateShareToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 12; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * POST /chat/c1/share
+ * Create a shareable link for a conversation (requires auth)
+ * Persists to database for durability across server restarts
+ */
+app.post('/chat/c1/share', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+
+    // Validate input
+    const body = await c.req.json();
+    const validation = CreateShareSchema.safeParse(body);
+
+    if (!validation.success) {
+      return c.json({ error: 'Invalid input', details: validation.error.errors }, 400);
+    }
+
+    const { threadId, title, messages } = validation.data;
+
+    // Generate unique token
+    const token = generateShareToken();
+    const now = Date.now();
+    // Shares expire after 7 days
+    const expiresAt = now + (7 * 24 * 60 * 60 * 1000);
+
+    // Store in database
+    await db
+      .prepare(`
+        INSERT INTO shared_threads (token, thread_id, user_id, title, messages, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        token,
+        threadId || null,
+        auth.userId,
+        title,
+        JSON.stringify(messages),
+        now,
+        expiresAt
+      )
+      .run();
+
+    console.log(`✓ Shared thread created: ${token} (expires: ${new Date(expiresAt).toISOString()})`);
+
+    return c.json({
+      success: true,
+      token,
+      expiresAt,
+      expiresIn: '7 days'
+    }, 201);
+  } catch (error) {
+    console.error('Create share error:', error);
+    return c.json({
+      error: 'Failed to create share link',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /chat/c1/share/:token
+ * Get a shared conversation (no auth required - public endpoint)
+ */
+app.get('/chat/c1/share/:token', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+    const token = c.req.param('token');
+
+    // Look up shared thread
+    const share = await db
+      .prepare(`
+        SELECT token, thread_id, title, messages, created_at, expires_at
+        FROM shared_threads
+        WHERE token = ?
+      `)
+      .bind(token)
+      .first();
+
+    if (!share) {
+      return c.json({ error: 'Share not found' }, 404);
+    }
+
+    // Check expiration
+    const now = Date.now();
+    if (share.expires_at && now > (share.expires_at as number)) {
+      // Clean up expired share
+      await db
+        .prepare('DELETE FROM shared_threads WHERE token = ?')
+        .bind(token)
+        .run();
+
+      return c.json({ error: 'Share link has expired' }, 410);
+    }
+
+    // Parse messages
+    let messages = [];
+    try {
+      messages = JSON.parse(share.messages as string);
+    } catch {
+      messages = [];
+    }
+
+    return c.json({
+      success: true,
+      share: {
+        token: share.token,
+        threadId: share.thread_id,
+        title: share.title,
+        messages,
+        createdAt: share.created_at,
+        expiresAt: share.expires_at
+      }
+    });
+  } catch (error) {
+    console.error('Get share error:', error);
+    return c.json({
+      error: 'Failed to get shared conversation',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * DELETE /chat/c1/share/:token
+ * Delete a shared thread (requires auth and ownership)
+ */
+app.delete('/chat/c1/share/:token', async (c) => {
+  try {
+    const auth = await requireAuth(c);
+    if (auth instanceof Response) return auth;
+
+    const db = c.env.APP_DB;
+    const token = c.req.param('token');
+
+    // Verify ownership
+    const share = await db
+      .prepare('SELECT user_id FROM shared_threads WHERE token = ?')
+      .bind(token)
+      .first();
+
+    if (!share) {
+      return c.json({ error: 'Share not found' }, 404);
+    }
+
+    if (share.user_id !== auth.userId) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    // Delete share
+    await db
+      .prepare('DELETE FROM shared_threads WHERE token = ?')
+      .bind(token)
+      .run();
+
+    console.log(`✓ Shared thread deleted: ${token}`);
+
+    return c.json({
+      success: true,
+      message: 'Share link deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete share error:', error);
+    return c.json({
+      error: 'Failed to delete share',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default class extends Service<Env> {
   async fetch(request: Request): Promise<Response> {
     return app.fetch(request, this.env);

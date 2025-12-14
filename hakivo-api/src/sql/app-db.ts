@@ -171,6 +171,17 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   reset_at INTEGER NOT NULL
 );
 
+-- Shared threads table (public share links for C1 conversations)
+CREATE TABLE IF NOT EXISTS shared_threads (
+  token TEXT PRIMARY KEY,
+  thread_id TEXT,
+  user_id TEXT,
+  title TEXT NOT NULL,
+  messages TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
 -- District cache table
 CREATE TABLE IF NOT EXISTS district_cache (
   zip_code TEXT PRIMARY KEY,
@@ -199,6 +210,7 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_shared_threads_expires_at ON shared_threads(expires_at);
 `;
 
 export const tables = [
@@ -216,5 +228,6 @@ export const tables = [
   'password_reset_tokens',
   'email_verification_tokens',
   'rate_limits',
-  'district_cache'
+  'district_cache',
+  'shared_threads'
 ];
