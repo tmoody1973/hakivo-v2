@@ -154,7 +154,7 @@ async function executeSearchNews(params: { query: string; topic?: string; focus?
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.1-sonar-small-128k-online",
+        model: "sonar",
         messages: [
           { role: "system", content: "You are a helpful news research assistant focused on U.S. politics and legislation." },
           { role: "user", content: params.query },
