@@ -63,7 +63,9 @@ function C1ChatContent() {
   // Thread list manager for sidebar and thread switching
   const threadListManager = useThreadListManager({
     fetchThreadList: useCallback(async (): Promise<Thread[]> => {
+      console.log("[C1 Page] Fetching thread list...");
       const threads = await getThreadList();
+      console.log("[C1 Page] Fetched threads:", threads.length, threads.map(t => ({ id: t.threadId, title: t.title })));
       return threads.map((t: C1Thread) => ({
         threadId: t.threadId,
         title: t.title,
@@ -83,6 +85,7 @@ function C1ChatContent() {
     }, [router, pathname]),
     onSelectThread: useCallback(
       (threadId: string) => {
+        console.log("[C1 Page] onSelectThread called with:", threadId);
         router.replace(`${pathname}?threadId=${threadId}`);
       },
       [router, pathname]
@@ -169,7 +172,9 @@ function C1ChatContent() {
   // Handle URL threadId param on mount and changes
   useEffect(() => {
     const threadId = searchParams.get("threadId");
+    console.log("[C1 Page] URL effect - threadId from URL:", threadId, "current selected:", threadListManager.selectedThreadId);
     if (threadId && threadListManager.selectedThreadId !== threadId) {
+      console.log("[C1 Page] Calling selectThread from URL effect");
       threadListManager.selectThread(threadId);
     }
   }, [searchParams, threadListManager]);

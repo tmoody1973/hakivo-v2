@@ -300,6 +300,21 @@
   }
 }
 
+/* Crayon/C1 Chat SDK Overrides */
+/* Make selected thread more visible with teal accent */
+.crayon-shell-thread-button--selected {
+  background-color: rgba(60, 180, 190, 0.15) !important;
+  border-color: rgba(60, 180, 190, 0.5) !important;
+}
+
+.crayon-shell-thread-button:hover {
+  background-color: rgba(60, 180, 190, 0.08) !important;
+}
+
+.crayon-shell-thread-button--selected:hover {
+  background-color: rgba(60, 180, 190, 0.2) !important;
+}
+
 /* Keyframes */
 @keyframes messageIn {
   from {
