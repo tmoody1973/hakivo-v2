@@ -3,11 +3,12 @@ import { NextRequest } from "next/server";
 
 export const runtime = "edge";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://svc-01k66gywmx8x4r0w31fdjjfekf.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 async function getBriefData(briefId: string) {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/briefs/${briefId}`, {
+    const response = await fetch(`${BRIEFS_API_URL}/briefs/${briefId}`, {
       headers: { "Content-Type": "application/json" },
       next: { revalidate: 3600 },
     });
@@ -33,7 +34,7 @@ function formatDate(dateString: string): string {
 }
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -41,10 +42,10 @@ export async function GET(
 
   const title = brief?.title || "Daily Congressional Brief";
   const headline = brief?.headline || "";
-  const createdAt = brief?.createdAt ? formatDate(brief.createdAt) : "";
+  const createdAt = brief?.created_at ? formatDate(brief.created_at) : "";
   const interests = brief?.interests || [];
   const articleCount = brief?.articles?.length || 0;
-  const hasAudio = !!brief?.audioUrl;
+  const hasAudio = !!brief?.audio_url;
 
   // Truncate headline
   const truncatedHeadline =
