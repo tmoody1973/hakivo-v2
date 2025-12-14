@@ -15,7 +15,7 @@ type Thread = {
   createdAt: Date;
 };
 import "@crayonai/react-ui/styles/index.css";
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { hakivoLightTheme, hakivoDarkTheme } from "@/lib/c1-theme";
 import {
@@ -169,17 +169,35 @@ function C1ChatContent() {
     processMessage, // Use custom processMessage with auth headers instead of apiUrl
   });
 
+  // Track last URL threadId to only react when URL actually changes
+  // This prevents race conditions when SDK internally clears selection before URL updates
+  const lastUrlThreadId = useRef<string | null | undefined>(undefined);
+
   // Handle URL threadId param on mount and changes
   useEffect(() => {
     const threadId = searchParams.get("threadId");
-    console.log("[C1 Page] URL effect - threadId from URL:", threadId, "current selected:", threadListManager.selectedThreadId);
-    if (threadId && threadListManager.selectedThreadId !== threadId) {
-      console.log("[C1 Page] Calling selectThread from URL effect");
-      threadListManager.selectThread(threadId);
-    } else if (!threadId && threadListManager.selectedThreadId) {
-      // No threadId in URL but we have a selected thread - switch to new
-      console.log("[C1 Page] Clearing selection for new chat");
-      threadListManager.switchToNewThread();
+
+    // Only react if URL actually changed (not just SDK internal state)
+    if (lastUrlThreadId.current === threadId) {
+      console.log("[C1 Page] URL effect - URL unchanged, skipping:", threadId);
+      return;
+    }
+
+    console.log("[C1 Page] URL effect - URL changed from:", lastUrlThreadId.current, "to:", threadId);
+    lastUrlThreadId.current = threadId;
+
+    if (threadId) {
+      // URL has threadId - select it if not already selected
+      if (threadListManager.selectedThreadId !== threadId) {
+        console.log("[C1 Page] Calling selectThread from URL effect");
+        threadListManager.selectThread(threadId);
+      }
+    } else {
+      // URL has no threadId - ensure we're in "new chat" state
+      if (threadListManager.selectedThreadId) {
+        console.log("[C1 Page] Clearing selection for new chat");
+        threadListManager.switchToNewThread();
+      }
     }
   }, [searchParams, threadListManager]);
 
