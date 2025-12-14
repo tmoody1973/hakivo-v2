@@ -7,7 +7,7 @@ import {
   extractUserIdFromAuth,
 } from "@/lib/security/arcjet";
 import { makeC1Response } from "@thesysai/genui-sdk/server";
-import { generateArtifactStream, type ArtifactType } from "@/mastra/tools/thesys";
+// Artifact generation import removed - all requests now use runTools() to prevent hallucination
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithParse } from "openai/lib/RunnableFunction";
 import type { JSONSchema } from "openai/lib/jsonschema";
@@ -50,8 +50,11 @@ Use rich UI components: Cards, Tables, Charts, Accordions.
 Lead with the most important visual. Be concise - let the UI tell the story.
 
 ## Reports & Presentations
-When users ask for reports, analysis, slides, or presentations - describe what you would create.
-The system handles artifact generation separately.`;
+CRITICAL: When users ask for reports, analysis, or presentations about bills or legislation:
+1. ALWAYS use smartSql or semanticSearch tools FIRST to fetch REAL bill data
+2. NEVER make up or guess bill numbers - only reference bills returned by tools
+3. Include only verified information from tool results in your response
+4. If no relevant bills are found, say so honestly instead of inventing data`;
 
 // Service URLs for tool execution
 const BILLS_SERVICE_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
@@ -312,33 +315,7 @@ const c1Tools = [
   getUserRepresentativesTool,
 ];
 
-// Detect artifact intent from user message
-function detectArtifactIntent(message: string): { isArtifact: boolean; type?: "slides" | "report"; topic?: string } {
-  const lowerMessage = message.toLowerCase();
-
-  // Check for report/analysis keywords
-  const reportKeywords = ["report", "analysis", "analyze", "breakdown", "overview", "deep dive", "detailed"];
-  const slidesKeywords = ["slides", "presentation", "deck", "briefing", "ppt", "powerpoint"];
-  const billKeywords = ["bill", "legislation", "act", "hr", "s.", "h.r."];
-
-  const wantsReport = reportKeywords.some(k => lowerMessage.includes(k));
-  const wantsSlides = slidesKeywords.some(k => lowerMessage.includes(k));
-  const mentionsBill = billKeywords.some(k => lowerMessage.includes(k));
-
-  if (wantsSlides) {
-    return { isArtifact: true, type: "slides", topic: message };
-  }
-
-  if (wantsReport && mentionsBill) {
-    return { isArtifact: true, type: "report", topic: message };
-  }
-
-  if (wantsReport) {
-    return { isArtifact: true, type: "report", topic: message };
-  }
-
-  return { isArtifact: false };
-}
+// NOTE: detectArtifactIntent removed - all requests go through runTools() to prevent hallucination
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -641,151 +618,8 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
   }
 }
 
-/**
- * Handle direct C1 Artifact API generation (bypasses Mastra)
- *
- * This is used when the user explicitly requests an artifact (report/slides)
- * to avoid timeouts from Mastra agent processing.
- */
-async function handleDirectArtifactGeneration(
-  artifactType: "slides" | "report",
-  userMessage: string,
-  threadId: string,
-  responseId: string,
-  accessToken: string | null,
-  userContext: UserContext | null,
-  userInterests: string[]
-): Promise<NextResponse> {
-  const c1Response = makeC1Response();
-  const messageStore = getMessageStore(threadId);
-
-  // Build context for artifact generation
-  const contextParts: string[] = [];
-
-  if (userContext?.profile?.location?.state) {
-    contextParts.push(`User location: ${userContext.profile.location.state}${userContext.profile.location.district ? `, District ${userContext.profile.location.district}` : ""}`);
-  }
-
-  if (userContext?.representatives && userContext.representatives.length > 0) {
-    const reps = userContext.representatives.map(r => `${r.name} (${r.party}, ${r.chamber})`).join(", ");
-    contextParts.push(`User's representatives: ${reps}`);
-  }
-
-  if (userInterests.length > 0) {
-    contextParts.push(`User's policy interests: ${userInterests.join(", ")}`);
-  }
-
-  const contextInfo = contextParts.length > 0 ? `\n\nContext:\n${contextParts.join("\n")}` : "";
-
-  // Generate artifact in background
-  const generateArtifact = async () => {
-    try {
-      // Show thinking state
-      await c1Response.writeThinkItem({
-        title: artifactType === "slides" ? "Building presentation" : "Generating report",
-        description: artifactType === "slides"
-          ? "Creating your briefing slides..."
-          : "Creating comprehensive analysis...",
-        ephemeral: true,
-      });
-
-      // Write introductory text
-      const introText = artifactType === "slides"
-        ? "Here's your presentation:"
-        : "Here's your analysis report:";
-      await c1Response.writeContent(introText + "\n\n");
-
-      // Build artifact generation options
-      const artifactId = `${artifactType}-${Date.now()}`;
-
-      const systemPrompt = artifactType === "slides"
-        ? "You are an expert at creating professional presentations about U.S. Congress, legislation, and politics. Generate engaging, informative slides with clear bullet points and relevant data."
-        : "You are an expert at creating comprehensive analysis reports about U.S. Congress, legislation, and politics. Generate detailed, factual reports with professional structure.";
-
-      const userPrompt = artifactType === "slides"
-        ? `Create a professional briefing presentation about: ${userMessage}${contextInfo}
-
-Include:
-- Title slide with clear topic
-- 4-6 content slides with key points
-- Supporting data and statistics where relevant
-- Conclusion/next steps slide
-
-Use clear, concise bullet points suitable for presentations.`
-        : `Create a comprehensive analysis report about: ${userMessage}${contextInfo}
-
-Include:
-- Executive Summary
-- Background/Context
-- Key Findings or Analysis
-- Stakeholder Impact (if relevant)
-- Recommendations
-- References/Sources
-
-Use professional, factual language with supporting details.`;
-
-      console.log("[C1 API] Calling C1 Artifact API with type:", artifactType, "id:", artifactId);
-
-      // Use the existing generateArtifactStream from thesys.ts
-      const artifactGenerator = generateArtifactStream({
-        id: artifactId,
-        type: artifactType as ArtifactType,
-        systemPrompt,
-        userPrompt,
-      });
-
-      let fullArtifactContent = "";
-
-      // Stream artifact content directly to response
-      for await (const content of artifactGenerator) {
-        if (content) {
-          fullArtifactContent += content;
-          await c1Response.writeContent(content);
-        }
-      }
-
-      console.log("[C1 API] Artifact generation complete, length:", fullArtifactContent.length);
-
-      // Store the complete message
-      const fullContent = `${introText}\n\n${fullArtifactContent}`;
-      const assistantMessage: DBMessage = {
-        id: responseId,
-        role: "assistant",
-        content: fullContent,
-      };
-
-      messageStore.addMessage(assistantMessage);
-
-      // Persist if authenticated
-      if (accessToken) {
-        persistMessage(threadId, assistantMessage, accessToken);
-      }
-
-      await c1Response.end();
-    } catch (error) {
-      console.error("[C1 API] Artifact generation error:", error);
-      try {
-        await c1Response.writeContent(`\n\nError generating ${artifactType}: ${error instanceof Error ? error.message : "Unknown error"}`);
-      } catch {
-        // Ignore write errors
-      }
-      await c1Response.end();
-    }
-  };
-
-  // Start generation but don't await - return stream immediately
-  generateArtifact().catch((error) => {
-    console.error("[C1 API] Unhandled artifact generation error:", error);
-  });
-
-  return new NextResponse(c1Response.responseStream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive",
-    },
-  });
-}
+// NOTE: handleDirectArtifactGeneration removed - caused hallucinated bill numbers
+// All requests now go through runTools() which fetches real data first
 
 export async function POST(req: NextRequest) {
   try {
@@ -955,23 +789,10 @@ IMPORTANT: Use this data when responding to personalized queries:
 
     console.log("[C1 API] Streaming with native C1 runTools, messages:", messagesWithContext.length, "hasUserData:", hasReps || hasInterests);
 
-    // Check if user is requesting an artifact (report/slides)
-    // If so, use direct C1 Artifact API instead of tool calling to avoid timeouts
-    const userMessage = prompt.content;
-    const artifactIntent = detectArtifactIntent(userMessage);
-
-    if (artifactIntent.isArtifact && artifactIntent.type) {
-      console.log("[C1 API] Artifact intent detected:", artifactIntent.type, "- using direct C1 API");
-      return await handleDirectArtifactGeneration(
-        artifactIntent.type,
-        userMessage,
-        threadId,
-        responseId,
-        accessToken,
-        userContext,
-        userInterests
-      );
-    }
+    // NOTE: Artifact detection removed - all requests now go through runTools()
+    // This ensures the model uses database tools to fetch REAL bill data
+    // before generating any reports or analysis, preventing hallucinated bill numbers.
+    // The model will generate artifacts inline using C1's generative UI capabilities.
 
     // Use native C1 runTools() for tool calling with streaming
     // This replaces Mastra agent streaming for better control and performance
