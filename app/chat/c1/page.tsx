@@ -176,6 +176,9 @@ function C1ChatContent() {
   // Generate share link for current thread
   const generateShareLink = useCallback(
     async (messages: Message[]): Promise<string> => {
+      // Get auth token for authenticated share creation
+      const authToken = localStorage.getItem("hakivo_access_token");
+
       // Get thread title from first user message
       const firstUserMessage = messages.find((m) => m.role === "user");
       const content = firstUserMessage?.content || "";
@@ -183,10 +186,13 @@ function C1ChatContent() {
         ? content.substring(0, 50) + (content.length > 50 ? "..." : "")
         : "Shared Conversation";
 
-      // Create share via API
+      // Create share via API (requires authentication)
       const response = await fetch("/api/share", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({
           sessionId: threadListManager.selectedThreadId || "unknown",
           title,
@@ -198,7 +204,8 @@ function C1ChatContent() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to create share link");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create share link");
       }
 
       const data = await response.json();
