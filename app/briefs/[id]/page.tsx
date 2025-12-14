@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { BriefDetailClient } from "./brief-detail-client";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://svc-01k66gywmx8x4r0w31fdjjfekf.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hakivo.com";
 
 interface BriefMetadata {
@@ -9,20 +10,20 @@ interface BriefMetadata {
   title: string;
   headline?: string;
   interests?: string[];
-  createdAt: string;
-  audioUrl?: string;
+  created_at: string;
+  audio_url?: string;
   articles?: Array<unknown>;
 }
 
 async function getBriefData(briefId: string): Promise<BriefMetadata | null> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/briefs/${briefId}`, {
+    const response = await fetch(`${BRIEFS_API_URL}/briefs/${briefId}`, {
       headers: { "Content-Type": "application/json" },
       next: { revalidate: 3600 },
     });
     if (!response.ok) return null;
     const data = await response.json();
-    return data || null;
+    return data?.brief || null;
   } catch {
     return null;
   }
@@ -56,7 +57,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
   }
 
-  const dateStr = brief.createdAt ? formatDate(brief.createdAt) : "";
+  const dateStr = brief.created_at ? formatDate(brief.created_at) : "";
   const title = `${brief.title} | Hakivo`;
   const description = brief.headline ||
     `Daily congressional brief from ${dateStr}. ${brief.interests?.slice(0, 3).join(", ") || ""}`.trim();
@@ -101,8 +102,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     alternates: {
       canonical: pageUrl,
     },
-    other: brief.audioUrl ? {
-      "og:audio": brief.audioUrl,
+    other: brief.audio_url ? {
+      "og:audio": brief.audio_url,
       "og:audio:type": "audio/mpeg",
     } : undefined,
   };
