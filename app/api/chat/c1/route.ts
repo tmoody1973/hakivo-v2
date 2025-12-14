@@ -74,7 +74,7 @@ Render these as a ButtonGroup or Row of Buttons component at the very end of you
 
 // Service URLs for tool execution
 const BILLS_SERVICE_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 const SMART_MEMORY_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
   "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
@@ -82,7 +82,7 @@ const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 // Tool execution functions (direct service calls, no Mastra dependency)
 async function executeSmartSql(params: { query: string; customSql?: string }): Promise<string> {
   try {
-    const url = `${BILLS_SERVICE_URL}/search/query`;
+    const url = `${BILLS_SERVICE_URL}/bills/smart-query`;
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -119,7 +119,7 @@ async function executeGetBillDetail(params: { congress: number; billType: string
 
 async function executeSemanticSearch(params: { query: string; limit?: number; congress?: number }): Promise<string> {
   try {
-    const url = `${BILLS_SERVICE_URL}/search/semantic`;
+    const url = `${BILLS_SERVICE_URL}/bills/semantic-search`;
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
