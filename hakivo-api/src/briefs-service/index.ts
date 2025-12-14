@@ -353,21 +353,34 @@ app.post('/briefs/request', async (c) => {
 
 /**
  * GET /briefs/:briefId
- * Get brief details and status (requires auth)
+ * Get brief details and status
+ * Auth is optional - allows public viewing for shared briefs
+ * Authenticated users only see their own briefs
  */
 app.get('/briefs/:briefId', async (c) => {
   try {
-    const auth = await requireAuth(c);
-    if (auth instanceof Response) return auth;
-
     const db = c.env.APP_DB;
     const briefId = c.req.param('briefId');
 
-    // Get brief
-    const brief = await db
-      .prepare('SELECT * FROM briefs WHERE id = ? AND user_id = ?')
-      .bind(briefId, auth.userId)
-      .first();
+    // Check if authenticated (optional)
+    const authHeader = c.req.header('Authorization');
+    const auth = await verifyAuth(authHeader, c.env.JWT_SECRET);
+
+    // Get brief - if authenticated, restrict to user's own briefs
+    // If not authenticated, allow viewing any brief (public access for sharing)
+    let brief;
+    if (auth) {
+      brief = await db
+        .prepare('SELECT * FROM briefs WHERE id = ? AND user_id = ?')
+        .bind(briefId, auth.userId)
+        .first();
+    } else {
+      // Public access - allow viewing any brief for sharing
+      brief = await db
+        .prepare('SELECT * FROM briefs WHERE id = ?')
+        .bind(briefId)
+        .first();
+    }
 
     if (!brief) {
       return c.json({ error: 'Brief not found' }, 404);
