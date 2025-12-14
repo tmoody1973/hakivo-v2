@@ -54,7 +54,23 @@ CRITICAL: When users ask for reports, analysis, or presentations about bills or 
 1. ALWAYS use smartSql or semanticSearch tools FIRST to fetch REAL bill data
 2. NEVER make up or guess bill numbers - only reference bills returned by tools
 3. Include only verified information from tool results in your response
-4. If no relevant bills are found, say so honestly instead of inventing data`;
+4. If no relevant bills are found, say so honestly instead of inventing data
+
+## Follow-Up Suggestions
+At the end of EVERY response, include 2-3 suggested follow-up questions as clickable buttons.
+These help users explore related topics and discover what they can ask.
+
+Format as a horizontal row of outline-styled buttons at the bottom of your response:
+- Questions should be contextual based on the current conversation
+- Keep each suggestion SHORT (under 40 characters)
+- Make them actionable and specific
+
+Examples of good follow-up suggestions:
+- After showing representatives: "How did they vote on [topic]?" | "View recent bills" | "Compare voting records"
+- After bill info: "Track this bill" | "Who sponsored it?" | "Related legislation"
+- After news: "More on this topic" | "Official bill text" | "Representative stance"
+
+Render these as a ButtonGroup or Row of Buttons component at the very end of your response.`;
 
 // Service URLs for tool execution
 const BILLS_SERVICE_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
