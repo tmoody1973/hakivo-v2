@@ -101,14 +101,16 @@ function C1ChatContent() {
   });
 
   // Custom processMessage to include auth headers in chat API requests
+  // IMPORTANT: This must be passed to useThreadManager, NOT C1Chat directly
   const processMessage = useCallback(
     async (params: {
       threadId: string;
-      messages: { id: string; role: "user" | "assistant"; content: string }[];
+      messages: Message[];
       responseId: string;
       abortController: AbortController;
     }): Promise<Response> => {
       const token = localStorage.getItem("hakivo_access_token");
+      console.log("[C1 Page] processMessage called - token present:", !!token);
 
       // Backend expects 'prompt' (single message), not 'messages' (array)
       // Get the last user message as the prompt
@@ -132,6 +134,7 @@ function C1ChatContent() {
   );
 
   // Thread manager for message handling within a thread
+  // processMessage is passed HERE to override the default apiUrl-based fetch
   const threadManager = useThreadManager({
     threadListManager,
     loadThread: useCallback(
@@ -160,7 +163,7 @@ function C1ChatContent() {
       },
       [threadListManager.selectedThreadId]
     ),
-    apiUrl: "/api/chat/c1",
+    processMessage, // Use custom processMessage with auth headers instead of apiUrl
   });
 
   // Handle URL threadId param on mount and changes
@@ -203,12 +206,10 @@ function C1ChatContent() {
         mode="dark"
       >
         <C1Chat
-          apiUrl="/api/chat/c1"
           agentName="Hakivo"
           formFactor="full-page"
           threadListManager={threadListManager}
           threadManager={threadManager}
-          processMessage={processMessage}
         />
       </ThemeProvider>
     </>
