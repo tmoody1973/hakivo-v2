@@ -9,6 +9,35 @@ import {
   extractUserIdFromAuth,
 } from "@/lib/security/arcjet";
 import { makeC1Response } from "@thesysai/genui-sdk/server";
+import { generateArtifactStream, type ArtifactType } from "@/mastra/tools/thesys";
+
+// Detect artifact intent from user message
+function detectArtifactIntent(message: string): { isArtifact: boolean; type?: "slides" | "report"; topic?: string } {
+  const lowerMessage = message.toLowerCase();
+
+  // Check for report/analysis keywords
+  const reportKeywords = ["report", "analysis", "analyze", "breakdown", "overview", "deep dive", "detailed"];
+  const slidesKeywords = ["slides", "presentation", "deck", "briefing", "ppt", "powerpoint"];
+  const billKeywords = ["bill", "legislation", "act", "hr", "s.", "h.r."];
+
+  const wantsReport = reportKeywords.some(k => lowerMessage.includes(k));
+  const wantsSlides = slidesKeywords.some(k => lowerMessage.includes(k));
+  const mentionsBill = billKeywords.some(k => lowerMessage.includes(k));
+
+  if (wantsSlides) {
+    return { isArtifact: true, type: "slides", topic: message };
+  }
+
+  if (wantsReport && mentionsBill) {
+    return { isArtifact: true, type: "report", topic: message };
+  }
+
+  if (wantsReport) {
+    return { isArtifact: true, type: "report", topic: message };
+  }
+
+  return { isArtifact: false };
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -298,6 +327,152 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
   }
 }
 
+/**
+ * Handle direct C1 Artifact API generation (bypasses Mastra)
+ *
+ * This is used when the user explicitly requests an artifact (report/slides)
+ * to avoid timeouts from Mastra agent processing.
+ */
+async function handleDirectArtifactGeneration(
+  artifactType: "slides" | "report",
+  userMessage: string,
+  threadId: string,
+  responseId: string,
+  accessToken: string | null,
+  userContext: UserContext | null,
+  userInterests: string[]
+): Promise<NextResponse> {
+  const c1Response = makeC1Response();
+  const messageStore = getMessageStore(threadId);
+
+  // Build context for artifact generation
+  const contextParts: string[] = [];
+
+  if (userContext?.profile?.location?.state) {
+    contextParts.push(`User location: ${userContext.profile.location.state}${userContext.profile.location.district ? `, District ${userContext.profile.location.district}` : ""}`);
+  }
+
+  if (userContext?.representatives && userContext.representatives.length > 0) {
+    const reps = userContext.representatives.map(r => `${r.name} (${r.party}, ${r.chamber})`).join(", ");
+    contextParts.push(`User's representatives: ${reps}`);
+  }
+
+  if (userInterests.length > 0) {
+    contextParts.push(`User's policy interests: ${userInterests.join(", ")}`);
+  }
+
+  const contextInfo = contextParts.length > 0 ? `\n\nContext:\n${contextParts.join("\n")}` : "";
+
+  // Generate artifact in background
+  const generateArtifact = async () => {
+    try {
+      // Show thinking state
+      await c1Response.writeThinkItem({
+        title: artifactType === "slides" ? "Building presentation" : "Generating report",
+        description: artifactType === "slides"
+          ? "Creating your briefing slides..."
+          : "Creating comprehensive analysis...",
+        ephemeral: true,
+      });
+
+      // Write introductory text
+      const introText = artifactType === "slides"
+        ? "Here's your presentation:"
+        : "Here's your analysis report:";
+      await c1Response.writeContent(introText + "\n\n");
+
+      // Build artifact generation options
+      const artifactId = `${artifactType}-${Date.now()}`;
+
+      const systemPrompt = artifactType === "slides"
+        ? "You are an expert at creating professional presentations about U.S. Congress, legislation, and politics. Generate engaging, informative slides with clear bullet points and relevant data."
+        : "You are an expert at creating comprehensive analysis reports about U.S. Congress, legislation, and politics. Generate detailed, factual reports with professional structure.";
+
+      const userPrompt = artifactType === "slides"
+        ? `Create a professional briefing presentation about: ${userMessage}${contextInfo}
+
+Include:
+- Title slide with clear topic
+- 4-6 content slides with key points
+- Supporting data and statistics where relevant
+- Conclusion/next steps slide
+
+Use clear, concise bullet points suitable for presentations.`
+        : `Create a comprehensive analysis report about: ${userMessage}${contextInfo}
+
+Include:
+- Executive Summary
+- Background/Context
+- Key Findings or Analysis
+- Stakeholder Impact (if relevant)
+- Recommendations
+- References/Sources
+
+Use professional, factual language with supporting details.`;
+
+      console.log("[C1 API] Calling C1 Artifact API with type:", artifactType, "id:", artifactId);
+
+      // Use the existing generateArtifactStream from thesys.ts
+      const artifactGenerator = generateArtifactStream({
+        id: artifactId,
+        type: artifactType as ArtifactType,
+        systemPrompt,
+        userPrompt,
+      });
+
+      let fullArtifactContent = "";
+
+      // Stream artifact content directly to response
+      for await (const content of artifactGenerator) {
+        if (content) {
+          fullArtifactContent += content;
+          await c1Response.writeContent(content);
+        }
+      }
+
+      console.log("[C1 API] Artifact generation complete, length:", fullArtifactContent.length);
+
+      // Store the complete message
+      const fullContent = `${introText}\n\n${fullArtifactContent}`;
+      const assistantMessage: DBMessage = {
+        id: responseId,
+        role: "assistant",
+        content: fullContent,
+      };
+
+      messageStore.addMessage(assistantMessage);
+
+      // Persist if authenticated
+      if (accessToken) {
+        persistMessage(threadId, assistantMessage, accessToken);
+      }
+
+      await c1Response.end();
+    } catch (error) {
+      console.error("[C1 API] Artifact generation error:", error);
+      try {
+        await c1Response.writeContent(`\n\nError generating ${artifactType}: ${error instanceof Error ? error.message : "Unknown error"}`);
+      } catch {
+        // Ignore write errors
+      }
+      await c1Response.end();
+    }
+  };
+
+  // Start generation but don't await - return stream immediately
+  generateArtifact().catch((error) => {
+    console.error("[C1 API] Unhandled artifact generation error:", error);
+  });
+
+  return new NextResponse(c1Response.responseStream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Check for auth token first (needed for rate limiting)
@@ -469,7 +644,25 @@ IMPORTANT: Use this data when responding to personalized queries:
 
     console.log("[C1 API] Streaming with Mastra agent, messages:", messagesWithContext.length, "hasUserData:", !!systemContent);
 
-    // Use Mastra agent stream with context-enriched messages
+    // Check if user is requesting an artifact (report/slides)
+    // If so, use direct C1 Artifact API instead of Mastra to avoid timeouts
+    const userMessage = prompt.content;
+    const artifactIntent = detectArtifactIntent(userMessage);
+
+    if (artifactIntent.isArtifact && artifactIntent.type) {
+      console.log("[C1 API] Artifact intent detected:", artifactIntent.type, "- using direct C1 API");
+      return await handleDirectArtifactGeneration(
+        artifactIntent.type,
+        userMessage,
+        threadId,
+        responseId,
+        accessToken,
+        userContext,
+        userInterests
+      );
+    }
+
+    // Use Mastra agent stream for regular conversations (no artifact generation)
     const stream = await c1CongressionalAssistant.stream(messagesWithContext, {
       maxSteps: 10, // Allow multiple tool calls
       toolChoice: "auto",
@@ -477,10 +670,6 @@ IMPORTANT: Use this data when responding to personalized queries:
 
     // Track message content for persistence
     let fullText = "";
-    let artifactContent = ""; // Track artifact content separately
-
-    // Artifact tool names that return C1 DSL content
-    const ARTIFACT_TOOLS = ["createArtifact", "editArtifact", "generateBillReport", "generateBriefingSlides"];
 
     // Tool name to friendly thinking state message mapping
     const TOOL_THINKING_STATES: Record<string, { title: string; description: string }> = {
@@ -508,7 +697,8 @@ IMPORTANT: Use this data when responding to personalized queries:
     const c1Response = makeC1Response();
 
     // Process stream in background and write to c1Response
-    (async () => {
+    // IMPORTANT: Don't await this - let it run while we return the stream
+    const processStream = async () => {
       try {
         // Use fullStream to get all parts including tool calls and results
         for await (const part of stream.fullStream) {
@@ -531,33 +721,15 @@ IMPORTANT: Use this data when responding to personalized queries:
                 ephemeral: true, // Disappears when tool completes
               });
             }
-          } else if (part.type === "tool-result") {
-            // Check if this is an artifact tool result
-            const payload = part.payload as { toolName?: string; result?: unknown };
-            const toolName = payload.toolName || "";
-            if (ARTIFACT_TOOLS.includes(toolName)) {
-              console.log("[C1 API] Artifact tool result detected:", toolName);
-              const result = payload.result as { success?: boolean; content?: string; id?: string; type?: string };
-
-              if (result && result.success && result.content) {
-                // Stream artifact content as C1 DSL for C1Chat to render
-                artifactContent = result.content;
-                await c1Response.writeContent("\n\n");
-                await c1Response.writeContent(result.content);
-                await c1Response.writeContent("\n\n");
-                console.log("[C1 API] Streamed artifact content, id:", result.id, "type:", result.type, "length:", result.content.length);
-              }
-            }
           }
+          // Note: Artifact tools are handled via direct C1 API path (handleDirectArtifactGeneration)
+          // Tool results here are for non-artifact tools only
         }
-
-        // Build full message content including any artifacts
-        const fullContent = artifactContent ? `${fullText}\n\n${artifactContent}` : fullText;
 
         // Store assistant message after streaming completes
         const assistantMessage: DBMessage = {
           role: "assistant",
-          content: fullContent,
+          content: fullText,
           id: responseId,
         };
 
@@ -568,15 +740,26 @@ IMPORTANT: Use this data when responding to personalized queries:
           persistMessage(threadId, assistantMessage, accessToken);
         }
 
-        console.log("[C1 API] Stream completed, text length:", fullText.length, "artifact length:", artifactContent.length);
+        console.log("[C1 API] Stream completed, text length:", fullText.length);
         await c1Response.end();
       } catch (error) {
         console.error("[C1 API] Stream error:", error);
+        // Try to write error to stream before closing
+        try {
+          await c1Response.writeContent(`\n\nError: ${error instanceof Error ? error.message : "Unknown error"}`);
+        } catch {
+          // Ignore write errors during cleanup
+        }
         await c1Response.end();
       }
-    })();
+    };
 
-    // Return the C1 response stream
+    // Start processing but don't await - return stream immediately
+    processStream().catch((error) => {
+      console.error("[C1 API] Unhandled stream processing error:", error);
+    });
+
+    // Return the C1 response stream immediately
     const readableStream = c1Response.responseStream;
 
     return new NextResponse(readableStream, {
