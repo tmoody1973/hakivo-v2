@@ -899,7 +899,19 @@ app.post('/api/subscription/check-limit/:userId', async (c) => {
       }
 
       case 'generate_brief': {
-        currentCount = user.briefs_used_this_month as number || 0;
+        // Count actual briefs created this month from the database
+        const currentDate = new Date();
+        const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString();
+        const briefsResult = await db
+          .prepare(`
+            SELECT COUNT(*) as count FROM briefs
+            WHERE user_id = ?
+              AND created_at >= ?
+              AND status IN ('completed', 'script_ready', 'processing', 'audio_processing', 'pending')
+          `)
+          .bind(userId, monthStart)
+          .first();
+        currentCount = (briefsResult?.count as number) || 0;
         limit = FREE_TIER_BRIEFS_PER_MONTH;
         allowed = currentCount < limit;
         reason = allowed ? null : `Free tier limited to ${limit} briefs per month. Upgrade to Pro for unlimited.`;

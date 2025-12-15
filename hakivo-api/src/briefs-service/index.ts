@@ -263,6 +263,45 @@ app.post('/briefs/request', async (c) => {
 
     const db = c.env.APP_DB;
 
+    // Check subscription tier and monthly brief limit
+    const FREE_TIER_BRIEFS_PER_MONTH = 3;
+    const user = await db
+      .prepare('SELECT subscription_tier FROM users WHERE id = ?')
+      .bind(auth.userId)
+      .first();
+
+    const isPro = user?.subscription_tier === 'pro' || user?.subscription_tier === 'premium';
+
+    if (!isPro) {
+      // Check monthly brief count for free tier users
+      const currentDate = new Date();
+      const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getTime();
+
+      const briefsThisMonth = await db
+        .prepare(`
+          SELECT COUNT(*) as count FROM briefs
+          WHERE user_id = ?
+            AND created_at >= ?
+            AND status IN ('completed', 'script_ready', 'processing', 'audio_processing', 'pending')
+        `)
+        .bind(auth.userId, monthStart)
+        .first();
+
+      const briefCount = (briefsThisMonth?.count as number) || 0;
+
+      if (briefCount >= FREE_TIER_BRIEFS_PER_MONTH) {
+        console.log(`[/briefs/request] User ${auth.userId} has reached monthly brief limit: ${briefCount}/${FREE_TIER_BRIEFS_PER_MONTH}`);
+        return c.json({
+          success: false,
+          error: 'Monthly brief limit reached',
+          message: `Free tier is limited to ${FREE_TIER_BRIEFS_PER_MONTH} briefs per month. Upgrade to Pro for unlimited briefs.`,
+          currentCount: briefCount,
+          limit: FREE_TIER_BRIEFS_PER_MONTH,
+          upgradeUrl: '/pricing'
+        }, 403);
+      }
+    }
+
     // Validate input
     const body = await c.req.json();
     const validation = RequestBriefSchema.safeParse(body);
