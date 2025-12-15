@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { Play, Pause, Download, Loader2, ArrowLeft, ExternalLink, FileText, User, Calendar, Newspaper, Share2 } from "lucide-react"
+import { Play, Pause, Download, Loader2, ArrowLeft, ExternalLink, FileText, User, Calendar, Newspaper, Share2, Sparkles, AlertCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -615,6 +615,21 @@ export function BriefDetailClient() {
               </div>
             </section>
           )}
+
+          {/* AI Disclosure Footer */}
+          <footer className="mt-8 pt-6 border-t border-border">
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+              <Sparkles className="h-5 w-5 flex-shrink-0 text-primary/70 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-medium text-foreground/80">Generated with AI</p>
+                <p>
+                  This brief was created using artificial intelligence to summarize congressional news and legislation.
+                  While we strive for accuracy, please verify any facts before sharing or acting on this information.
+                  Sources are linked throughout for your reference.
+                </p>
+              </div>
+            </div>
+          </footer>
         </div>
       </div>
     </div>
