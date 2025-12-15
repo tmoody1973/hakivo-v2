@@ -1,6 +1,6 @@
 "use client";
 
-import { Twitter, Facebook, Linkedin, Share2, Link2, Check } from "lucide-react";
+import { Facebook, Linkedin, Share2, Link2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,6 +11,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
+
+// X (Twitter) icon - the new X logo
+const XIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    className={className}
+    fill="currentColor"
+  >
+    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+  </svg>
+);
 
 // WhatsApp icon since lucide doesn't have it
 const WhatsAppIcon = ({ className }: { className?: string }) => (
@@ -108,11 +119,11 @@ export function ShareButtons({
           rel="noopener noreferrer"
           className={cn(
             buttonSize,
-            "inline-flex items-center justify-center rounded-full bg-[#1DA1F2] text-white hover:bg-[#1a8cd8] transition-colors"
+            "inline-flex items-center justify-center rounded-full bg-black text-white hover:bg-neutral-800 transition-colors"
           )}
-          title="Share on X (Twitter)"
+          title="Share on X"
         >
-          <Twitter className={iconSize} />
+          <XIcon className={iconSize} />
         </a>
         <a
           href={shareLinks.facebook}
@@ -189,10 +200,10 @@ export function ShareButtons({
             rel="noopener noreferrer"
             className="flex items-center gap-3 cursor-pointer"
           >
-            <div className="h-8 w-8 rounded-full bg-[#1DA1F2] flex items-center justify-center">
-              <Twitter className="h-4 w-4 text-white" />
+            <div className="h-8 w-8 rounded-full bg-black flex items-center justify-center">
+              <XIcon className="h-4 w-4 text-white" />
             </div>
-            <span>Share on X (Twitter)</span>
+            <span>Share on X</span>
           </a>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
