@@ -50,8 +50,61 @@ export default class extends Task<Env> {
       const db = this.env.APP_DB;
 
       // Check if any briefs need audio processing
-      // Look for script_ready or stuck audio_processing (older than 10 min = likely failed)
+      // Look for script_ready, stuck audio_processing (older than 10 min), or audio_failed (older than 15 min for retry)
       const stuckThreshold = Date.now() - (10 * 60 * 1000); // 10 minutes ago
+      const failedRetryThreshold = Date.now() - (15 * 60 * 1000); // 15 minutes ago (cooldown before retry)
+
+      // First, reset audio_failed briefs to script_ready for retry (if older than 15 min)
+      const failedBriefsToRetry = await db
+        .prepare(`
+          SELECT id FROM briefs
+          WHERE status = 'audio_failed'
+            AND updated_at < ?
+            AND script IS NOT NULL
+            AND script != ''
+          LIMIT 5
+        `)
+        .bind(failedRetryThreshold)
+        .all();
+
+      const failedBriefIds = (failedBriefsToRetry.results || []).map((r: any) => r.id);
+
+      if (failedBriefIds.length > 0) {
+        console.log(`🔄 [AUDIO-RETRY] Resetting ${failedBriefIds.length} failed brief(s) for retry: ${failedBriefIds.join(', ')}`);
+        for (const briefId of failedBriefIds) {
+          await db
+            .prepare(`UPDATE briefs SET status = 'script_ready', updated_at = ? WHERE id = ?`)
+            .bind(Date.now(), briefId)
+            .run();
+        }
+      }
+
+      // Also reset failed podcast episodes for retry
+      const failedPodcastsToRetry = await db
+        .prepare(`
+          SELECT id FROM podcast_episodes
+          WHERE status = 'audio_failed'
+            AND updated_at < ?
+            AND script IS NOT NULL
+            AND script != ''
+          LIMIT 3
+        `)
+        .bind(failedRetryThreshold)
+        .all();
+
+      const failedPodcastIds = (failedPodcastsToRetry.results || []).map((r: any) => r.id);
+
+      if (failedPodcastIds.length > 0) {
+        console.log(`🔄 [AUDIO-RETRY] Resetting ${failedPodcastIds.length} failed podcast episode(s) for retry: ${failedPodcastIds.join(', ')}`);
+        for (const podcastId of failedPodcastIds) {
+          await db
+            .prepare(`UPDATE podcast_episodes SET status = 'script_ready', updated_at = ? WHERE id = ?`)
+            .bind(Date.now(), podcastId)
+            .run();
+        }
+      }
+
+      // Now count all briefs needing audio processing
       const briefResult = await db
         .prepare(`
           SELECT COUNT(*) as count
