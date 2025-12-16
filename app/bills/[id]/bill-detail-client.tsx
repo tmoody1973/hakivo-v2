@@ -402,119 +402,162 @@ export function BillDetailClient() {
   //   : null
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Back Button */}
-        <Button variant="ghost" asChild>
-          <Link href="/dashboard">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
-          </Link>
-        </Button>
+    <div className="container mx-auto py-4 sm:py-8 px-3 sm:px-4">
+      <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+        {/* Back Button - Sticky on mobile for easy navigation */}
+        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 -mx-3 px-3 py-2 sm:static sm:mx-0 sm:px-0 sm:py-0 sm:bg-transparent">
+          <Button
+            variant="ghost"
+            asChild
+            className="min-h-[44px] min-w-[44px] -ml-2"
+            aria-label="Go back to dashboard"
+          >
+            <Link href="/dashboard">
+              <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
+              <span>Back to Dashboard</span>
+            </Link>
+          </Button>
+        </div>
 
         {/* Bill Header */}
         <Card>
-          <CardHeader>
-            <div className="space-y-4">
+          <CardHeader className="p-4 sm:p-6">
+            <div className="space-y-3 sm:space-y-4">
               {/* Bill Number and Badges */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-lg font-bold text-primary">
+              <div className="flex items-center gap-2 flex-wrap" role="group" aria-label="Bill identifiers">
+                <span className="font-mono text-base sm:text-lg font-bold text-primary">
                   {billDisplayNumber}
                 </span>
-                {bill.policyArea && <Badge variant="secondary">{bill.policyArea}</Badge>}
+                {bill.policyArea && (
+                  <Badge variant="secondary" className="text-xs sm:text-sm">
+                    {bill.policyArea}
+                  </Badge>
+                )}
                 {enrichment && (
-                  <Badge variant="outline" className="gap-1">
-                    <Sparkles className="h-3 w-3" />
-                    AI Enhanced
+                  <Badge variant="outline" className="gap-1 text-xs sm:text-sm">
+                    <Sparkles className="h-3 w-3" aria-hidden="true" />
+                    <span>AI Enhanced</span>
                   </Badge>
                 )}
               </div>
 
               {/* Title */}
-              <h1 className="text-3xl font-bold leading-tight">{bill.title}</h1>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold leading-tight">
+                {bill.title}
+              </h1>
 
               {/* Meta Info */}
-              <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+              <div
+                className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-muted-foreground"
+                role="group"
+                aria-label="Bill metadata"
+              >
                 {bill.introducedDate && (
                   <div className="flex items-center gap-1.5">
-                    <Clock className="h-4 w-4" />
+                    <Clock className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
                     <span>
-                      Introduced {new Date(bill.introducedDate).toLocaleDateString('en-US', {
-                        month: 'long',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
+                      Introduced{' '}
+                      <time dateTime={bill.introducedDate}>
+                        {new Date(bill.introducedDate).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </time>
                     </span>
                   </div>
                 )}
-                <span>•</span>
+                <span className="hidden sm:inline" aria-hidden="true">•</span>
                 <span>{bill.congress}th Congress</span>
                 {bill.originChamber && (
                   <>
-                    <span>•</span>
+                    <span className="hidden sm:inline" aria-hidden="true">•</span>
                     <span>Originated in {bill.originChamber}</span>
                   </>
                 )}
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2">
+              {/* Actions - Stack on mobile, row on desktop */}
+              <div
+                className="flex flex-col sm:flex-row gap-2 sm:gap-2 pt-2"
+                role="group"
+                aria-label="Bill actions"
+              >
                 <Button
                   variant={isTracked ? "secondary" : "default"}
                   onClick={handleTrackToggle}
                   disabled={trackingAction || !accessToken}
+                  className="min-h-[44px] w-full sm:w-auto justify-center"
+                  aria-label={isTracked ? "Stop tracking this bill" : "Track this bill for updates"}
+                  aria-pressed={isTracked}
                 >
                   {trackingAction ? (
                     <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {isTracked ? 'Untracking...' : 'Tracking...'}
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      <span>{isTracked ? 'Untracking...' : 'Tracking...'}</span>
                     </>
                   ) : isTracked ? (
                     <>
-                      <BookmarkCheck className="h-4 w-4 mr-2" />
-                      Tracking
+                      <BookmarkCheck className="h-4 w-4 mr-2" aria-hidden="true" />
+                      <span>Tracking</span>
                     </>
                   ) : (
                     <>
-                      <BookmarkPlus className="h-4 w-4 mr-2" />
-                      Track This Bill
+                      <BookmarkPlus className="h-4 w-4 mr-2" aria-hidden="true" />
+                      <span>Track This Bill</span>
                     </>
                   )}
                 </Button>
-                <ShareButtons
-                  url={typeof window !== "undefined" ? `${window.location.origin}/bills/${billId}` : `/bills/${billId}`}
-                  title={`${billDisplayNumber}: ${bill.title}`}
-                  description={enrichment?.plainLanguageSummary || bill.title}
-                  hashtags={["Hakivo", "Congress", bill.type.toUpperCase()]}
-                />
-                <Button
-                  variant="default"
-                  onClick={handleAnalyzeBill}
-                  disabled={analyzing || !!analysis}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                >
-                  {analyzing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : analysis ? (
-                    <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      Analysis Complete
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-4 w-4 mr-2" />
-                      Analyze This Bill
-                    </>
-                  )}
-                </Button>
+
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="flex-1 sm:flex-none">
+                    <ShareButtons
+                      url={typeof window !== "undefined" ? `${window.location.origin}/bills/${billId}` : `/bills/${billId}`}
+                      title={`${billDisplayNumber}: ${bill.title}`}
+                      description={enrichment?.plainLanguageSummary || bill.title}
+                      hashtags={["Hakivo", "Congress", bill.type.toUpperCase()]}
+                    />
+                  </div>
+
+                  <Button
+                    variant="default"
+                    onClick={handleAnalyzeBill}
+                    disabled={analyzing || !!analysis}
+                    className="min-h-[44px] flex-1 sm:flex-none justify-center bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                    aria-label={analysis ? "Bill analysis is complete" : "Trigger AI analysis of this bill"}
+                    aria-busy={analyzing}
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                        <span className="hidden xs:inline">Analyzing...</span>
+                        <span className="xs:hidden">...</span>
+                      </>
+                    ) : analysis ? (
+                      <>
+                        <Sparkles className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+                        <span className="hidden sm:inline">Analysis Complete</span>
+                        <span className="sm:hidden">Done</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 sm:mr-2" aria-hidden="true" />
+                        <span className="hidden sm:inline">Analyze This Bill</span>
+                        <span className="sm:hidden">Analyze</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {/* Analysis Error Message */}
               {analyzeError && (
-                <div className="mt-2 text-sm text-red-600 dark:text-red-400">
+                <div
+                  className="mt-2 text-sm text-red-600 dark:text-red-400 p-3 bg-red-50 dark:bg-red-950/30 rounded-md"
+                  role="alert"
+                  aria-live="polite"
+                >
+                  <AlertCircle className="h-4 w-4 inline mr-2" aria-hidden="true" />
                   {analyzeError}
                 </div>
               )}
@@ -525,26 +568,35 @@ export function BillDetailClient() {
         {/* Sponsor Info */}
         {sponsor && (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Sponsor</CardTitle>
+            <CardHeader className="p-4 sm:p-6 pb-2 sm:pb-2">
+              <CardTitle className="text-base sm:text-lg">Sponsor</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16">
-                  <AvatarImage src="/placeholder.svg" alt={sponsor.fullName} />
-                  <AvatarFallback>
+            <CardContent className="p-4 sm:p-6 pt-2 sm:pt-2">
+              <Link
+                href={`/representatives/${sponsor.bioguideId}`}
+                className="flex items-center gap-3 sm:gap-4 p-2 -m-2 rounded-lg hover:bg-accent/50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                aria-label={`View profile of ${sponsor.fullName}, ${sponsor.party === "D" ? "Democrat" : sponsor.party === "R" ? "Republican" : sponsor.party} from ${sponsor.state}`}
+              >
+                <Avatar className="h-12 w-12 sm:h-16 sm:w-16 flex-shrink-0">
+                  <AvatarImage
+                    src={`https://bioguide.congress.gov/bioguide/photo/${sponsor.bioguideId[0]}/${sponsor.bioguideId}.jpg`}
+                    alt=""
+                  />
+                  <AvatarFallback aria-hidden="true">
                     {sponsor.firstName[0]}{sponsor.lastName[0]}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex-1">
-                  <p className="font-semibold text-lg">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-base sm:text-lg truncate">
                     <span className={partyColor}>{sponsor.fullName}</span>
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {sponsor.party === "D" ? "Democrat" : sponsor.party === "R" ? "Republican" : sponsor.party} • {sponsor.state}
+                    {sponsor.party === "D" ? "Democrat" : sponsor.party === "R" ? "Republican" : sponsor.party}
+                    <span aria-hidden="true"> • </span>
+                    {sponsor.state}
                   </p>
                 </div>
-              </div>
+              </Link>
             </CardContent>
           </Card>
         )}
@@ -552,13 +604,13 @@ export function BillDetailClient() {
         {/* Basic Enrichment */}
         {enrichment && (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                AI Summary & Analysis
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-primary" aria-hidden="true" />
+                <span>AI Summary & Analysis</span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4 sm:space-y-6">
               {/* Processing Status */}
               {enrichment.status === 'processing' && !enrichment.plainLanguageSummary && (
                 <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
@@ -601,26 +653,34 @@ export function BillDetailClient() {
               <Separator />
 
               {/* Progress and Metrics */}
-              <div className="grid md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 {/* Legislative Progress */}
-                <div className="space-y-2">
+                <div className="space-y-2" role="group" aria-label="Legislative progress">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">Legislative Progress</span>
                     <span className="text-primary font-semibold">{enrichment.progressPercentage}%</span>
                   </div>
-                  <Progress value={enrichment.progressPercentage} className="h-3" />
+                  <Progress
+                    value={enrichment.progressPercentage}
+                    className="h-2 sm:h-3"
+                    aria-label={`${enrichment.progressPercentage}% progress`}
+                  />
                   <p className="text-xs text-muted-foreground">{enrichment.currentStage}</p>
                 </div>
 
                 {/* Bipartisan Score */}
                 {enrichment.bipartisanScore !== undefined && (
-                  <div className="space-y-2">
+                  <div className="space-y-2" role="group" aria-label="Bipartisan support score">
                     <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <Users className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                       <span className="font-medium text-sm">Bipartisan Support</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Progress value={enrichment.bipartisanScore} className="h-3 flex-1" />
+                      <Progress
+                        value={enrichment.bipartisanScore}
+                        className="h-2 sm:h-3 flex-1"
+                        aria-label={`${enrichment.bipartisanScore} out of 100 bipartisan score`}
+                      />
                       <Badge
                         variant="outline"
                         className={
@@ -659,18 +719,23 @@ export function BillDetailClient() {
         {/* Deep Forensic Analysis */}
         {analysis && (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Target className="h-5 w-5 text-primary" />
-                Deep Forensic Analysis
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <Target className="h-4 w-4 sm:h-5 sm:w-5 text-primary" aria-hidden="true" />
+                <span>Deep Forensic Analysis</span>
               </CardTitle>
               {analysis.analyzedAt && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Comprehensive analysis powered by AI • Last updated {new Date(analysis.analyzedAt).toLocaleDateString()}
+                <p className="text-xs sm:text-sm text-muted-foreground mt-2">
+                  Comprehensive analysis powered by AI
+                  <span className="hidden sm:inline"> • Last updated </span>
+                  <span className="sm:hidden"> · </span>
+                  <time dateTime={analysis.analyzedAt}>
+                    {new Date(analysis.analyzedAt).toLocaleDateString()}
+                  </time>
                 </p>
               )}
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4 sm:space-y-6">
               {/* Processing Status */}
               {analysis.status === 'processing' && !analysis.executiveSummary && (
                 <div className="flex items-center gap-3 p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
@@ -732,27 +797,27 @@ export function BillDetailClient() {
 
                 {/* Potential Impact - Two Column Grid */}
                 <div>
-                  <h3 className="font-semibold text-base mb-3">Potential Impact</h3>
-                  <div className="grid md:grid-cols-2 gap-4">
+                  <h3 className="font-semibold text-sm sm:text-base mb-3">Potential Impact</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {/* Potential Benefits */}
                     <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900">
-                      <CardHeader className="pb-3">
+                      <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-3">
                         <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
-                          <ThumbsUp className="h-4 w-4" />
-                          Potential Benefits
+                          <ThumbsUp className="h-4 w-4" aria-hidden="true" />
+                          <span>Potential Benefits</span>
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-3">
+                      <CardContent className="p-3 sm:p-4 pt-0">
+                        <ul className="space-y-2 sm:space-y-3" role="list" aria-label="List of potential benefits">
                           {analysis.argumentsFor && analysis.argumentsFor.length > 0 ? (
                             analysis.argumentsFor.map((benefit, index) => (
                               <li key={index} className="flex gap-2 text-sm">
-                                <Check className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                                <Check className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
                                 <span className="text-green-900 dark:text-green-100">{String(benefit)}</span>
                               </li>
                             ))
                           ) : (
-                            <p className="text-sm text-green-700 dark:text-green-300">No benefits listed</p>
+                            <li className="text-sm text-green-700 dark:text-green-300">No benefits listed</li>
                           )}
                         </ul>
                       </CardContent>
@@ -760,23 +825,23 @@ export function BillDetailClient() {
 
                     {/* Potential Concerns */}
                     <Card className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900">
-                      <CardHeader className="pb-3">
+                      <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-3">
                         <CardTitle className="text-sm flex items-center gap-2 text-red-700 dark:text-red-400">
-                          <AlertCircle className="h-4 w-4" />
-                          Potential Concerns
+                          <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                          <span>Potential Concerns</span>
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-3">
+                      <CardContent className="p-3 sm:p-4 pt-0">
+                        <ul className="space-y-2 sm:space-y-3" role="list" aria-label="List of potential concerns">
                           {analysis.argumentsAgainst && analysis.argumentsAgainst.length > 0 ? (
                             analysis.argumentsAgainst.map((concern, index) => (
                               <li key={index} className="flex gap-2 text-sm">
-                                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
                                 <span className="text-red-900 dark:text-red-100">{String(concern)}</span>
                               </li>
                             ))
                           ) : (
-                            <p className="text-sm text-red-700 dark:text-red-300">No concerns listed</p>
+                            <li className="text-sm text-red-700 dark:text-red-300">No concerns listed</li>
                           )}
                         </ul>
                       </CardContent>
@@ -814,43 +879,47 @@ export function BillDetailClient() {
         {/* Full Bill Text */}
         {bill.text ? (
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-primary" />
-                  Full Bill Text
+            <CardHeader className="p-4 sm:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                  <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-primary" aria-hidden="true" />
+                  <span>Full Bill Text</span>
                 </CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setShowFullText(!showFullText)}
+                  className="min-h-[44px] min-w-[44px] shrink-0"
+                  aria-expanded={showFullText}
+                  aria-controls="bill-text-content"
+                  aria-label={showFullText ? "Collapse bill text" : "Expand bill text"}
                 >
                   {showFullText ? (
                     <>
-                      <ChevronUp className="h-4 w-4 mr-1" />
-                      Collapse
+                      <ChevronUp className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                      <span className="hidden sm:inline">Collapse</span>
                     </>
                   ) : (
                     <>
-                      <ChevronDown className="h-4 w-4 mr-1" />
-                      Expand
+                      <ChevronDown className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                      <span className="hidden sm:inline">Expand</span>
                     </>
                   )}
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0" id="bill-text-content">
               {showFullText ? (
-                <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono bg-muted/50 p-4 rounded-lg overflow-x-auto max-h-[600px] overflow-y-auto">
+                <pre className="whitespace-pre-wrap text-xs sm:text-sm text-muted-foreground font-mono bg-muted/50 p-3 sm:p-4 rounded-lg overflow-x-auto max-h-[400px] sm:max-h-[600px] overflow-y-auto">
                   {bill.text}
                 </pre>
               ) : (
                 <div className="space-y-2">
-                  <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono bg-muted/50 p-4 rounded-lg line-clamp-6">
+                  <pre className="whitespace-pre-wrap text-xs sm:text-sm text-muted-foreground font-mono bg-muted/50 p-3 sm:p-4 rounded-lg line-clamp-6">
                     {bill.text.substring(0, 500)}...
                   </pre>
-                  <p className="text-sm text-muted-foreground">
-                    Click &quot;Expand&quot; to view the full bill text ({Math.round(bill.text.length / 1000)}k characters)
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    Tap &quot;Expand&quot; to view the full bill text ({Math.round(bill.text.length / 1000)}k characters)
                   </p>
                 </div>
               )}
@@ -858,24 +927,30 @@ export function BillDetailClient() {
           </Card>
         ) : (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileText className="h-5 w-5 text-muted-foreground" />
-                Full Bill Text
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" aria-hidden="true" />
+                <span>Full Bill Text</span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                <p>Bill text is not yet available.</p>
-                <p className="text-sm mt-1">
+            <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0">
+              <div className="text-center py-6 sm:py-8 text-muted-foreground">
+                <FileText className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 opacity-30" aria-hidden="true" />
+                <p className="text-sm sm:text-base">Bill text is not yet available.</p>
+                <p className="text-xs sm:text-sm mt-1">
                   Text typically becomes available after a bill is formally introduced.
                 </p>
-                <Button variant="outline" size="sm" className="mt-4" asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 min-h-[44px]"
+                  asChild
+                >
                   <a
                     href={`https://www.congress.gov/bill/${bill.congress}th-congress/${bill.type.toLowerCase().includes('hr') ? 'house' : 'senate'}-bill/${bill.number}/text`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    aria-label="Check Congress.gov for bill text (opens in new tab)"
                   >
                     Check Congress.gov
                   </a>

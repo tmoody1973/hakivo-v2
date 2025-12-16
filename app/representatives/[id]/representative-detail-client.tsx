@@ -169,11 +169,18 @@ export function RepresentativeDetailClient() {
                      member.party === 'Republican' ? 'red' : 'gray'
 
   return (
-    <div className="container mx-auto px-4 py-6 md:py-8 space-y-6">
+    <main
+      className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 md:py-8 space-y-4 sm:space-y-6"
+      aria-label={`Profile page for ${member?.fullName || 'Representative'}`}
+    >
       {/* Stale Data Warning */}
       {refreshData?.isStale && (
-        <Alert variant="destructive" className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
-          <AlertTriangle className="h-4 w-4 text-amber-600" />
+        <Alert
+          variant="destructive"
+          className="border-amber-500 bg-amber-50 dark:bg-amber-950/20"
+          role="alert"
+        >
+          <AlertTriangle className="h-4 w-4 text-amber-600" aria-hidden="true" />
           <AlertTitle className="text-amber-800 dark:text-amber-200">Outdated Information</AlertTitle>
           <AlertDescription className="text-amber-700 dark:text-amber-300">
             {refreshData.staleReason || 'This member may no longer be serving in Congress. The information shown may be outdated.'}
@@ -188,66 +195,92 @@ export function RepresentativeDetailClient() {
 
       {/* Refresh Status Indicator */}
       {isRefreshing && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <RefreshCw className="h-4 w-4 animate-spin" />
+        <div className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+          <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
           <span>Checking Congress.gov for updates...</span>
         </div>
       )}
 
       {/* Hero Section */}
       <Card className="overflow-hidden">
-        <div className="relative bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-6 md:p-8">
-          <div className="flex flex-col md:flex-row gap-6 items-start">
+        <div className="relative bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4 sm:p-6 md:p-8">
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 items-center sm:items-start">
             {/* Avatar */}
-            <Avatar className="w-32 h-32 md:w-48 md:h-48 border-4 border-background shadow-xl shrink-0 rounded-xl">
-              <AvatarImage src={member.imageUrl || "/placeholder.svg"} alt={member.fullName} className="rounded-xl object-cover" />
-              <AvatarFallback className="text-2xl md:text-4xl rounded-xl">{member.firstName?.[0]}{member.lastName?.[0]}</AvatarFallback>
+            <Avatar className="w-24 h-24 sm:w-32 sm:h-32 md:w-48 md:h-48 border-4 border-background shadow-xl shrink-0 rounded-xl">
+              <AvatarImage
+                src={member.imageUrl || "/placeholder.svg"}
+                alt=""
+                className="rounded-xl object-cover"
+              />
+              <AvatarFallback className="text-xl sm:text-2xl md:text-4xl rounded-xl" aria-hidden="true">
+                {member.firstName?.[0]}{member.lastName?.[0]}
+              </AvatarFallback>
             </Avatar>
 
             {/* Info */}
-            <div className="flex-1 space-y-3">
+            <div className="flex-1 space-y-2 sm:space-y-3 text-center sm:text-left w-full">
               <div>
-                <h1 className="text-2xl md:text-4xl font-bold">{member.fullName}</h1>
-                <p className="text-lg md:text-xl text-muted-foreground mt-1">
+                <h1 className="text-xl sm:text-2xl md:text-4xl font-bold">{member.fullName}</h1>
+                <p className="text-base sm:text-lg md:text-xl text-muted-foreground mt-1">
                   U.S. {member.chamber === 'House' ? 'Representative' : 'Senator'}
                   {member.state && ` from ${member.state}`}
-                  {member.district !== null && member.district !== undefined && ` - District ${member.district}`}
+                  {member.district !== null && member.district !== undefined && (
+                    <span className="block sm:inline">
+                      <span className="hidden sm:inline"> - </span>
+                      District {member.district}
+                    </span>
+                  )}
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={partyColor === 'blue' ? 'default' : 'secondary'} className="px-3 py-1">
+              <div className="flex flex-wrap gap-2 justify-center sm:justify-start" role="group" aria-label="Member status badges">
+                <Badge
+                  variant={partyColor === 'blue' ? 'default' : 'secondary'}
+                  className="px-3 py-1"
+                >
                   {member.party}
                 </Badge>
                 {/* Show serving status based on Congress.gov refresh data if available */}
                 {refreshData?.member?.currentMember === false ? (
                   <Badge variant="destructive" className="px-3 py-1">
-                    <XCircle className="h-3 w-3 mr-1" />
-                    No Longer Serving
+                    <XCircle className="h-3 w-3 mr-1" aria-hidden="true" />
+                    <span>No Longer Serving</span>
                   </Badge>
                 ) : member.currentMember ? (
                   <Badge variant="outline" className="px-3 py-1 border-green-500 text-green-700 dark:text-green-400">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Currently Serving
+                    <CheckCircle2 className="h-3 w-3 mr-1" aria-hidden="true" />
+                    <span>Currently Serving</span>
                   </Badge>
                 ) : null}
               </div>
 
               {/* Contact Actions - Desktop */}
-              <div className="hidden md:flex flex-wrap gap-2 pt-2">
+              <div
+                className="hidden sm:flex flex-wrap gap-2 pt-2 justify-center sm:justify-start"
+                role="group"
+                aria-label="Contact and share actions"
+              >
                 {member.url && (
-                  <Button asChild size="sm">
-                    <a href={member.url} target="_blank" rel="noopener noreferrer">
-                      <Globe className="h-4 w-4 mr-2" />
-                      Official Website
+                  <Button asChild size="sm" className="min-h-[44px]">
+                    <a
+                      href={member.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Visit ${member.fullName}'s official website (opens in new tab)`}
+                    >
+                      <Globe className="h-4 w-4 mr-2" aria-hidden="true" />
+                      <span>Official Website</span>
                     </a>
                   </Button>
                 )}
                 {member.phoneNumber && (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={`tel:${member.phoneNumber}`}>
-                      <Phone className="h-4 w-4 mr-2" />
-                      {member.phoneNumber}
+                  <Button asChild size="sm" variant="outline" className="min-h-[44px]">
+                    <a
+                      href={`tel:${member.phoneNumber}`}
+                      aria-label={`Call ${member.fullName} at ${member.phoneNumber}`}
+                    >
+                      <Phone className="h-4 w-4 mr-2" aria-hidden="true" />
+                      <span>{member.phoneNumber}</span>
                     </a>
                   </Button>
                 )}
@@ -263,24 +296,36 @@ export function RepresentativeDetailClient() {
           </div>
 
           {/* Contact Actions - Mobile */}
-          <div className="flex md:hidden flex-col gap-2 mt-4">
+          <div
+            className="flex sm:hidden flex-col gap-2 mt-4"
+            role="group"
+            aria-label="Contact and share actions"
+          >
             {member.url && (
-              <Button asChild size="sm" className="w-full">
-                <a href={member.url} target="_blank" rel="noopener noreferrer">
-                  <Globe className="h-4 w-4 mr-2" />
-                  Official Website
+              <Button asChild size="sm" className="w-full min-h-[44px] justify-center">
+                <a
+                  href={member.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Visit ${member.fullName}'s official website (opens in new tab)`}
+                >
+                  <Globe className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <span>Official Website</span>
                 </a>
               </Button>
             )}
             {member.phoneNumber && (
-              <Button asChild size="sm" variant="outline" className="w-full">
-                <a href={`tel:${member.phoneNumber}`}>
-                  <Phone className="h-4 w-4 mr-2" />
-                  {member.phoneNumber}
+              <Button asChild size="sm" variant="outline" className="w-full min-h-[44px] justify-center">
+                <a
+                  href={`tel:${member.phoneNumber}`}
+                  aria-label={`Call ${member.fullName} at ${member.phoneNumber}`}
+                >
+                  <Phone className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <span>{member.phoneNumber}</span>
                 </a>
               </Button>
             )}
-            <div className="flex justify-center">
+            <div className="flex justify-center pt-1">
               <ShareButtons
                 url={typeof window !== "undefined" ? `${window.location.origin}/representatives/${bioguideId}` : `/representatives/${bioguideId}`}
                 title={`${member.fullName} - U.S. ${member.chamber === 'House' ? 'Representative' : 'Senator'} from ${member.state}`}
@@ -295,109 +340,111 @@ export function RepresentativeDetailClient() {
       </Card>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Sponsored Bills
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl md:text-3xl font-bold">{member.sponsoredBillsCount || 0}</div>
-          </CardContent>
-        </Card>
+      <section aria-label="Legislative statistics">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+          <Card>
+            <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-3">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+                <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden="true" />
+                <span>Sponsored Bills</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold">{member.sponsoredBillsCount || 0}</div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Co-Sponsored
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl md:text-3xl font-bold">
-              {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
-            </div>
-            {cosponsoredTotal === 0 && (
-              <p className="text-xs text-muted-foreground mt-1">No data yet</p>
-            )}
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-3">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+                <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden="true" />
+                <span>Co-Sponsored</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold">
+                {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
+              </div>
+              {cosponsoredTotal === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">No data yet</p>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              Votes Cast
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {member.chamber === 'Senate' ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-                <p className="text-xs text-muted-foreground mt-1">Senate data unavailable</p>
-              </>
-            ) : votingStats ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold">{votingStats.totalVotes}</div>
-                <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                  <span className="text-green-600 dark:text-green-400">{votingStats.yeaVotes} Yea</span>
-                  <span>/</span>
-                  <span className="text-red-600 dark:text-red-400">{votingStats.nayVotes} Nay</span>
-                </div>
-              </>
-            ) : votingStatsLoaded ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-                <p className="text-xs text-muted-foreground mt-1">No data available</p>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">...</div>
-                <p className="text-xs text-muted-foreground mt-1">Loading</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-3">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+                <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden="true" />
+                <span>Votes Cast</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              {member.chamber === 'Senate' ? (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                  <p className="text-xs text-muted-foreground mt-1">Senate data unavailable</p>
+                </>
+              ) : votingStats ? (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold">{votingStats.totalVotes}</div>
+                  <div className="flex items-center gap-1.5 sm:gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                    <span className="text-green-600 dark:text-green-400">{votingStats.yeaVotes} Yea</span>
+                    <span aria-hidden="true">/</span>
+                    <span className="text-red-600 dark:text-red-400">{votingStats.nayVotes} Nay</span>
+                  </div>
+                </>
+              ) : votingStatsLoaded ? (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                  <p className="text-xs text-muted-foreground mt-1">No data available</p>
+                </>
+              ) : (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-muted-foreground" aria-label="Loading">...</div>
+                  <p className="text-xs text-muted-foreground mt-1">Loading</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <XCircle className="h-4 w-4" />
-              Missed Votes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {member.chamber === 'Senate' ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-                <p className="text-xs text-muted-foreground mt-1">Senate data unavailable</p>
-              </>
-            ) : votingStats ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold">{votingStats.notVotingCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {votingStats.attendancePercentage ? `${votingStats.attendancePercentage}% attendance` :
-                   votingStats.totalVotes > 0 ?
-                     `${Math.round(((votingStats.totalVotes - votingStats.notVotingCount) / votingStats.totalVotes) * 100)}% attendance` :
-                     'No attendance data'}
-                </p>
-              </>
-            ) : votingStatsLoaded ? (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
-                <p className="text-xs text-muted-foreground mt-1">No data available</p>
-              </>
-            ) : (
-              <>
-                <div className="text-2xl md:text-3xl font-bold text-muted-foreground">...</div>
-                <p className="text-xs text-muted-foreground mt-1">Loading</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader className="p-3 sm:p-4 pb-2 sm:pb-3">
+              <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+                <XCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" aria-hidden="true" />
+                <span>Missed Votes</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              {member.chamber === 'Senate' ? (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                  <p className="text-xs text-muted-foreground mt-1">Senate data unavailable</p>
+                </>
+              ) : votingStats ? (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold">{votingStats.notVotingCount}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {votingStats.attendancePercentage ? `${votingStats.attendancePercentage}% attendance` :
+                     votingStats.totalVotes > 0 ?
+                       `${Math.round(((votingStats.totalVotes - votingStats.notVotingCount) / votingStats.totalVotes) * 100)}% attendance` :
+                       'No attendance data'}
+                  </p>
+                </>
+              ) : votingStatsLoaded ? (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-muted-foreground">—</div>
+                  <p className="text-xs text-muted-foreground mt-1">No data available</p>
+                </>
+              ) : (
+                <>
+                  <div className="text-xl sm:text-2xl md:text-3xl font-bold text-muted-foreground" aria-label="Loading">...</div>
+                  <p className="text-xs text-muted-foreground mt-1">Loading</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
       {/* Contact & Social Media */}
       <Card>
@@ -482,44 +529,56 @@ export function RepresentativeDetailClient() {
 
       {/* Tabs for Detailed Information */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className={`grid w-full ${member.chamber !== 'Senate' ? 'grid-cols-3 md:grid-cols-6' : 'grid-cols-2 md:grid-cols-4'}`}>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="sponsored">
-            <span className="hidden sm:inline">Sponsored Bills</span>
-            <span className="sm:hidden">Sponsored</span>
-            {member.sponsoredBillsCount > 0 && (
-              <Badge variant="secondary" className="ml-2 hidden md:inline-flex">{member.sponsoredBillsCount}</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="cosponsored" onClick={fetchCosponsoredBills}>
-            <span className="hidden sm:inline">Co-Sponsored</span>
-            <span className="sm:hidden">Co-Spons.</span>
-            <Badge variant="secondary" className="ml-2 hidden md:inline-flex">
-              {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="finance">
-            <DollarSign className="h-4 w-4 mr-1 hidden sm:inline" />
-            <span className="hidden sm:inline">Finance</span>
-            <span className="sm:hidden">Finance</span>
-          </TabsTrigger>
-          {member.chamber !== 'Senate' && (
-            <>
-              <TabsTrigger value="voting">
-                <span className="hidden sm:inline">Voting Record</span>
-                <span className="sm:hidden">Votes</span>
-                <Badge variant="secondary" className="ml-2 hidden md:inline-flex">
-                  {votingStats?.totalVotes ?? '—'}
+        {/* Mobile: Horizontally scrollable tabs */}
+        <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 pb-1">
+          <TabsList
+            className={`inline-flex w-max sm:grid sm:w-full min-h-[44px] ${
+              member.chamber !== 'Senate'
+                ? 'sm:grid-cols-6'
+                : 'sm:grid-cols-4'
+            }`}
+            aria-label="Representative information tabs"
+          >
+            <TabsTrigger value="overview" className="min-h-[44px] px-3 sm:px-4">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="sponsored" className="min-h-[44px] px-3 sm:px-4">
+              <span className="hidden sm:inline">Sponsored Bills</span>
+              <span className="sm:hidden">Sponsored</span>
+              {member.sponsoredBillsCount > 0 && (
+                <Badge variant="secondary" className="ml-1.5 sm:ml-2 hidden md:inline-flex text-xs">
+                  {member.sponsoredBillsCount}
                 </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="analytics">
-                <BarChart3 className="h-4 w-4 mr-1 hidden sm:inline" />
-                <span className="hidden sm:inline">Analytics</span>
-                <span className="sm:hidden">Stats</span>
-              </TabsTrigger>
-            </>
-          )}
-        </TabsList>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="cosponsored" onClick={fetchCosponsoredBills} className="min-h-[44px] px-3 sm:px-4">
+              <span className="hidden sm:inline">Co-Sponsored</span>
+              <span className="sm:hidden">Co-Spons.</span>
+              <Badge variant="secondary" className="ml-1.5 sm:ml-2 hidden md:inline-flex text-xs">
+                {cosponsoredTotal > 0 ? cosponsoredTotal : '—'}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger value="finance" className="min-h-[44px] px-3 sm:px-4">
+              <DollarSign className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+              <span className="hidden sm:inline">Finance</span>
+            </TabsTrigger>
+            {member.chamber !== 'Senate' && (
+              <>
+                <TabsTrigger value="voting" className="min-h-[44px] px-3 sm:px-4">
+                  <span className="hidden sm:inline">Voting Record</span>
+                  <span className="sm:hidden">Votes</span>
+                  <Badge variant="secondary" className="ml-1.5 sm:ml-2 hidden md:inline-flex text-xs">
+                    {votingStats?.totalVotes ?? '—'}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="min-h-[44px] px-3 sm:px-4">
+                  <BarChart3 className="h-4 w-4 sm:mr-1" aria-hidden="true" />
+                  <span className="hidden sm:inline">Analytics</span>
+                </TabsTrigger>
+              </>
+            )}
+          </TabsList>
+        </div>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">
@@ -769,6 +828,6 @@ export function RepresentativeDetailClient() {
           </TabsContent>
         )}
       </Tabs>
-    </div>
+    </main>
   )
 }
