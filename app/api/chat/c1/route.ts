@@ -14,6 +14,8 @@ import type { RunnableToolFunctionWithParse } from "openai/lib/RunnableFunction"
 import type { JSONSchema } from "openai/lib/jsonschema";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+// PostHog LLM observability
+import { trackLLMGeneration, trackToolCall, flushPostHog } from "@/lib/analytics/posthog-server";
 
 // Create OpenAI client pointing to C1 API
 const c1Client = new OpenAI({
@@ -748,6 +750,11 @@ async function fetchUserContext(accessToken: string): Promise<UserContext | null
 // All requests now go through runTools() which fetches real data first
 
 export async function POST(req: NextRequest) {
+  // Start timing for LLM observability
+  const startTime = Date.now();
+  const traceId = `c1-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const toolsCalled: string[] = [];
+
   try {
     // Check for auth token first (needed for rate limiting)
     const authHeader = req.headers.get("Authorization");
@@ -756,7 +763,7 @@ export async function POST(req: NextRequest) {
       : null;
     const userId = extractUserIdFromAuth(authHeader);
 
-    console.log("[C1 API] Request received - Auth token present:", !!accessToken, "userId:", userId);
+    console.log("[C1 API] Request received - Auth token present:", !!accessToken, "userId:", userId, "traceId:", traceId);
 
     // Arcjet rate limiting - use user-based limits for authenticated users
     let decision;
@@ -991,6 +998,9 @@ Topic: ${topic}
 Generate a well-structured, professional document.`;
 
       try {
+        const artifactStartTime = Date.now();
+        let artifactOutputLength = 0;
+
         // Call C1 Artifacts API with streaming
         const artifactStream = await artifactsClient.chat.completions.create({
           model: "c1/artifact/v-20251030",
@@ -1012,11 +1022,26 @@ Generate a well-structured, professional document.`;
         for await (const delta of artifactStream) {
           const content = delta.choices[0]?.delta?.content;
           if (content) {
+            artifactOutputLength += content.length;
             await c1Response.writeContent(content);
           }
         }
 
         console.log("[C1 API] create_artifact: Completed streaming artifact");
+
+        // Track artifact generation LLM call
+        const artifactLatency = Date.now() - artifactStartTime;
+        trackLLMGeneration({
+          model: "c1/artifact/v-20251030",
+          provider: "thesys",
+          distinctId: userId || "anonymous",
+          inputTokens: Math.ceil((systemPrompt.length + userPrompt.length) / 4),
+          outputTokens: Math.ceil(artifactOutputLength / 4),
+          latencyMs: artifactLatency,
+          trace_id: traceId,
+          feature: "artifact",
+          threadId,
+        });
 
         // Return lightweight metadata to LLM (not the full content)
         return `${type === "slides" ? "Presentation" : "Report"} created successfully. artifact_id: ${artifactId}, version: ${responseId}`;
@@ -1118,9 +1143,14 @@ Requires the artifact ID and version from a previous create_artifact call.`,
 
       try {
         // Set up event handlers for the runner
+        const toolStartTimes: Record<string, number> = {};
+
         runner.on("functionCall", (functionCall) => {
           const toolName = functionCall.name;
           console.log("[C1 API] Tool call:", toolName);
+          toolsCalled.push(toolName);
+          toolStartTimes[toolName] = Date.now();
+
           const thinkState = TOOL_THINKING_STATES[toolName];
           if (thinkState) {
             // Fire and forget - don't await
@@ -1134,6 +1164,19 @@ Requires the artifact ID and version from a previous create_artifact call.`,
 
         runner.on("functionCallResult", (result) => {
           console.log("[C1 API] Tool result received, length:", result?.length || 0);
+          // Track tool completion (find the most recent tool)
+          const lastTool = toolsCalled[toolsCalled.length - 1];
+          if (lastTool && toolStartTimes[lastTool]) {
+            const toolLatency = Date.now() - toolStartTimes[lastTool];
+            trackToolCall({
+              distinctId: userId || "anonymous",
+              toolName: lastTool,
+              latencyMs: toolLatency,
+              success: true,
+              trace_id: traceId,
+              feature: "chat",
+            });
+          }
         });
 
         // Stream content as it arrives (ChatCompletionChunk format)
@@ -1170,6 +1213,30 @@ Requires the artifact ID and version from a previous create_artifact call.`,
         }
 
         console.log("[C1 API] Stream completed, content length:", fullContent.length);
+
+        // Track LLM generation for PostHog observability
+        const latencyMs = Date.now() - startTime;
+        // Estimate tokens: ~4 chars per token (rough approximation)
+        const inputLength = messagesWithContext.reduce((sum, m) => sum + (typeof m.content === 'string' ? m.content.length : 0), 0);
+        const estimatedInputTokens = Math.ceil(inputLength / 4);
+        const estimatedOutputTokens = Math.ceil(fullContent.length / 4);
+
+        trackLLMGeneration({
+          model: C1_MODEL,
+          provider: "thesys",
+          distinctId: userId || "anonymous",
+          inputTokens: estimatedInputTokens,
+          outputTokens: estimatedOutputTokens,
+          latencyMs,
+          trace_id: traceId,
+          feature: "chat",
+          threadId,
+          toolsCalled: toolsCalled.length > 0 ? toolsCalled : undefined,
+        });
+
+        // Flush PostHog events (non-blocking)
+        flushPostHog().catch(() => {});
+
         await c1Response.end();
       } catch (error) {
         clearTimeout(streamTimeout);
