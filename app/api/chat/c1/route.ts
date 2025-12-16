@@ -983,6 +983,8 @@ Be objective, factual, and non-partisan.`;
           }
         }, 120000); // 2 minute timeout for artifacts
 
+        let generator: AsyncGenerator<{ type: "phase"; phase: string; message: string } | { type: "content"; content: string } | { type: "complete"; result: { content: string; id: string; type: string } }, void, unknown> | null = null;
+
         try {
           // Write initial thinking state
           await c1Response.writeThinkItem({
@@ -991,14 +993,24 @@ Be objective, factual, and non-partisan.`;
             ephemeral: true,
           });
 
-          const generator = generateArtifactWithToolsStream({
-            id: artifactId,
-            type: artifactIntent.type,
-            systemPrompt: artifactSystemPrompt,
-            userPrompt: `Create a ${artifactIntent.type === "slides" ? "slide presentation" : "detailed report"} titled "${artifactIntent.title}"\n\nTopic: ${artifactIntent.topic}\n\nUser request: ${prompt.content}`,
-          });
+          // Initialize the generator - this can throw if there's a config error
+          try {
+            generator = generateArtifactWithToolsStream({
+              id: artifactId,
+              type: artifactIntent.type,
+              systemPrompt: artifactSystemPrompt,
+              userPrompt: `Create a ${artifactIntent.type === "slides" ? "slide presentation" : "detailed report"} titled "${artifactIntent.title}"\n\nTopic: ${artifactIntent.topic}\n\nUser request: ${prompt.content}`,
+            });
+          } catch (initError) {
+            console.error("[C1 API] Artifact generator initialization error:", initError);
+            await c1Response.writeContent(`\n\nError initializing document generator: ${initError instanceof Error ? initError.message : "Unknown error"}\n\nPlease check that the THESYS_API_KEY environment variable is set.`);
+            clearTimeout(streamTimeout);
+            await c1Response.end();
+            return;
+          }
 
           let artifactContent = "";
+          let hasContent = false;
 
           for await (const chunk of generator) {
             if (chunk.type === "phase") {
@@ -1009,6 +1021,7 @@ Be objective, factual, and non-partisan.`;
                 ephemeral: true,
               });
             } else if (chunk.type === "content") {
+              hasContent = true;
               artifactContent += chunk.content;
               await c1Response.writeContent(chunk.content);
             } else if (chunk.type === "complete") {
@@ -1016,12 +1029,18 @@ Be objective, factual, and non-partisan.`;
             }
           }
 
+          // If no content was generated, write a helpful message
+          if (!hasContent) {
+            console.warn("[C1 API] Artifact generation produced no content");
+            await c1Response.writeContent("\n\nI couldn't generate the document. The research didn't find enough relevant data. Please try a different topic or be more specific in your request.");
+          }
+
           clearTimeout(streamTimeout);
 
           // Store assistant message
           const assistantMessage: DBMessage = {
             role: "assistant",
-            content: artifactContent,
+            content: artifactContent || "Document generation failed - no content produced",
             id: responseId,
           };
 
@@ -1035,8 +1054,23 @@ Be objective, factual, and non-partisan.`;
         } catch (error) {
           clearTimeout(streamTimeout);
           console.error("[C1 API] Artifact error:", error);
+
+          // Determine user-friendly error message
+          let errorMessage = "Unknown error";
+          if (error instanceof Error) {
+            if (error.message.includes("THESYS_API_KEY") || error.message.includes("API key")) {
+              errorMessage = "API configuration error. Please contact support.";
+            } else if (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("ENOTFOUND")) {
+              errorMessage = "Network error connecting to data services. Please try again in a moment.";
+            } else if (error.message.includes("timeout")) {
+              errorMessage = "Request timed out. Please try a simpler request.";
+            } else {
+              errorMessage = error.message;
+            }
+          }
+
           try {
-            await c1Response.writeContent(`\n\nError generating document: ${error instanceof Error ? error.message : "Unknown error"}`);
+            await c1Response.writeContent(`\n\nError generating document: ${errorMessage}`);
           } catch {
             // Ignore
           }
