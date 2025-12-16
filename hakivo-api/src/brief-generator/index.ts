@@ -1343,10 +1343,26 @@ ${newsSection || 'No recent news headlines'}
 8. Include emotional cues in [brackets]
 9. Make it conversational and engaging - this brief was made JUST for ${personalization.userName}
 
-Generate a HEADLINE first (catchy, max 10 words, reflects top story).
+Generate a HEADLINE in the style of The New York Times.
+
+NYT-STYLE HEADLINE RULES:
+1. TELL A STORY, not just facts - capture the narrative arc and human stakes
+2. USE STRONG VERBS - "Clears", "Gambles", "Battles", "Faces" instead of "Passes", "Is", "Has"
+3. IMPLY THE "SO WHAT" - why should readers care about this?
+4. CREATE TENSION - show the conflict, stakes, or uncertainty
+5. MAX 12 WORDS - punchy and powerful
+
+EXAMPLES of what we want:
+- Instead of "Senate Passes Immigration Bill" → "A Nation's Immigration Debate Reaches Its Breaking Point"
+- Instead of "Healthcare Bill Advances" → "Millions Face Uncertainty as Health Overhaul Moves Forward"
+- Instead of "Climate Bill Clears House" → "Congress Bets Big on a Greener Future"
+- Instead of "Defense Spending Increases" → "The Pentagon's Price Tag: What It Means for Your Taxes"
+- Instead of "Tax Reform Introduced" → "A Tax Overhaul That Could Reshape the American Economy"
+
+Think like a NYT editor: What's the STORY here? What's at STAKE? Who WINS and who LOSES?
 
 Format your response EXACTLY as:
-HEADLINE: [Your headline here]
+HEADLINE: [Your NYT-style headline here]
 
 SCRIPT:
 ${hostA.toUpperCase()}: [emotional cue] dialogue...
