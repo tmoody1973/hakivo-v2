@@ -37,7 +37,7 @@ export const aj = arcjet({
  */
 export const chatProtection = aj.withRule(
   detectBot({
-    mode: "LIVE",
+    mode: "DRY_RUN", // TEMP: Changed to DRY_RUN to debug network errors - revert to LIVE after testing
     allow: [
       "CATEGORY:SEARCH_ENGINE", // Allow search engines for SEO
     ],
@@ -60,7 +60,7 @@ export const authenticatedChatProtection = arcjet({
   rules: [
     shield({ mode: "LIVE" }),
     detectBot({
-      mode: "LIVE",
+      mode: "DRY_RUN", // TEMP: Changed to DRY_RUN to debug network errors
       allow: ["CATEGORY:SEARCH_ENGINE"],
     }),
     slidingWindow({
