@@ -7,12 +7,8 @@ import {
   extractUserIdFromAuth,
 } from "@/lib/security/arcjet";
 import { makeC1Response } from "@thesysai/genui-sdk/server";
-// Artifact generation restored - uses generateArtifactWithToolsStream which pre-fetches real data
-import {
-  generateArtifactWithToolsStream,
-  generateArtifactId,
-  type ArtifactType,
-} from "@/mastra/tools/thesys";
+// Artifact generation via tool calling - LLM decides when to create artifacts
+import { generateArtifactWithTools, generateArtifactId } from "@/mastra/tools/thesys";
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithParse } from "openai/lib/RunnableFunction";
 import type { JSONSchema } from "openai/lib/jsonschema";
@@ -331,6 +327,166 @@ Requires auth token from context [AUTH_TOKEN: xxx].`,
   },
 };
 
+// =============================================================================
+// ARTIFACT TOOLS - LLM-driven artifact generation (recommended approach)
+// =============================================================================
+
+// Artifact tool parameter types
+type CreateArtifactParams = {
+  type: "report" | "slides";
+  title: string;
+  topic: string;
+  audience?: "general" | "professional" | "academic" | "journalist" | "educator" | "advocate";
+};
+
+type EditArtifactParams = {
+  artifactId: string;
+  editInstructions: string;
+};
+
+/**
+ * Execute create_artifact tool - generates a new C1 artifact document
+ * This is called when the LLM decides the user wants a report or slides
+ */
+async function executeCreateArtifact(params: CreateArtifactParams): Promise<string> {
+  console.log("[C1 API] create_artifact tool called:", params);
+
+  try {
+    const artifactId = generateArtifactId();
+    const { type, title, topic, audience = "general" } = params;
+
+    // Build system prompt based on audience and type
+    const audiencePrompts: Record<string, string> = {
+      general: "Write for a general audience with clear, accessible language. Explain technical terms.",
+      professional: "Write for policy professionals with technical legislative details and strategic analysis.",
+      academic: "Write for researchers with proper citations and analytical rigor.",
+      journalist: "Write in AP style for news professionals with newsworthy angles.",
+      educator: "Write for teachers with learning objectives and discussion questions.",
+      advocate: "Write for advocacy organizations with calls to action and talking points.",
+    };
+
+    const systemPrompt = `You are an expert congressional analyst creating professional ${type === "slides" ? "slide presentations" : "reports"} using C1 components.
+
+${audiencePrompts[audience] || audiencePrompts.general}
+
+CRITICAL STRUCTURE RULES:
+- Use InlineHeader components to organize content into clear visual sections
+- InlineHeader creates section breaks with title and optional subtitle
+- Follow each InlineHeader with List, TextContent, StatBlock, or DataTile components
+- For slides: Each InlineHeader represents a new slide
+- For reports: Use InlineHeader for major sections (Executive Summary, Key Provisions, etc.)
+
+CRITICAL DATA RULES:
+- Use ONLY bill numbers, titles, sponsors, and dates from the research data
+- NEVER invent or fabricate any bill numbers or legislation
+- Every bill mentioned MUST have a real bill ID (e.g., H.R. 1234, S. 567)
+- If no matching bills found, clearly state "No matching legislation found"
+- Include sponsor names with party and state (e.g., "Rep. Jane Smith (D-CA)")
+
+Be objective, factual, and non-partisan.`;
+
+    const userPrompt = `Create a ${type === "slides" ? "slide presentation" : "detailed report"} titled "${title}"
+
+Topic: ${topic}
+
+Generate a well-structured, professional document based on this topic. Use the available research tools to gather accurate data first.`;
+
+    // Call the artifact generation with tools (two-phase: research + generate)
+    const result = await generateArtifactWithTools({
+      id: artifactId,
+      type,
+      systemPrompt,
+      userPrompt,
+    });
+
+    return JSON.stringify({
+      success: true,
+      artifactId: result.id,
+      type: result.type,
+      title,
+      content: result.content,
+      message: `Successfully created ${type === "slides" ? "presentation" : "report"}: "${title}"`,
+    });
+  } catch (error) {
+    console.error("[C1 API] create_artifact error:", error);
+    return JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create artifact",
+    });
+  }
+}
+
+/**
+ * Execute edit_artifact tool - modifies an existing C1 artifact
+ * This is called when the LLM decides the user wants to edit an existing document
+ */
+async function executeEditArtifact(params: EditArtifactParams): Promise<string> {
+  console.log("[C1 API] edit_artifact tool called:", params);
+
+  // Note: Full implementation would load existing artifact content from database
+  // For now, return a placeholder indicating the edit capability
+  return JSON.stringify({
+    success: false,
+    error: "Edit artifact functionality requires the existing artifact content. Please reference a specific artifact from the conversation.",
+    artifactId: params.artifactId,
+    editInstructions: params.editInstructions,
+  });
+}
+
+// Create Artifact Tool - LLM calls this when user wants reports/slides
+const createArtifactTool: RunnableToolFunctionWithParse<CreateArtifactParams> = {
+  type: "function",
+  function: {
+    name: "create_artifact",
+    description: `Generate an interactive document (report or slides) using C1 Artifacts.
+
+Use this tool when the user asks for:
+- Reports, analysis, briefings, summaries, overviews, memos, whitepapers
+- Slide decks, presentations, slideshows, talking points
+- Any request to "create", "make", "generate", "build", "prepare", "write", "draft" a document
+
+IMPORTANT: After calling this tool, do NOT include the artifact content in your text response.
+The frontend automatically renders the artifact. Just confirm it was created.
+
+Templates available: bill_analysis, policy_brief, news_brief, lesson_deck, advocacy_deck`,
+    parameters: zodToJsonSchema(z.object({
+      type: z.enum(["report", "slides"]).describe("Document type: 'report' for written analysis, 'slides' for presentations"),
+      title: z.string().describe("Clear, descriptive title for the document"),
+      topic: z.string().describe("The subject matter to research and cover in the document"),
+      audience: z.enum(["general", "professional", "academic", "journalist", "educator", "advocate"])
+        .optional()
+        .describe("Target audience (default: general)"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as CreateArtifactParams,
+    function: executeCreateArtifact,
+    strict: true,
+  },
+};
+
+// Edit Artifact Tool - LLM calls this when user wants to modify an existing artifact
+const editArtifactTool: RunnableToolFunctionWithParse<EditArtifactParams> = {
+  type: "function",
+  function: {
+    name: "edit_artifact",
+    description: `Edit an existing artifact based on user instructions.
+
+Use this tool when the user wants to:
+- Modify, update, revise, or change an existing document
+- Add or remove sections from a report
+- Change the style or tone of content
+- Fix errors or update information
+
+Requires the artifact ID from a previous create_artifact call in this conversation.`,
+    parameters: zodToJsonSchema(z.object({
+      artifactId: z.string().describe("ID of the artifact to edit (from previous create_artifact result)"),
+      editInstructions: z.string().describe("Detailed instructions for how to modify the artifact"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as EditArtifactParams,
+    function: executeEditArtifact,
+    strict: true,
+  },
+};
+
 // Array of all tools for runTools()
 const c1Tools = [
   smartSqlTool,
@@ -340,91 +496,13 @@ const c1Tools = [
   searchNewsTool,
   getUserContextTool,
   getUserRepresentativesTool,
+  createArtifactTool,  // NEW: LLM-driven artifact creation
+  editArtifactTool,    // NEW: LLM-driven artifact editing
 ];
 
-/**
- * Detect if user is requesting an artifact (slide deck, report, presentation)
- * Returns artifact type and title if detected, null otherwise.
- * Uses pre-fetch approach to ensure real data is used.
- */
-interface ArtifactIntent {
-  type: ArtifactType;
-  title: string;
-  topic: string;
-}
-
-function detectArtifactIntent(message: string): ArtifactIntent | null {
-  const lowerMessage = message.toLowerCase();
-
-  // Keywords that indicate artifact generation request
-  const slidesKeywords = [
-    "slide deck", "slides", "presentation", "slidedeck", "powerpoint",
-    "pptx", "deck", "briefing deck", "talking points"
-  ];
-
-  const reportKeywords = [
-    "report", "analysis", "briefing", "summary report", "overview",
-    "write up", "writeup", "document", "memo", "whitepaper"
-  ];
-
-  // Action words that indicate creation
-  const actionWords = [
-    "create", "make", "generate", "build", "prepare", "write",
-    "draft", "put together", "compile", "from the guide"
-  ];
-
-  // Check for slides intent
-  const hasSlideKeyword = slidesKeywords.some(kw => lowerMessage.includes(kw));
-  const hasReportKeyword = reportKeywords.some(kw => lowerMessage.includes(kw));
-  const hasActionWord = actionWords.some(kw => lowerMessage.includes(kw));
-
-  if (!hasSlideKeyword && !hasReportKeyword) {
-    return null;
-  }
-
-  // Either has an action word OR is a direct request ("slides on X", "report about Y")
-  const isValidRequest = hasActionWord ||
-    lowerMessage.includes(" on ") ||
-    lowerMessage.includes(" about ") ||
-    lowerMessage.includes(" for ");
-
-  if (!isValidRequest) {
-    return null;
-  }
-
-  // Extract topic from message
-  const topicPatterns = [
-    /(?:on|about|regarding|for|covering)\s+(.+?)(?:\.|$)/i,
-    /(?:slide\s*deck|presentation|slides|report|analysis|briefing)\s+(?:on|about|for)\s+(.+?)(?:\.|$)/i,
-    /(?:create|make|generate)\s+(?:a\s+)?(?:slide\s*deck|presentation|slides|report|analysis|briefing)\s+(.+?)(?:\.|$)/i,
-  ];
-
-  let topic = "";
-  for (const pattern of topicPatterns) {
-    const match = message.match(pattern);
-    if (match && match[1]) {
-      topic = match[1].trim();
-      break;
-    }
-  }
-
-  // If no topic found, use the full message as context
-  if (!topic) {
-    topic = message;
-  }
-
-  // Determine type
-  const type: ArtifactType = hasSlideKeyword ? "slides" : "report";
-
-  // Generate a title
-  const title = type === "slides"
-    ? `Congressional Briefing: ${topic.slice(0, 50)}${topic.length > 50 ? "..." : ""}`
-    : `Analysis Report: ${topic.slice(0, 50)}${topic.length > 50 ? "..." : ""}`;
-
-  console.log("[C1 API] Artifact intent detected:", { type, title, topic: topic.slice(0, 100) });
-
-  return { type, title, topic };
-}
+// NOTE: detectArtifactIntent function REMOVED - replaced with tool-calling approach
+// The LLM now decides when to create artifacts by calling create_artifact tool
+// This is more flexible than keyword detection and handles edge cases better
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -936,164 +1014,14 @@ Example: User asks "what are my interests?"
       })),
     ];
 
-    console.log("[C1 API] Streaming with native C1 runTools, messages:", messagesWithContext.length, "hasUserData:", hasReps || hasInterests);
+    console.log("[C1 API] Streaming with native C1 runTools, messages:", messagesWithContext.length, "hasUserData:", hasReps || hasInterests, "tools:", c1Tools.length);
 
-    // Check for artifact intent (slide deck, report, etc.)
-    // Uses generateArtifactWithToolsStream which pre-fetches REAL data from APIs
-    // to prevent hallucinated bill numbers
-    const artifactIntent = detectArtifactIntent(prompt.content);
+    // NOTE: Artifact generation is now handled via tool calling (create_artifact, edit_artifact)
+    // The LLM decides when to generate artifacts based on user intent
+    // This is more flexible than the old keyword-based detection approach
 
-    if (artifactIntent) {
-      console.log("[C1 API] Artifact generation detected:", artifactIntent);
-
-      const c1Response = makeC1Response();
-      const artifactId = generateArtifactId();
-
-      // Build system prompt for artifact generation
-      const artifactSystemPrompt = `You are an expert congressional analyst creating professional ${artifactIntent.type === "slides" ? "slide presentations" : "reports"} using C1 components.
-
-Write for a general audience with clear, accessible language. Explain technical terms.
-Focus on practical implications and what matters to everyday citizens.
-
-CRITICAL STRUCTURE RULES:
-- Use InlineHeader components to organize content into clear visual sections
-- InlineHeader creates section breaks with title and optional subtitle
-- Follow each InlineHeader with List, TextContent, StatBlock, or DataTile components
-- For slides: Each InlineHeader represents a new slide
-- For reports: Use InlineHeader for major sections (Executive Summary, Key Provisions, etc.)
-
-CRITICAL DATA RULES:
-- Use ONLY bill numbers, titles, sponsors, and dates from the provided research data
-- NEVER invent or fabricate any bill numbers or legislation
-- Every bill mentioned MUST have a real bill ID from the data (e.g., H.R. 1234, S. 567)
-- If no matching bills found, clearly state "No matching legislation found"
-- Include sponsor names with party and state (e.g., "Rep. Jane Smith (D-CA)")
-
-Be objective, factual, and non-partisan.`;
-
-      // Process artifact generation in background
-      const processArtifact = async () => {
-        const streamTimeout = setTimeout(async () => {
-          console.error("[C1 API] Artifact timeout - forcing end");
-          try {
-            await c1Response.writeContent("\n\nI apologize, but the document generation timed out. Please try again.");
-            await c1Response.end();
-          } catch {
-            // Ignore
-          }
-        }, 120000); // 2 minute timeout for artifacts
-
-        let generator: AsyncGenerator<{ type: "phase"; phase: string; message: string } | { type: "content"; content: string } | { type: "complete"; result: { content: string; id: string; type: string } }, void, unknown> | null = null;
-
-        try {
-          // Write initial thinking state
-          await c1Response.writeThinkItem({
-            title: "Gathering research data",
-            description: "Searching congressional databases for relevant legislation...",
-            ephemeral: true,
-          });
-
-          // Initialize the generator - this can throw if there's a config error
-          try {
-            generator = generateArtifactWithToolsStream({
-              id: artifactId,
-              type: artifactIntent.type,
-              systemPrompt: artifactSystemPrompt,
-              userPrompt: `Create a ${artifactIntent.type === "slides" ? "slide presentation" : "detailed report"} titled "${artifactIntent.title}"\n\nTopic: ${artifactIntent.topic}\n\nUser request: ${prompt.content}`,
-            });
-          } catch (initError) {
-            console.error("[C1 API] Artifact generator initialization error:", initError);
-            await c1Response.writeContent(`\n\nError initializing document generator: ${initError instanceof Error ? initError.message : "Unknown error"}\n\nPlease check that the THESYS_API_KEY environment variable is set.`);
-            clearTimeout(streamTimeout);
-            await c1Response.end();
-            return;
-          }
-
-          let artifactContent = "";
-          let hasContent = false;
-
-          for await (const chunk of generator) {
-            if (chunk.type === "phase") {
-              console.log("[C1 API] Artifact phase:", chunk.phase, chunk.message);
-              await c1Response.writeThinkItem({
-                title: chunk.phase === "gathering" ? "Researching" : "Generating document",
-                description: chunk.message,
-                ephemeral: true,
-              });
-            } else if (chunk.type === "content") {
-              hasContent = true;
-              artifactContent += chunk.content;
-              await c1Response.writeContent(chunk.content);
-            } else if (chunk.type === "complete") {
-              console.log("[C1 API] Artifact complete, length:", chunk.result.content.length);
-            }
-          }
-
-          // If no content was generated, write a helpful message
-          if (!hasContent) {
-            console.warn("[C1 API] Artifact generation produced no content");
-            await c1Response.writeContent("\n\nI couldn't generate the document. The research didn't find enough relevant data. Please try a different topic or be more specific in your request.");
-          }
-
-          clearTimeout(streamTimeout);
-
-          // Store assistant message
-          const assistantMessage: DBMessage = {
-            role: "assistant",
-            content: artifactContent || "Document generation failed - no content produced",
-            id: responseId,
-          };
-
-          messageStore.addMessage(assistantMessage);
-
-          if (accessToken) {
-            persistMessage(threadId, assistantMessage, accessToken);
-          }
-
-          await c1Response.end();
-        } catch (error) {
-          clearTimeout(streamTimeout);
-          console.error("[C1 API] Artifact error:", error);
-
-          // Determine user-friendly error message
-          let errorMessage = "Unknown error";
-          if (error instanceof Error) {
-            if (error.message.includes("THESYS_API_KEY") || error.message.includes("API key")) {
-              errorMessage = "API configuration error. Please contact support.";
-            } else if (error.message.includes("network") || error.message.includes("fetch") || error.message.includes("ENOTFOUND")) {
-              errorMessage = "Network error connecting to data services. Please try again in a moment.";
-            } else if (error.message.includes("timeout")) {
-              errorMessage = "Request timed out. Please try a simpler request.";
-            } else {
-              errorMessage = error.message;
-            }
-          }
-
-          try {
-            await c1Response.writeContent(`\n\nError generating document: ${errorMessage}`);
-          } catch {
-            // Ignore
-          }
-          await c1Response.end();
-        }
-      };
-
-      // Start artifact generation but don't await
-      processArtifact().catch((error) => {
-        console.error("[C1 API] Unhandled artifact error:", error);
-      });
-
-      // Return the stream immediately
-      return new NextResponse(c1Response.responseStream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache, no-transform",
-          "Connection": "keep-alive",
-        },
-      });
-    }
-
-    // Regular chat flow - use native C1 runTools() for tool calling with streaming
+    // Use native C1 runTools() for tool calling with streaming
+    // This handles both regular chat AND artifact generation via the create_artifact tool
     const runner = c1Client.beta.chat.completions.runTools({
       model: C1_MODEL,
       messages: messagesWithContext,
@@ -1104,7 +1032,7 @@ Be objective, factual, and non-partisan.`;
     // Track message content for persistence
     let fullText = "";
 
-    // Tool name to friendly thinking state message mapping (7 tools only)
+    // Tool name to friendly thinking state message mapping (9 tools)
     const TOOL_THINKING_STATES: Record<string, { title: string; description: string }> = {
       // Core data lookup (3)
       smartSql: { title: "Querying database", description: "Running database query for congressional data..." },
@@ -1116,6 +1044,9 @@ Be objective, factual, and non-partisan.`;
       // SmartMemory fallback (2)
       getUserContext: { title: "Loading your profile", description: "Retrieving your preferences and location..." },
       getUserRepresentatives: { title: "Finding your representatives", description: "Looking up your elected officials..." },
+      // Artifact generation (2) - NEW: LLM-driven artifact tools
+      create_artifact: { title: "Generating document", description: "Creating your report or presentation..." },
+      edit_artifact: { title: "Editing document", description: "Updating your document..." },
     };
 
     // Use makeC1Response for proper thinking state support
