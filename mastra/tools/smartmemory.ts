@@ -21,7 +21,7 @@ const DASHBOARD_SERVICE_URL =
 
 const AUTH_SERVICE_URL =
   process.env.NEXT_PUBLIC_AUTH_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz15.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 const CHAT_SERVICE_URL =
   process.env.NEXT_PUBLIC_CHAT_API_URL ||

@@ -27,7 +27,7 @@ import {
 
 // API endpoints
 const DB_ADMIN_API = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyz19.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 // C1 Artifacts client (fallback for legacy code)
 const getC1ArtifactsClient = () => {

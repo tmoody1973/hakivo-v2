@@ -41,9 +41,9 @@ import {
 const RAINDROP_SERVICES = {
   BILLS:
     process.env.NEXT_PUBLIC_BILLS_API_URL ||
-    "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
   ADMIN:
-    "https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
+    "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run",
 } as const;
 
 // Result types
