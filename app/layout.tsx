@@ -21,11 +21,42 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 })
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://hakivo.com'
+
 export const metadata: Metadata = {
-  title: "Hakivo - Civic Engagement Platform",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "Hakivo - Understand Congress | Bills, Votes & Representatives Explained",
+    template: "%s | Hakivo",
+  },
   description:
-    "Transform Congressional legislation into personalized audio briefings and interactive civic engagement tools",
-  generator: "v0.app",
+    "Make sense of Congressional legislation with AI-powered summaries, podcast briefings, and representative tracking. Democracy made accessible.",
+  keywords: [
+    "congress",
+    "legislation",
+    "bills",
+    "voting record",
+    "representatives",
+    "senators",
+    "civic engagement",
+    "government",
+    "politics explained",
+    "bill tracker",
+  ],
+  authors: [{ name: "Hakivo" }],
+  creator: "Hakivo",
+  publisher: "Hakivo",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
   icons: {
     icon: [
       {
@@ -43,6 +74,35 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-icon.png",
   },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: SITE_URL,
+    siteName: "Hakivo",
+    title: "Hakivo - Understand Congress | Bills, Votes & Representatives Explained",
+    description:
+      "Make sense of Congressional legislation with AI-powered summaries, podcast briefings, and representative tracking. Democracy made accessible.",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Hakivo - Civic Engagement Platform",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Hakivo - Understand Congress",
+    description:
+      "Make sense of Congressional legislation with AI-powered summaries and podcast briefings.",
+    images: ["/og-image.png"],
+    creator: "@hakivoapp",
+  },
+  alternates: {
+    canonical: SITE_URL,
+  },
+  category: "Government & Politics",
 }
 
 export default function RootLayout({

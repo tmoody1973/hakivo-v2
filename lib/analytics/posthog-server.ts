@@ -1,6 +1,14 @@
 /**
  * Server-side PostHog client for LLM observability
  *
+ * IMPORTANT: This file uses posthog-node which requires Node.js APIs.
+ * Only import this in:
+ * - API routes (app/api/...)
+ * - Server components
+ * - Server actions
+ *
+ * DO NOT import in client components or from lib/analytics/index.ts
+ *
  * Tracks AI/LLM usage including:
  * - Model, provider, temperature
  * - Token usage (input/output)
@@ -10,6 +18,7 @@
  * @see https://posthog.com/docs/ai-engineering/observability
  */
 
+import 'server-only';
 import { PostHog } from 'posthog-node';
 
 // Lazy-initialize PostHog client (only when needed)
