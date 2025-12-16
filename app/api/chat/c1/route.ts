@@ -7,7 +7,12 @@ import {
   extractUserIdFromAuth,
 } from "@/lib/security/arcjet";
 import { makeC1Response } from "@thesysai/genui-sdk/server";
-// Artifact generation import removed - all requests now use runTools() to prevent hallucination
+// Artifact generation restored - uses generateArtifactWithToolsStream which pre-fetches real data
+import {
+  generateArtifactWithToolsStream,
+  generateArtifactId,
+  type ArtifactType,
+} from "@/mastra/tools/thesys";
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithParse } from "openai/lib/RunnableFunction";
 import type { JSONSchema } from "openai/lib/jsonschema";
@@ -337,7 +342,89 @@ const c1Tools = [
   getUserRepresentativesTool,
 ];
 
-// NOTE: detectArtifactIntent removed - all requests go through runTools() to prevent hallucination
+/**
+ * Detect if user is requesting an artifact (slide deck, report, presentation)
+ * Returns artifact type and title if detected, null otherwise.
+ * Uses pre-fetch approach to ensure real data is used.
+ */
+interface ArtifactIntent {
+  type: ArtifactType;
+  title: string;
+  topic: string;
+}
+
+function detectArtifactIntent(message: string): ArtifactIntent | null {
+  const lowerMessage = message.toLowerCase();
+
+  // Keywords that indicate artifact generation request
+  const slidesKeywords = [
+    "slide deck", "slides", "presentation", "slidedeck", "powerpoint",
+    "pptx", "deck", "briefing deck", "talking points"
+  ];
+
+  const reportKeywords = [
+    "report", "analysis", "briefing", "summary report", "overview",
+    "write up", "writeup", "document", "memo", "whitepaper"
+  ];
+
+  // Action words that indicate creation
+  const actionWords = [
+    "create", "make", "generate", "build", "prepare", "write",
+    "draft", "put together", "compile", "from the guide"
+  ];
+
+  // Check for slides intent
+  const hasSlideKeyword = slidesKeywords.some(kw => lowerMessage.includes(kw));
+  const hasReportKeyword = reportKeywords.some(kw => lowerMessage.includes(kw));
+  const hasActionWord = actionWords.some(kw => lowerMessage.includes(kw));
+
+  if (!hasSlideKeyword && !hasReportKeyword) {
+    return null;
+  }
+
+  // Either has an action word OR is a direct request ("slides on X", "report about Y")
+  const isValidRequest = hasActionWord ||
+    lowerMessage.includes(" on ") ||
+    lowerMessage.includes(" about ") ||
+    lowerMessage.includes(" for ");
+
+  if (!isValidRequest) {
+    return null;
+  }
+
+  // Extract topic from message
+  const topicPatterns = [
+    /(?:on|about|regarding|for|covering)\s+(.+?)(?:\.|$)/i,
+    /(?:slide\s*deck|presentation|slides|report|analysis|briefing)\s+(?:on|about|for)\s+(.+?)(?:\.|$)/i,
+    /(?:create|make|generate)\s+(?:a\s+)?(?:slide\s*deck|presentation|slides|report|analysis|briefing)\s+(.+?)(?:\.|$)/i,
+  ];
+
+  let topic = "";
+  for (const pattern of topicPatterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      topic = match[1].trim();
+      break;
+    }
+  }
+
+  // If no topic found, use the full message as context
+  if (!topic) {
+    topic = message;
+  }
+
+  // Determine type
+  const type: ArtifactType = hasSlideKeyword ? "slides" : "report";
+
+  // Generate a title
+  const title = type === "slides"
+    ? `Congressional Briefing: ${topic.slice(0, 50)}${topic.length > 50 ? "..." : ""}`
+    : `Analysis Report: ${topic.slice(0, 50)}${topic.length > 50 ? "..." : ""}`;
+
+  console.log("[C1 API] Artifact intent detected:", { type, title, topic: topic.slice(0, 100) });
+
+  return { type, title, topic };
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -851,13 +938,128 @@ Example: User asks "what are my interests?"
 
     console.log("[C1 API] Streaming with native C1 runTools, messages:", messagesWithContext.length, "hasUserData:", hasReps || hasInterests);
 
-    // NOTE: Artifact detection removed - all requests now go through runTools()
-    // This ensures the model uses database tools to fetch REAL bill data
-    // before generating any reports or analysis, preventing hallucinated bill numbers.
-    // The model will generate artifacts inline using C1's generative UI capabilities.
+    // Check for artifact intent (slide deck, report, etc.)
+    // Uses generateArtifactWithToolsStream which pre-fetches REAL data from APIs
+    // to prevent hallucinated bill numbers
+    const artifactIntent = detectArtifactIntent(prompt.content);
 
-    // Use native C1 runTools() for tool calling with streaming
-    // This replaces Mastra agent streaming for better control and performance
+    if (artifactIntent) {
+      console.log("[C1 API] Artifact generation detected:", artifactIntent);
+
+      const c1Response = makeC1Response();
+      const artifactId = generateArtifactId();
+
+      // Build system prompt for artifact generation
+      const artifactSystemPrompt = `You are an expert congressional analyst creating professional ${artifactIntent.type === "slides" ? "slide presentations" : "reports"} using C1 components.
+
+Write for a general audience with clear, accessible language. Explain technical terms.
+Focus on practical implications and what matters to everyday citizens.
+
+CRITICAL STRUCTURE RULES:
+- Use InlineHeader components to organize content into clear visual sections
+- InlineHeader creates section breaks with title and optional subtitle
+- Follow each InlineHeader with List, TextContent, StatBlock, or DataTile components
+- For slides: Each InlineHeader represents a new slide
+- For reports: Use InlineHeader for major sections (Executive Summary, Key Provisions, etc.)
+
+CRITICAL DATA RULES:
+- Use ONLY bill numbers, titles, sponsors, and dates from the provided research data
+- NEVER invent or fabricate any bill numbers or legislation
+- Every bill mentioned MUST have a real bill ID from the data (e.g., H.R. 1234, S. 567)
+- If no matching bills found, clearly state "No matching legislation found"
+- Include sponsor names with party and state (e.g., "Rep. Jane Smith (D-CA)")
+
+Be objective, factual, and non-partisan.`;
+
+      // Process artifact generation in background
+      const processArtifact = async () => {
+        const streamTimeout = setTimeout(async () => {
+          console.error("[C1 API] Artifact timeout - forcing end");
+          try {
+            await c1Response.writeContent("\n\nI apologize, but the document generation timed out. Please try again.");
+            await c1Response.end();
+          } catch {
+            // Ignore
+          }
+        }, 120000); // 2 minute timeout for artifacts
+
+        try {
+          // Write initial thinking state
+          await c1Response.writeThinkItem({
+            title: "Gathering research data",
+            description: "Searching congressional databases for relevant legislation...",
+            ephemeral: true,
+          });
+
+          const generator = generateArtifactWithToolsStream({
+            id: artifactId,
+            type: artifactIntent.type,
+            systemPrompt: artifactSystemPrompt,
+            userPrompt: `Create a ${artifactIntent.type === "slides" ? "slide presentation" : "detailed report"} titled "${artifactIntent.title}"\n\nTopic: ${artifactIntent.topic}\n\nUser request: ${prompt.content}`,
+          });
+
+          let artifactContent = "";
+
+          for await (const chunk of generator) {
+            if (chunk.type === "phase") {
+              console.log("[C1 API] Artifact phase:", chunk.phase, chunk.message);
+              await c1Response.writeThinkItem({
+                title: chunk.phase === "gathering" ? "Researching" : "Generating document",
+                description: chunk.message,
+                ephemeral: true,
+              });
+            } else if (chunk.type === "content") {
+              artifactContent += chunk.content;
+              await c1Response.writeContent(chunk.content);
+            } else if (chunk.type === "complete") {
+              console.log("[C1 API] Artifact complete, length:", chunk.result.content.length);
+            }
+          }
+
+          clearTimeout(streamTimeout);
+
+          // Store assistant message
+          const assistantMessage: DBMessage = {
+            role: "assistant",
+            content: artifactContent,
+            id: responseId,
+          };
+
+          messageStore.addMessage(assistantMessage);
+
+          if (accessToken) {
+            persistMessage(threadId, assistantMessage, accessToken);
+          }
+
+          await c1Response.end();
+        } catch (error) {
+          clearTimeout(streamTimeout);
+          console.error("[C1 API] Artifact error:", error);
+          try {
+            await c1Response.writeContent(`\n\nError generating document: ${error instanceof Error ? error.message : "Unknown error"}`);
+          } catch {
+            // Ignore
+          }
+          await c1Response.end();
+        }
+      };
+
+      // Start artifact generation but don't await
+      processArtifact().catch((error) => {
+        console.error("[C1 API] Unhandled artifact error:", error);
+      });
+
+      // Return the stream immediately
+      return new NextResponse(c1Response.responseStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive",
+        },
+      });
+    }
+
+    // Regular chat flow - use native C1 runTools() for tool calling with streaming
     const runner = c1Client.beta.chat.completions.runTools({
       model: C1_MODEL,
       messages: messagesWithContext,
