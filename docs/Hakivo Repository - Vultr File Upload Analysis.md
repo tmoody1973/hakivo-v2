@@ -145,8 +145,8 @@ const s3Client = new S3Client({
   region: 'us-east-1',
   forcePathStyle: true,
   credentials: {
-    accessKeyId: 'VDNCF8FT3EDLY3J4MLUY',
-    secretAccessKey: 'j9OBp3jBefMYnFMfD4rfal3JKfOOLGeOXFSCH0fY',
+    accessKeyId: process.env.VULTR_ACCESS_KEY,
+    secretAccessKey: process.env.VULTR_SECRET_KEY,
   },
 });
 
@@ -166,7 +166,7 @@ await s3Client.send(
 );
 ```
 
-**Note**: The test file contains hardcoded credentials, which should be rotated for security.
+**Note**: Credentials should be loaded from environment variables, never hardcoded.
 
 ## Key Insights
 
