@@ -28,6 +28,7 @@ import {
   C1Thread,
 } from "@/lib/services/c1-thread-service";
 import { useAuth } from "@/lib/auth/auth-context";
+import { toast } from "sonner";
 
 /**
  * C1 Chat Page - Uses Thesys C1 for generative UI with tool calling
@@ -173,6 +174,105 @@ function C1ChatContent() {
   // This prevents race conditions when SDK internally clears selection before URL updates
   const lastUrlThreadId = useRef<string | null | undefined>(undefined);
 
+  // Track messages for artifact save action (avoids circular ref in onAction)
+  const messagesRef = useRef<Message[]>([]);
+  useEffect(() => {
+    if (threadManager.messages) {
+      messagesRef.current = threadManager.messages;
+    }
+  }, [threadManager.messages]);
+
+  // Handle custom actions from C1 (save_artifact, download_artifact)
+  // This is passed directly to C1Chat, NOT through useThreadManager
+  // C1Action type: { type?: string; params?: Record<string, any>; humanFriendlyMessage: string; llmFriendlyMessage: string }
+  const handleAction = useCallback(
+    async (event: { type?: string; params?: Record<string, unknown> }) => {
+      console.log("[C1 Page] onAction called:", event.type, event.params);
+      const token = localStorage.getItem("hakivo_access_token");
+
+      if (event.type === "save_artifact") {
+        const { artifactId, title, type } = (event.params || {}) as {
+          artifactId: string;
+          title: string;
+          type: "report" | "slides";
+        };
+
+        // Find the message containing this artifact
+        const artifactMessage = messagesRef.current.find(
+          (m) => m.role === "assistant" && m.content?.includes(artifactId)
+        );
+
+        if (!artifactMessage) {
+          toast.error("Could not find artifact content to save");
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/chat/c1/artifacts/save", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              artifactId,
+              title,
+              type,
+              content: artifactMessage.content,
+              threadId: threadListManager.selectedThreadId,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to save artifact");
+          }
+
+          toast.success("Document saved to your library!");
+        } catch (error) {
+          console.error("[C1 Page] Error saving artifact:", error);
+          toast.error("Failed to save document");
+        }
+      } else if (event.type === "download_artifact") {
+        const { artifactId, format = "html" } = (event.params || {}) as {
+          artifactId: string;
+          format?: "html" | "json";
+        };
+
+        // Download via C1 artifacts API - HTML can be printed to PDF in browser
+        toast.info("Preparing download...");
+        try {
+          const response = await fetch(
+            `/api/chat/c1/artifacts/download/${artifactId}?format=${format}`,
+            {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error("Download failed");
+          }
+
+          // Trigger browser download
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          // HTML files can be opened in browser and printed to PDF
+          a.download = `hakivo-document-${artifactId.slice(0, 8)}.html`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          toast.success("Download complete! Open the file and use Print > Save as PDF for PDF format.");
+        } catch (error) {
+          console.error("[C1 Page] Error downloading artifact:", error);
+          toast.error("Download failed");
+        }
+      }
+    },
+    [threadListManager.selectedThreadId]
+  );
+
   // Generate share link for current thread
   const generateShareLink = useCallback(
     async (messages: Message[]): Promise<string> => {
@@ -280,6 +380,7 @@ function C1ChatContent() {
           threadListManager={threadListManager}
           threadManager={threadManager}
           generateShareLink={generateShareLink}
+          onAction={handleAction}
         />
       </ThemeProvider>
     </>

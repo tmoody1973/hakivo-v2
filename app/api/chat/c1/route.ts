@@ -63,6 +63,14 @@ CRITICAL: When users ask for reports, analysis, or presentations about bills or 
 3. Include only verified information from tool results in your response
 4. If no relevant bills are found, say so honestly instead of inventing data
 
+## Artifact Actions
+IMPORTANT: After creating any artifact (report or presentation), ALWAYS add action buttons at the end:
+1. "Save to Documents" button - uses save_artifact custom action with the artifact_id and title
+2. "Download PDF" button - uses download_artifact custom action with the artifact_id
+
+These buttons let users save artifacts to their personal documents or download them.
+Format as a ButtonGroup at the end of the artifact confirmation message.
+
 ## Follow-Up Suggestions
 At the end of EVERY response, include 2-3 suggested follow-up questions as clickable buttons.
 These help users explore related topics and discover what they can ask.
@@ -362,6 +370,28 @@ const editArtifactSchema = zodToJsonSchema(z.object({
   version: z.string().describe("The version (messageId) of the artifact to edit"),
   editInstructions: z.string().describe("Detailed instructions for how to modify the artifact"),
 })) as JSONSchema;
+
+// =============================================================================
+// CUSTOM ACTION SCHEMAS - For save/download artifact buttons
+// =============================================================================
+// These define the buttons the LLM can generate on artifacts
+
+const saveArtifactActionSchema = zodToJsonSchema(z.object({
+  artifactId: z.string().describe("The artifact ID to save"),
+  title: z.string().describe("Title for the saved document"),
+  type: z.enum(["report", "slides"]).describe("Document type"),
+}));
+
+const downloadArtifactActionSchema = zodToJsonSchema(z.object({
+  artifactId: z.string().describe("The artifact ID to download"),
+  format: z.enum(["pdf", "html"]).default("pdf").describe("Download format"),
+}));
+
+// Custom actions metadata for C1 API
+const C1_CUSTOM_ACTIONS = {
+  save_artifact: saveArtifactActionSchema,
+  download_artifact: downloadArtifactActionSchema,
+};
 
 // Create dedicated Artifacts client (separate from embed client)
 const artifactsClient = new OpenAI({
@@ -896,10 +926,9 @@ Example: User asks "what are my interests?"
 
     // Use makeC1Response for proper thinking state support
     // IMPORTANT: Create this BEFORE tools so artifact handlers can stream to it
+    // The c1Response accumulates ALL content written via writeContent(), including artifacts
+    // Use c1Response.getAssistantMessage() at the end to get the complete content for persistence
     const c1Response = makeC1Response();
-
-    // Track message content for persistence
-    let fullText = "";
 
     // Tool name to friendly thinking state message mapping (9 tools)
     const TOOL_THINKING_STATES: Record<string, { title: string; description: string }> = {
@@ -979,11 +1008,11 @@ Generate a well-structured, professional document.`;
         });
 
         // Stream artifact content directly to c1Response
+        // Content is accumulated automatically by c1Response for persistence
         for await (const delta of artifactStream) {
           const content = delta.choices[0]?.delta?.content;
           if (content) {
             await c1Response.writeContent(content);
-            fullText += content; // Track for persistence
           }
         }
 
@@ -1060,11 +1089,17 @@ Requires the artifact ID and version from a previous create_artifact call.`,
     // This follows the Thesys recommended pattern: https://docs.thesys.dev/guides/artifacts/artifacts-in-chat
 
     // Use native C1 runTools() for tool calling with streaming
+    // Include c1_custom_actions metadata for save/download artifact buttons
     const runner = c1Client.beta.chat.completions.runTools({
       model: C1_MODEL,
       messages: messagesWithContext,
       tools: allTools,
       stream: true,
+      metadata: {
+        thesys: JSON.stringify({
+          c1_custom_actions: C1_CUSTOM_ACTIONS,
+        }),
+      },
     });
 
     // Process stream in background and write to c1Response
@@ -1102,32 +1137,28 @@ Requires the artifact ID and version from a previous create_artifact call.`,
         });
 
         // Stream content as it arrives (ChatCompletionChunk format)
+        // Note: Artifact content is streamed directly to c1Response in handleCreateArtifact
+        // The main loop captures the LLM's final text response
         for await (const chunk of runner) {
           // Each chunk has choices array with delta
           const delta = chunk.choices?.[0]?.delta;
           if (delta?.content) {
-            fullText += delta.content;
             await c1Response.writeContent(delta.content);
           }
         }
 
         clearTimeout(streamTimeout);
 
-        // Get final message if streaming didn't capture all content
-        const finalContent = await runner.finalContent();
-        if (finalContent && finalContent !== fullText) {
-          // Write any remaining content not captured during streaming
-          const remaining = finalContent.substring(fullText.length);
-          if (remaining) {
-            fullText = finalContent;
-            await c1Response.writeContent(remaining);
-          }
-        }
+        // CRITICAL: Use c1Response.getAssistantMessage() to get the COMPLETE accumulated content
+        // This includes BOTH artifact content (from handleCreateArtifact) AND LLM response text
+        // This is the Thesys-recommended pattern for artifact persistence
+        const completeMessage = c1Response.getAssistantMessage();
+        const fullContent = completeMessage?.content || "";
 
         // Store assistant message after streaming completes
         const assistantMessage: DBMessage = {
           role: "assistant",
-          content: fullText,
+          content: fullContent,
           id: responseId,
         };
 
@@ -1138,7 +1169,7 @@ Requires the artifact ID and version from a previous create_artifact call.`,
           persistMessage(threadId, assistantMessage, accessToken);
         }
 
-        console.log("[C1 API] Stream completed, text length:", fullText.length);
+        console.log("[C1 API] Stream completed, content length:", fullContent.length);
         await c1Response.end();
       } catch (error) {
         clearTimeout(streamTimeout);
