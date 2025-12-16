@@ -470,8 +470,11 @@ export function generateArtifactId(): string {
 // THESYS TOOL CALLING - Native tool integration for data-driven artifacts
 // =============================================================================
 
-const RAINDROP_ADMIN_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyz1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
-const BILLS_SERVICE_URL = "https://svc-01kc6rbecv0s5k4yk6ksdaqyz16.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+// Use environment variables for service URLs - fall back to known values if not set
+const RAINDROP_ADMIN_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const BILLS_SERVICE_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 
 /**
  * Search bills in the Hakivo database
