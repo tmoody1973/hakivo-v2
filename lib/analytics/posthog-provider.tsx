@@ -7,13 +7,21 @@ import { usePathname, useSearchParams } from 'next/navigation';
 
 // Initialize PostHog only on client side
 if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
-    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
-    person_profiles: 'identified_only',
-    capture_pageview: false, // We capture manually for Next.js app router
-    capture_pageleave: true,
-    autocapture: true,
-  });
+  try {
+    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
+      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
+      person_profiles: 'identified_only',
+      capture_pageview: false, // We capture manually for Next.js app router
+      capture_pageleave: true,
+      autocapture: true,
+      // Suppress errors when blocked by ad blockers
+      on_xhr_error: () => {}, // Silently handle XHR errors
+      disable_external_dependency_loading: true, // Don't load external scripts that might be blocked
+    });
+  } catch (e) {
+    // PostHog blocked by ad blocker or network issue - fail silently
+    console.debug('[PostHog] Analytics blocked or unavailable');
+  }
 }
 
 // Component to capture pageviews with Next.js app router
