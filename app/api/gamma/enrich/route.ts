@@ -25,6 +25,17 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
 
+    // Check content type to avoid parsing HTML as JSON
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[API] Gamma service returned non-JSON:', text.substring(0, 200));
+      return NextResponse.json(
+        { error: 'Gamma service unavailable', details: `Service returned ${response.status}` },
+        { status: 502 }
+      );
+    }
+
     const data = await response.json();
 
     if (!response.ok) {
