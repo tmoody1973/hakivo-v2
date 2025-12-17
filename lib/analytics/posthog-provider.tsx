@@ -12,11 +12,14 @@ if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
     posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
       // Use our own domain proxy to avoid ad blockers
       api_host: '/ingest',
-      ui_host: 'https://us.posthog.com', // For toolbar/session recording UI
+      ui_host: 'https://us.posthog.com', // For toolbar UI
       person_profiles: 'identified_only',
       capture_pageview: false, // We capture manually for Next.js app router
       capture_pageleave: true,
       autocapture: true,
+      // Disable session recording to prevent 400 errors from PostHog
+      // Session recording can be re-enabled once configured in PostHog dashboard
+      disable_session_recording: true,
     });
   } catch (e) {
     // PostHog blocked or network issue - fail silently
