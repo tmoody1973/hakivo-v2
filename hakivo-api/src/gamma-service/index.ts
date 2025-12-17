@@ -975,7 +975,7 @@ app.post('/api/gamma/documents/:id/email', async (c) => {
     const pdfUrl = doc.pdf_url as string | null;
 
     // Build email content
-    const senderName = auth.email?.split('@')[0] || 'A Hakivo user';
+    const senderName = 'A Hakivo user';
     const docTitle = doc.title as string;
     const docFormat = doc.format as string;
 
