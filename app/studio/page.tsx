@@ -26,7 +26,17 @@ import {
   TEMPLATE_PRESETS,
   CATEGORY_LABELS,
   type TemplatePreset,
+  type ImageSource,
 } from '@/lib/gamma/templates';
+
+// Image source options for user selection
+const IMAGE_SOURCE_OPTIONS: { value: ImageSource; label: string; description: string }[] = [
+  { value: 'unsplash', label: 'Stock Photos', description: 'High-quality photos from Unsplash' },
+  { value: 'aiGenerated', label: 'AI Generated', description: 'Custom images created by AI' },
+  { value: 'webFreeToUse', label: 'Web Images', description: 'Free-to-use images from the web' },
+  { value: 'pictographic', label: 'Icons & Graphics', description: 'Clean pictographic illustrations' },
+  { value: 'noImages', label: 'No Images', description: 'Text-only document' },
+];
 
 // Import studio components
 import {
@@ -65,6 +75,7 @@ export default function StudioPage() {
     getDefaultEnrichmentOptions('general')
   );
   const [showPreview, setShowPreview] = useState(false);
+  const [selectedImageSource, setSelectedImageSource] = useState<ImageSource>('unsplash');
 
   // Report generation hook
   const {
@@ -107,7 +118,7 @@ export default function StudioPage() {
         audience: template.defaults.audience,
       },
       imageOptions: {
-        source: template.defaults.imageSource || 'unsplash',
+        source: selectedImageSource,
       },
     };
 
@@ -178,6 +189,11 @@ export default function StudioPage() {
 
   const handleTemplateSelect = (templateId: string) => {
     setSelectedTemplate(templateId);
+    // Set default image source from template
+    const template = TEMPLATE_PRESETS[templateId];
+    if (template?.defaults.imageSource) {
+      setSelectedImageSource(template.defaults.imageSource);
+    }
   };
 
   // Update subject type and enrichment defaults when data source changes
@@ -490,6 +506,36 @@ export default function StudioPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Image Source Selector */}
+            {!isGenerating && !isCompleted && generationState.phase !== 'failed' && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">Image Style</CardTitle>
+                  <CardDescription>Choose how images will appear in your document</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-2 sm:grid-cols-5">
+                    {IMAGE_SOURCE_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setSelectedImageSource(option.value)}
+                        className={cn(
+                          'p-3 rounded-lg border text-left transition-all hover:border-primary/50',
+                          selectedImageSource === option.value
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'border-muted hover:bg-muted/50'
+                        )}
+                      >
+                        <p className="text-sm font-medium">{option.label}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{option.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Generation Progress (shown when generating) */}
             {(isGenerating || isCompleted || generationState.phase === 'failed') && (
