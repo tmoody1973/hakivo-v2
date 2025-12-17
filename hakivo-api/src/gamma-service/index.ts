@@ -268,10 +268,22 @@ app.post('/api/gamma/generate-enriched', async (c) => {
   try {
     console.log(`[Gamma Service] Starting enriched generation for: ${body.artifact.title}`);
 
-    // Step 1: Enrich the content
+    // Step 1: Enrich the content (or skip if skipEnrichment is true)
     let enrichedContent: EnrichedContent;
 
-    if (body.enrichmentOptions && Object.keys(body.enrichmentOptions).length > 0) {
+    if (body.skipEnrichment) {
+      // Skip enrichment - just use raw artifact content
+      console.log('[Gamma Service] Skipping enrichment (skipEnrichment=true)');
+      enrichedContent = {
+        original: body.artifact,
+        enrichedText: `# ${body.artifact.title}\n\n${body.artifact.content}`,
+        enrichmentMeta: {
+          timestamp: new Date().toISOString(),
+          optionsUsed: {},
+          sourcesUsed: [],
+        },
+      };
+    } else if (body.enrichmentOptions && Object.keys(body.enrichmentOptions).length > 0) {
       // Use explicit enrichment options
       enrichedContent = await enrichContent(
         body.artifact,

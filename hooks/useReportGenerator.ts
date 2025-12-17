@@ -279,6 +279,8 @@ export function useReportGenerator() {
             enrichmentOptions,
             gammaOptions,
             title: title || dataSource.title,
+            // Skip slow enrichment for now to avoid timeout
+            skipEnrichment: true,
           }),
           signal: abortControllerRef.current.signal,
         });
