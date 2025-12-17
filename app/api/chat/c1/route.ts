@@ -65,6 +65,22 @@ CRITICAL: When users ask for reports, analysis, or presentations about bills or 
 3. Include only verified information from tool results in your response
 4. If no relevant bills are found, say so honestly instead of inventing data
 
+## Professional Document Generation
+Use the \`createProfessionalDocument\` tool when users want formatted, downloadable documents:
+- "Create a presentation about..." → format: presentation
+- "Make a lesson guide for civics teachers about..." → template: lesson_guide
+- "Generate an advocacy deck about..." → template: advocacy_deck
+- "Create a policy brief on..." → template: policy_brief
+- "Explain this bill for citizens" → template: citizen_explainer
+
+Set enrichContent=true to automatically add:
+- Bill details (sponsors, cosponsors, status)
+- Related legislation
+- Recent news context
+- Campaign finance data (for members)
+
+The tool returns a document ID. Inform users their document is being generated and will be available in their Documents library.
+
 ## Artifact Actions
 IMPORTANT: After creating any artifact (report or presentation), ALWAYS add action buttons at the end:
 1. "Save to Documents" button - uses save_artifact custom action with the artifact_id and title
@@ -94,6 +110,8 @@ const BILLS_SERVICE_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
   "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 const SMART_MEMORY_URL = process.env.NEXT_PUBLIC_CHAT_API_URL ||
   "https://svc-01kc6rbecv0s5k4yk6ksdaqyzk.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const GAMMA_SERVICE_URL = process.env.NEXT_PUBLIC_GAMMA_API_URL ||
+  "https://svc-01kcp5rv55e6psxh5ht7byqrgd.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 
 // Tool execution functions (direct service calls, no Mastra dependency)
@@ -214,6 +232,102 @@ async function executeGetUserRepresentatives(params: { authToken?: string; inclu
   }
 }
 
+/**
+ * Execute createProfessionalDocument - Generate Gamma document from content
+ * This integrates with the gamma-service to create presentations, documents, and webpages
+ */
+async function executeCreateProfessionalDocument(params: {
+  title: string;
+  content: string;
+  format: "presentation" | "document" | "webpage";
+  template?: "lesson_guide" | "advocacy_deck" | "policy_brief" | "citizen_explainer" | "news_summary" | "executive_summary" | "research_report" | "social_share";
+  audience?: string;
+  tone?: string;
+  subjectType?: "bill" | "member" | "policy" | "general";
+  subjectId?: string;
+  enrichContent?: boolean;
+  authToken?: string;
+}): Promise<string> {
+  try {
+    console.log("[C1 Tool] Creating professional document:", params.title, params.format);
+
+    // Build the request body
+    const requestBody: Record<string, unknown> = {
+      artifact: {
+        title: params.title,
+        content: params.content,
+        subjectType: params.subjectType || "general",
+        subjectId: params.subjectId,
+      },
+      gammaOptions: {
+        format: params.format,
+        template: params.template,
+        textOptions: {
+          audience: params.audience || "General audience",
+          tone: params.tone || "Professional and informative",
+        },
+      },
+      title: params.title,
+    };
+
+    // Add enrichment options if requested
+    if (params.enrichContent) {
+      requestBody.enrichmentOptions = {
+        includeBillDetails: params.subjectType === "bill",
+        includeNewsContext: true,
+        includeRelatedBills: params.subjectType === "bill" || params.subjectType === "policy",
+        includeCampaignFinance: params.subjectType === "member",
+        relatedBillsLimit: 5,
+      };
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    // Add auth token if provided
+    if (params.authToken) {
+      headers["Authorization"] = `Bearer ${params.authToken}`;
+    }
+
+    // Call the gamma-service endpoint
+    const endpoint = params.enrichContent
+      ? `${GAMMA_SERVICE_URL}/api/gamma/generate-enriched`
+      : `${GAMMA_SERVICE_URL}/api/gamma/generate`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gamma service error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+
+    return JSON.stringify({
+      success: true,
+      documentId: result.documentId,
+      generationId: result.generationId,
+      status: result.status,
+      format: params.format,
+      template: params.template,
+      message: `Professional ${params.format} "${params.title}" is being generated. Document ID: ${result.documentId}`,
+      checkStatusUrl: `${GAMMA_SERVICE_URL}/api/gamma/status/${result.generationId}`,
+      enrichment: result.enrichment || null,
+    });
+  } catch (error) {
+    console.error("[C1 Tool] createProfessionalDocument error:", error);
+    return JSON.stringify({
+      error: error instanceof Error ? error.message : "Failed to create document",
+      success: false,
+    });
+  }
+}
+
 // Tool type definitions for type safety
 type SmartSqlParams = { query: string; customSql?: string };
 type MemberDetailParams = { bioguideId: string };
@@ -222,6 +336,18 @@ type SemanticSearchParams = { query: string; limit?: number; congress?: number }
 type SearchNewsParams = { query: string; topic?: string; focus?: string };
 type UserContextParams = { authToken?: string };
 type UserRepsParams = { authToken?: string; includeState?: boolean };
+type CreateProfessionalDocumentParams = {
+  title: string;
+  content: string;
+  format: "presentation" | "document" | "webpage";
+  template?: "lesson_guide" | "advocacy_deck" | "policy_brief" | "citizen_explainer" | "news_summary" | "executive_summary" | "research_report" | "social_share";
+  audience?: string;
+  tone?: string;
+  subjectType?: "bill" | "member" | "policy" | "general";
+  subjectId?: string;
+  enrichContent?: boolean;
+  authToken?: string;
+};
 
 // 7 Tools for C1 using OpenAI's RunnableToolFunctionWithParse format
 // These are compatible with c1Client.beta.chat.completions.runTools()
@@ -337,6 +463,51 @@ Requires auth token from context [AUTH_TOKEN: xxx].`,
   },
 };
 
+const createProfessionalDocumentTool: RunnableToolFunctionWithParse<CreateProfessionalDocumentParams> = {
+  type: "function",
+  function: {
+    name: "createProfessionalDocument",
+    description: `Generate a professional document (presentation, document, or webpage) using AI.
+Use this when users request:
+- "Create a presentation about..." or "Make slides about..."
+- "Generate a lesson guide for..."
+- "Create a policy brief on..."
+- "Make an advocacy deck for..."
+- "Create a citizen explainer about..."
+
+Templates available:
+- lesson_guide: Educational guide for teachers/students
+- advocacy_deck: Persuasive presentation for stakeholders
+- policy_brief: Formal policy analysis document
+- citizen_explainer: Simple guide for general public
+- news_summary: Digestible news briefing
+- executive_summary: High-level overview for executives
+- research_report: Comprehensive research document
+- social_share: Visual content for social media
+
+Set enrichContent=true to add bill details, news context, and related legislation.
+Requires auth token for saving. Document generation is async - returns document ID for status checking.`,
+    parameters: zodToJsonSchema(z.object({
+      title: z.string().describe("Document title"),
+      content: z.string().describe("Main content/text to include in the document"),
+      format: z.enum(["presentation", "document", "webpage"]).describe("Output format"),
+      template: z.enum([
+        "lesson_guide", "advocacy_deck", "policy_brief", "citizen_explainer",
+        "news_summary", "executive_summary", "research_report", "social_share"
+      ]).optional().describe("Template preset to use"),
+      audience: z.string().optional().describe("Target audience description"),
+      tone: z.string().optional().describe("Writing tone (e.g., 'professional', 'educational', 'persuasive')"),
+      subjectType: z.enum(["bill", "member", "policy", "general"]).optional().describe("Type of subject matter"),
+      subjectId: z.string().optional().describe("Subject ID (e.g., 'hr-119-1234' for bills, bioguide_id for members)"),
+      enrichContent: z.boolean().optional().describe("Add bill details, news context, related legislation from Hakivo data"),
+      authToken: z.string().optional().describe("Auth token from context [AUTH_TOKEN: xxx] for saving"),
+    })) as JSONSchema,
+    parse: (input: string) => JSON.parse(input) as CreateProfessionalDocumentParams,
+    function: executeCreateProfessionalDocument,
+    strict: true,
+  },
+};
+
 // =============================================================================
 // ARTIFACT TOOLS - LLM-driven artifact generation (recommended approach)
 // =============================================================================
@@ -410,6 +581,7 @@ const baseTools = [
   searchNewsTool,
   getUserContextTool,
   getUserRepresentativesTool,
+  createProfessionalDocumentTool,
 ];
 
 // NOTE: detectArtifactIntent function REMOVED - replaced with tool-calling approach
@@ -962,12 +1134,15 @@ Example: User asks "what are my interests?"
     /**
      * Handle create_artifact tool - streams artifact content to c1Response
      * Returns lightweight metadata (artifact_id, version) to the LLM
+     *
+     * IMPORTANT: This function pre-fetches real data from our legislative databases
+     * before generating the artifact, ensuring accuracy.
      */
     async function handleCreateArtifact(params: CreateArtifactParams): Promise<string> {
       const { type, title, topic, audience = "general" } = params;
       const artifactId = generateArtifactId();
 
-      console.log("[C1 API] create_artifact: Starting artifact generation", { artifactId, type, title });
+      console.log("[C1 API] create_artifact: Starting artifact generation", { artifactId, type, title, topic });
 
       // Build system prompt based on audience
       const audiencePrompts: Record<string, string> = {
@@ -989,16 +1164,118 @@ STRUCTURE RULES:
 - For reports: Use InlineHeader for major sections (Executive Summary, Key Provisions, etc.)
 - Follow each InlineHeader with List, TextContent, StatBlock, or DataTile components
 
+CRITICAL DATA USAGE RULES:
+1. Use ONLY bill numbers, titles, sponsors, and dates from the provided research data
+2. DO NOT invent or fabricate any bill numbers or legislation
+3. Every bill mentioned must have a real bill ID from the data (e.g., H.R. 1234, S. 567)
+4. If a topic has no matching bills in the data, clearly state "No matching legislation found"
+5. Include sponsor names with party affiliation and state (e.g., "Rep. Jane Smith (D-CA)")
+
 Be objective, factual, and non-partisan.`;
-
-      const userPrompt = `Create a ${type === "slides" ? "slide presentation" : "detailed report"} titled "${title}"
-
-Topic: ${topic}
-
-Generate a well-structured, professional document.`;
 
       try {
         const artifactStartTime = Date.now();
+
+        // =====================================================================
+        // PHASE 1: Pre-fetch real data from legislative databases
+        // This ensures the artifact contains accurate, real bill information
+        // =====================================================================
+        console.log("[C1 API] create_artifact: Phase 1 - Pre-fetching real data for topic:", topic);
+
+        // Show thinking state while fetching data
+        await c1Response.writeThinkItem({
+          title: "Researching legislation",
+          description: "Searching congressional databases for relevant bills...",
+          ephemeral: true,
+        });
+
+        // Fetch bills related to the topic using semantic search (best for topic-based queries)
+        let billsData: string = "";
+        try {
+          const semanticResult = await executeSemanticSearch({ query: topic, limit: 15 });
+          const parsed = JSON.parse(semanticResult);
+          if (parsed.bills && parsed.bills.length > 0) {
+            billsData = `## Federal Legislation Found (${parsed.bills.length} bills)\n\n` +
+              parsed.bills.map((bill: { bill_type?: string; bill_number?: number; congress?: number; title?: string; short_title?: string; sponsor_name?: string; sponsor_party?: string; sponsor_state?: string; policy_area?: string; latest_action_text?: string; latest_action_date?: string; similarity_score?: number }) =>
+                `- **${(bill.bill_type || '').toUpperCase()} ${bill.bill_number}** (${bill.congress}th Congress): ${bill.title || bill.short_title || 'No title'}\n` +
+                `  Sponsor: ${bill.sponsor_name || 'Unknown'} (${bill.sponsor_party || '?'}-${bill.sponsor_state || '?'})\n` +
+                `  Policy Area: ${bill.policy_area || 'Not specified'}\n` +
+                `  Latest Action: ${bill.latest_action_text || 'No action recorded'} (${bill.latest_action_date || 'No date'})\n`
+              ).join("\n");
+            console.log("[C1 API] create_artifact: Found", parsed.bills.length, "bills via semantic search");
+          }
+        } catch (err) {
+          console.warn("[C1 API] create_artifact: Semantic search failed:", err);
+        }
+
+        // Also try SmartSQL for more structured queries
+        let sqlBillsData: string = "";
+        try {
+          const sqlResult = await executeSmartSql({ query: `bills about ${topic}` });
+          const parsed = JSON.parse(sqlResult);
+          if (parsed.rows && parsed.rows.length > 0) {
+            sqlBillsData = `## Additional Bills from Database Query (${parsed.rows.length} bills)\n\n` +
+              parsed.rows.slice(0, 10).map((bill: { bill_type?: string; bill_number?: number; congress?: number; title?: string; short_title?: string; sponsor_name?: string; sponsor_party?: string; sponsor_state?: string; policy_area?: string; latest_action_text?: string; latest_action_date?: string }) =>
+                `- **${(bill.bill_type || '').toUpperCase()} ${bill.bill_number}**: ${bill.title || bill.short_title || 'No title'}\n` +
+                `  Sponsor: ${bill.sponsor_name || 'Unknown'} (${bill.sponsor_party || '?'}-${bill.sponsor_state || '?'})\n`
+              ).join("\n");
+            console.log("[C1 API] create_artifact: Found", parsed.rows.length, "bills via SmartSQL");
+          }
+        } catch (err) {
+          console.warn("[C1 API] create_artifact: SmartSQL search failed:", err);
+        }
+
+        // Fetch recent news for context
+        let newsData: string = "";
+        try {
+          const newsResult = await executeSearchNews({ query: `${topic} congress legislation`, focus: "policy" });
+          const parsed = JSON.parse(newsResult);
+          if (parsed.answer) {
+            newsData = `## Recent News & Context\n\n${parsed.answer}\n`;
+            if (parsed.citations && parsed.citations.length > 0) {
+              newsData += `\nSources: ${parsed.citations.slice(0, 5).join(", ")}`;
+            }
+            console.log("[C1 API] create_artifact: Fetched news context");
+          }
+        } catch (err) {
+          console.warn("[C1 API] create_artifact: News search failed:", err);
+        }
+
+        // Combine all research data
+        const researchData = [billsData, sqlBillsData, newsData].filter(Boolean).join("\n\n---\n\n");
+
+        if (!researchData || researchData.trim().length < 100) {
+          console.warn("[C1 API] create_artifact: Limited research data found, proceeding with general topic");
+        }
+
+        console.log("[C1 API] create_artifact: Phase 1 complete, research data length:", researchData.length);
+
+        // =====================================================================
+        // PHASE 2: Generate artifact with the real data
+        // =====================================================================
+        console.log("[C1 API] create_artifact: Phase 2 - Generating artifact with research data");
+
+        await c1Response.writeThinkItem({
+          title: "Creating document",
+          description: `Generating your ${type === "slides" ? "presentation" : "report"}...`,
+          ephemeral: true,
+        });
+
+        const userPrompt = `Create a ${type === "slides" ? "slide presentation" : "detailed report"} titled "${title}"
+
+Topic: ${topic}
+
+## Research Data (from Congressional databases - USE THIS DATA)
+${researchData || "No specific legislation found for this topic. Create a general overview."}
+
+IMPORTANT:
+- Use the ACTUAL bill numbers and sponsor names from the research data above
+- Do NOT make up fake bill numbers like "H.R. 1234" - only cite real bills from the data
+- If no bills were found, focus on policy context and news information
+- Every legislative reference must come from the data above
+
+Generate a well-structured, professional document.`;
+
         let artifactOutputLength = 0;
 
         // Call C1 Artifacts API with streaming
@@ -1027,7 +1304,7 @@ Generate a well-structured, professional document.`;
           }
         }
 
-        console.log("[C1 API] create_artifact: Completed streaming artifact");
+        console.log("[C1 API] create_artifact: Completed streaming artifact, length:", artifactOutputLength);
 
         // Track artifact generation LLM call
         const artifactLatency = Date.now() - artifactStartTime;
