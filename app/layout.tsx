@@ -9,6 +9,7 @@ import { AudioPlayerProvider } from "@/lib/audio/audio-player-context"
 import { C1Provider } from "@/components/c1"
 import { FeaturebaseWidget } from "@/components/featurebase"
 import { PostHogProvider, PostHogPageview } from "@/lib/analytics"
+import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/seo/json-ld"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -112,6 +113,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <OrganizationJsonLd />
+        <WebSiteJsonLd />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`} suppressHydrationWarning>
         <PostHogProvider>
           <C1Provider>

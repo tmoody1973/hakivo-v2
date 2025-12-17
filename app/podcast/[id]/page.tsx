@@ -1,6 +1,12 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { PodcastEpisodeClient, type PodcastEpisode } from "./podcast-episode-client"
+import {
+  PodcastEpisodeJsonLd,
+  ArticleJsonLd,
+  BreadcrumbJsonLd,
+  formatDurationISO8601,
+} from "@/components/seo/json-ld"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hakivo.com"
 const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
@@ -141,5 +147,44 @@ export default async function PodcastEpisodePage({ params }: Props) {
     notFound()
   }
 
-  return <PodcastEpisodeClient episode={episode} />
+  const pageUrl = `${SITE_URL}/podcast/${id}`
+  const datePublished = episode.publishedAt
+    ? new Date(episode.publishedAt).toISOString()
+    : new Date(episode.createdAt).toISOString()
+
+  return (
+    <>
+      {/* Structured Data for SEO */}
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Home", url: SITE_URL },
+          { name: "Podcast", url: `${SITE_URL}/podcast` },
+          { name: episode.headline || episode.title, url: pageUrl },
+        ]}
+      />
+      <PodcastEpisodeJsonLd
+        name={episode.headline || episode.title}
+        description={episode.description || episode.law?.description || ""}
+        datePublished={datePublished}
+        duration={episode.audioDuration ? formatDurationISO8601(episode.audioDuration) : undefined}
+        audioUrl={episode.audioUrl || undefined}
+        imageUrl={episode.thumbnailUrl || undefined}
+        episodeNumber={episode.episodeNumber}
+        seriesName="Civic Pulse"
+        url={pageUrl}
+      />
+      {episode.content && (
+        <ArticleJsonLd
+          headline={episode.headline || episode.title}
+          description={episode.description || episode.law?.description || ""}
+          datePublished={datePublished}
+          imageUrl={episode.thumbnailUrl || undefined}
+          url={pageUrl}
+          section={episode.law?.category}
+        />
+      )}
+
+      <PodcastEpisodeClient episode={episode} />
+    </>
+  )
 }
