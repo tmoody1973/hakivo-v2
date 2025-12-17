@@ -39,6 +39,15 @@ export interface UserPreferences {
   autoPlay: boolean;
   playbackSpeed: number; // 1.0, 1.25, 1.5, 2.0
   updatedAt: string;
+  // Document generation preferences (Studio)
+  docDefaultFormat?: 'presentation' | 'document' | 'webpage';
+  docDefaultTemplate?: string;
+  docDefaultAudience?: string;
+  docDefaultTone?: string;
+  docAutoExportPdf?: boolean;
+  docAutoEnrich?: boolean;
+  docTextAmount?: 'brief' | 'medium' | 'detailed' | 'extensive';
+  docImageSource?: 'stock' | 'ai' | 'none';
 }
 
 // ============================================================================

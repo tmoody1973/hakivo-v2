@@ -24,6 +24,32 @@ interface UserArtifact {
   created_at: string;
 }
 
+// Gamma Document type from API
+interface GammaDocument {
+  id: string;
+  user_id: string;
+  artifact_id?: string;
+  gamma_generation_id: string;
+  gamma_url?: string;
+  gamma_thumbnail_url?: string;
+  title: string;
+  format: 'presentation' | 'document' | 'webpage' | 'social';
+  template?: string;
+  card_count: number;
+  pdf_url?: string;
+  pptx_url?: string;
+  is_public: boolean;
+  share_token?: string;
+  view_count: number;
+  subject_type?: string;
+  subject_id?: string;
+  audience?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  created_at: number;
+  updated_at: number;
+  completed_at?: number;
+}
+
 const POLICY_INTERESTS = [
   { name: 'Environment & Energy', icon: '🌱' },
   { name: 'Health & Social Welfare', icon: '🏥' },
@@ -131,6 +157,16 @@ function SettingsPageContent() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [autoplay, setAutoplay] = useState(false);
 
+  // Document generation preferences state
+  const [docDefaultFormat, setDocDefaultFormat] = useState<'presentation' | 'document' | 'webpage'>('presentation');
+  const [docDefaultTemplate, setDocDefaultTemplate] = useState<string>('policy_brief');
+  const [docDefaultAudience, setDocDefaultAudience] = useState('General audience');
+  const [docDefaultTone, setDocDefaultTone] = useState('Professional and informative');
+  const [docAutoExportPdf, setDocAutoExportPdf] = useState(false);
+  const [docAutoEnrich, setDocAutoEnrich] = useState(true);
+  const [docTextAmount, setDocTextAmount] = useState<'brief' | 'medium' | 'detailed' | 'extensive'>('medium');
+  const [docImageSource, setDocImageSource] = useState<'stock' | 'ai' | 'none'>('stock');
+
   // Subscription state
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
@@ -148,6 +184,19 @@ function SettingsPageContent() {
   });
   const [deletingArtifactId, setDeletingArtifactId] = useState<string | null>(null);
   const [sharingArtifactId, setSharingArtifactId] = useState<string | null>(null);
+
+  // Gamma Documents state
+  const [documentFilter, setDocumentFilter] = useState<'all' | 'artifacts' | 'gamma'>('all');
+  const [gammaDocuments, setGammaDocuments] = useState<GammaDocument[]>([]);
+  const [gammaLoading, setGammaLoading] = useState(false);
+  const [gammaPagination, setGammaPagination] = useState({
+    page: 1,
+    limit: 10,
+    totalCount: 0,
+    totalPages: 0,
+  });
+  const [deletingGammaId, setDeletingGammaId] = useState<string | null>(null);
+  const [sharingGammaId, setSharingGammaId] = useState<string | null>(null);
 
   // Load subscription status
   useEffect(() => {
@@ -197,12 +246,42 @@ function SettingsPageContent() {
     }
   }, [accessToken]);
 
-  // Load artifacts when documents tab is active
+  // Load Gamma documents
+  const loadGammaDocuments = useCallback(async (page = 1) => {
+    if (!accessToken) return;
+
+    setGammaLoading(true);
+    try {
+      const response = await fetch(`/api/gamma/documents?page=${page}&limit=10`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setGammaDocuments(data.documents || []);
+        setGammaPagination({
+          page: page,
+          limit: data.limit || 10,
+          totalCount: data.total || 0,
+          totalPages: Math.ceil((data.total || 0) / (data.limit || 10)),
+        });
+      }
+    } catch (error) {
+      console.error('[Settings] Error loading Gamma documents:', error);
+    } finally {
+      setGammaLoading(false);
+    }
+  }, [accessToken]);
+
+  // Load artifacts and gamma documents when documents tab is active
   useEffect(() => {
     if (activeTab === 'documents' && accessToken) {
       loadArtifacts(1);
+      loadGammaDocuments(1);
     }
-  }, [activeTab, accessToken, loadArtifacts]);
+  }, [activeTab, accessToken, loadArtifacts, loadGammaDocuments]);
 
   // Handle artifact deletion
   const handleDeleteArtifact = async (artifactId: string) => {
@@ -272,6 +351,92 @@ function SettingsPageContent() {
       alert('Failed to update sharing status. Please try again.');
     } finally {
       setSharingArtifactId(null);
+    }
+  };
+
+  // Handle Gamma document deletion
+  const handleDeleteGammaDoc = async (docId: string) => {
+    if (!accessToken) return;
+    if (!confirm('Are you sure you want to delete this document? This cannot be undone.')) return;
+
+    setDeletingGammaId(docId);
+    try {
+      const response = await fetch(`/api/gamma/documents/${docId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        setGammaDocuments(prev => prev.filter(d => d.id !== docId));
+        setGammaPagination(prev => ({
+          ...prev,
+          totalCount: prev.totalCount - 1,
+        }));
+      } else {
+        alert('Failed to delete document. Please try again.');
+      }
+    } catch (error) {
+      console.error('[Settings] Error deleting Gamma document:', error);
+      alert('Failed to delete document. Please try again.');
+    } finally {
+      setDeletingGammaId(null);
+    }
+  };
+
+  // Handle Gamma document share toggle
+  const handleToggleGammaShare = async (docId: string, currentlyPublic: boolean) => {
+    if (!accessToken) return;
+
+    setSharingGammaId(docId);
+    try {
+      const response = await fetch(`/api/gamma/documents/${docId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          isPublic: !currentlyPublic,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setGammaDocuments(prev => prev.map(d =>
+          d.id === docId
+            ? { ...d, is_public: data.isPublic, share_token: data.shareToken }
+            : d
+        ));
+        if (data.shareUrl) {
+          await navigator.clipboard.writeText(data.shareUrl);
+          alert('Share link copied to clipboard!');
+        }
+      } else {
+        alert('Failed to update sharing status. Please try again.');
+      }
+    } catch (error) {
+      console.error('[Settings] Error toggling Gamma share:', error);
+      alert('Failed to update sharing status. Please try again.');
+    } finally {
+      setSharingGammaId(null);
+    }
+  };
+
+  // Get Gamma format icon
+  const getGammaFormatIcon = (format: string) => {
+    switch (format) {
+      case 'presentation':
+        return '📊';
+      case 'document':
+        return '📄';
+      case 'webpage':
+        return '🌐';
+      case 'social':
+        return '📱';
+      default:
+        return '📄';
     }
   };
 
@@ -389,6 +554,16 @@ function SettingsPageContent() {
           setEmailNotifications(response.data.emailNotifications !== false);
           setPlaybackSpeed(response.data.playbackSpeed || 1.0);
           setAutoplay(response.data.autoPlay || false);
+
+          // Set document generation preferences
+          setDocDefaultFormat(response.data.docDefaultFormat || 'presentation');
+          setDocDefaultTemplate(response.data.docDefaultTemplate || 'policy_brief');
+          setDocDefaultAudience(response.data.docDefaultAudience || 'General audience');
+          setDocDefaultTone(response.data.docDefaultTone || 'Professional and informative');
+          setDocAutoExportPdf(response.data.docAutoExportPdf || false);
+          setDocAutoEnrich(response.data.docAutoEnrich !== false);
+          setDocTextAmount(response.data.docTextAmount || 'medium');
+          setDocImageSource(response.data.docImageSource || 'stock');
         }
       } catch (error) {
         console.error('[Settings] Error loading preferences:', error);
@@ -431,6 +606,15 @@ function SettingsPageContent() {
         emailNotifications,
         playbackSpeed,
         autoPlay: autoplay,
+        // Document generation preferences
+        docDefaultFormat,
+        docDefaultTemplate,
+        docDefaultAudience,
+        docDefaultTone,
+        docAutoExportPdf,
+        docAutoEnrich,
+        docTextAmount,
+        docImageSource,
       });
 
       alert('Profile saved successfully!');
@@ -457,6 +641,15 @@ function SettingsPageContent() {
         emailNotifications,
         playbackSpeed,
         autoPlay: autoplay,
+        // Document generation preferences
+        docDefaultFormat,
+        docDefaultTemplate,
+        docDefaultAudience,
+        docDefaultTone,
+        docAutoExportPdf,
+        docAutoEnrich,
+        docTextAmount,
+        docImageSource,
       });
 
       // ALSO sync interests to chat service's memory/profile (for C1 chat personalization)
@@ -957,6 +1150,153 @@ function SettingsPageContent() {
                 </div>
               </div>
 
+              {/* Document Generation Preferences */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-1">Document Generation</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Default settings for professional documents created via Gamma
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Default Format */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Default Format</label>
+                    <select
+                      value={docDefaultFormat}
+                      onChange={(e) => setDocDefaultFormat(e.target.value as 'presentation' | 'document' | 'webpage')}
+                      className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="presentation">Presentation (Slides)</option>
+                      <option value="document">Document (Report)</option>
+                      <option value="webpage">Webpage</option>
+                    </select>
+                  </div>
+
+                  {/* Default Template */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Default Template</label>
+                    <select
+                      value={docDefaultTemplate}
+                      onChange={(e) => setDocDefaultTemplate(e.target.value)}
+                      className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="lesson_guide">Lesson Guide (Education)</option>
+                      <option value="advocacy_deck">Advocacy Presentation</option>
+                      <option value="policy_brief">Policy Brief</option>
+                      <option value="citizen_explainer">Citizen Explainer</option>
+                      <option value="news_summary">News Summary</option>
+                      <option value="executive_summary">Executive Summary</option>
+                      <option value="research_report">Research Report</option>
+                      <option value="social_share">Social Media Shareable</option>
+                    </select>
+                  </div>
+
+                  {/* Default Audience */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Default Audience</label>
+                    <input
+                      type="text"
+                      value={docDefaultAudience}
+                      onChange={(e) => setDocDefaultAudience(e.target.value)}
+                      placeholder="e.g., General audience, Teachers, Policy makers"
+                      className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+
+                  {/* Default Tone */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Default Tone</label>
+                    <select
+                      value={docDefaultTone}
+                      onChange={(e) => setDocDefaultTone(e.target.value)}
+                      className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="Professional and informative">Professional</option>
+                      <option value="Educational and engaging">Educational</option>
+                      <option value="Persuasive and compelling">Persuasive</option>
+                      <option value="Simple and accessible">Simple</option>
+                      <option value="Formal and analytical">Formal</option>
+                      <option value="Journalistic and factual">Journalistic</option>
+                    </select>
+                  </div>
+
+                  {/* Text Amount */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Content Amount</label>
+                    <select
+                      value={docTextAmount}
+                      onChange={(e) => setDocTextAmount(e.target.value as 'brief' | 'medium' | 'detailed' | 'extensive')}
+                      className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="brief">Brief (Concise)</option>
+                      <option value="medium">Medium (Balanced)</option>
+                      <option value="detailed">Detailed (Comprehensive)</option>
+                      <option value="extensive">Extensive (In-depth)</option>
+                    </select>
+                  </div>
+
+                  {/* Image Source */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Image Source</label>
+                    <select
+                      value={docImageSource}
+                      onChange={(e) => setDocImageSource(e.target.value as 'stock' | 'ai' | 'none')}
+                      className="w-full px-3 py-2 bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="stock">Stock Photos</option>
+                      <option value="ai">AI Generated</option>
+                      <option value="none">No Images</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {/* Auto Export PDF */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Auto-export to PDF</p>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically generate PDF when document is created
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDocAutoExportPdf(!docAutoExportPdf)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        docAutoExportPdf ? 'bg-primary' : 'bg-muted'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          docAutoExportPdf ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Auto Enrich */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Auto-enrich Content</p>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically add bill details, news, and related legislation
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setDocAutoEnrich(!docAutoEnrich)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        docAutoEnrich ? 'bg-primary' : 'bg-muted'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          docAutoEnrich ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleSavePreferences}
@@ -1142,15 +1482,64 @@ function SettingsPageContent() {
               <div>
                 <h2 className="text-xl font-semibold mb-1">Your Documents</h2>
                 <p className="text-sm text-muted-foreground">
-                  Manage reports, slide decks, and other documents generated in chat
+                  Manage reports, slide decks, and professional documents generated in chat
                 </p>
               </div>
 
-              {artifactsLoading ? (
+              {/* Filter Tabs */}
+              <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+                <button
+                  onClick={() => setDocumentFilter('all')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    documentFilter === 'all'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  All
+                  {(artifactsPagination.totalCount + gammaPagination.totalCount) > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded">
+                      {artifactsPagination.totalCount + gammaPagination.totalCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setDocumentFilter('artifacts')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    documentFilter === 'artifacts'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Chat Artifacts
+                  {artifactsPagination.totalCount > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded">
+                      {artifactsPagination.totalCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setDocumentFilter('gamma')}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    documentFilter === 'gamma'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Pro Documents
+                  {gammaPagination.totalCount > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded">
+                      {gammaPagination.totalCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {(artifactsLoading || gammaLoading) ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 </div>
-              ) : artifacts.length === 0 ? (
+              ) : (artifacts.length === 0 && gammaDocuments.length === 0) ? (
                 <div className="text-center py-12">
                   <div className="w-16 h-16 mx-auto mb-4 bg-muted rounded-full flex items-center justify-center">
                     <svg className="w-8 h-8 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1172,169 +1561,403 @@ function SettingsPageContent() {
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {/* Document List */}
-                  <div className="space-y-3">
-                    {artifacts.map((artifact) => (
-                      <div
-                        key={artifact.id}
-                        className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3 flex-1 min-w-0">
-                            {/* Type Icon */}
-                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                              artifact.type === 'slides'
-                                ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
-                                : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                            }`}>
-                              {artifact.type === 'slides' ? (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                </svg>
-                              ) : (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                              )}
-                            </div>
+                <div className="space-y-6">
+                  {/* Chat Artifacts Section */}
+                  {(documentFilter === 'all' || documentFilter === 'artifacts') && artifacts.length > 0 && (
+                    <div className="space-y-4">
+                      {documentFilter === 'all' && (
+                        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                          Chat Artifacts
+                        </h3>
+                      )}
+                      <div className="space-y-3">
+                        {artifacts.map((artifact) => (
+                          <div
+                            key={artifact.id}
+                            className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3 flex-1 min-w-0">
+                                {/* Type Icon */}
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                  artifact.type === 'slides'
+                                    ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
+                                    : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                                }`}>
+                                  {artifact.type === 'slides' ? (
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  )}
+                                </div>
 
-                            {/* Document Info */}
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium truncate">{artifact.title}</h4>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
-                                <span className="px-2 py-0.5 bg-muted rounded text-xs">
-                                  {getTemplateLabel(artifact.template)}
-                                </span>
-                                <span>
-                                  {new Date(artifact.created_at).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                  })}
-                                </span>
-                                {artifact.view_count > 0 && (
-                                  <span>{artifact.view_count} view{artifact.view_count !== 1 ? 's' : ''}</span>
+                                {/* Document Info */}
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium truncate">{artifact.title}</h4>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+                                    <span className="px-2 py-0.5 bg-muted rounded text-xs">
+                                      {getTemplateLabel(artifact.template)}
+                                    </span>
+                                    <span>
+                                      {new Date(artifact.created_at).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                      })}
+                                    </span>
+                                    {artifact.view_count > 0 && (
+                                      <span>{artifact.view_count} view{artifact.view_count !== 1 ? 's' : ''}</span>
+                                    )}
+                                    {artifact.is_public && (
+                                      <span className="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs">
+                                        Public
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* View */}
+                                <Link
+                                  href={`/artifacts/${artifact.share_token || artifact.id}`}
+                                  className="p-2 hover:bg-accent rounded-md"
+                                  title="View document"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                </Link>
+
+                                {/* Download PDF */}
+                                <a
+                                  href={`/api/artifacts/export?id=${artifact.id}&format=pdf`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-2 hover:bg-accent rounded-md"
+                                  title="Download PDF"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                </a>
+
+                                {/* Download PPTX (slides only) */}
+                                {artifact.type === 'slides' && (
+                                  <a
+                                    href={`/api/artifacts/export?id=${artifact.id}&format=pptx`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 hover:bg-accent rounded-md"
+                                    title="Download PowerPoint"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                  </a>
                                 )}
-                                {artifact.is_public && (
-                                  <span className="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs">
-                                    Public
-                                  </span>
-                                )}
+
+                                {/* Share Toggle */}
+                                <button
+                                  onClick={() => handleToggleShare(artifact.id, artifact.is_public)}
+                                  disabled={sharingArtifactId === artifact.id}
+                                  className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
+                                  title={artifact.is_public ? 'Make private' : 'Share document'}
+                                >
+                                  {sharingArtifactId === artifact.id ? (
+                                    <div className="w-4 h-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                                  ) : (
+                                    <svg className={`w-4 h-4 ${artifact.is_public ? 'text-green-600' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                    </svg>
+                                  )}
+                                </button>
+
+                                {/* Delete */}
+                                <button
+                                  onClick={() => handleDeleteArtifact(artifact.id)}
+                                  disabled={deletingArtifactId === artifact.id}
+                                  className="p-2 hover:bg-destructive/10 text-destructive rounded-md disabled:opacity-50"
+                                  title="Delete document"
+                                >
+                                  {deletingArtifactId === artifact.id ? (
+                                    <div className="w-4 h-4 animate-spin rounded-full border-2 border-destructive border-t-transparent"></div>
+                                  ) : (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  )}
+                                </button>
                               </div>
                             </div>
                           </div>
+                        ))}
+                      </div>
 
-                          {/* Actions */}
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {/* View */}
-                            <Link
-                              href={`/artifacts/${artifact.share_token || artifact.id}`}
-                              className="p-2 hover:bg-accent rounded-md"
-                              title="View document"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                            </Link>
-
-                            {/* Download PDF */}
-                            <a
-                              href={`/api/artifacts/export?id=${artifact.id}&format=pdf`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-2 hover:bg-accent rounded-md"
-                              title="Download PDF"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                            </a>
-
-                            {/* Download PPTX (slides only) */}
-                            {artifact.type === 'slides' && (
-                              <a
-                                href={`/api/artifacts/export?id=${artifact.id}&format=pptx`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-2 hover:bg-accent rounded-md"
-                                title="Download PowerPoint"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                              </a>
-                            )}
-
-                            {/* Share Toggle */}
+                      {/* Artifacts Pagination */}
+                      {documentFilter === 'artifacts' && artifactsPagination.totalPages > 1 && (
+                        <div className="flex items-center justify-between pt-4 border-t">
+                          <p className="text-sm text-muted-foreground">
+                            Showing {((artifactsPagination.page - 1) * artifactsPagination.limit) + 1} to{' '}
+                            {Math.min(artifactsPagination.page * artifactsPagination.limit, artifactsPagination.totalCount)} of{' '}
+                            {artifactsPagination.totalCount} artifacts
+                          </p>
+                          <div className="flex gap-2">
                             <button
-                              onClick={() => handleToggleShare(artifact.id, artifact.is_public)}
-                              disabled={sharingArtifactId === artifact.id}
-                              className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
-                              title={artifact.is_public ? 'Make private' : 'Share document'}
+                              onClick={() => loadArtifacts(artifactsPagination.page - 1)}
+                              disabled={artifactsPagination.page === 1 || artifactsLoading}
+                              className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {sharingArtifactId === artifact.id ? (
-                                <div className="w-4 h-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                              ) : (
-                                <svg className={`w-4 h-4 ${artifact.is_public ? 'text-green-600' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                                </svg>
-                              )}
+                              Previous
                             </button>
-
-                            {/* Delete */}
                             <button
-                              onClick={() => handleDeleteArtifact(artifact.id)}
-                              disabled={deletingArtifactId === artifact.id}
-                              className="p-2 hover:bg-destructive/10 text-destructive rounded-md disabled:opacity-50"
-                              title="Delete document"
+                              onClick={() => loadArtifacts(artifactsPagination.page + 1)}
+                              disabled={artifactsPagination.page >= artifactsPagination.totalPages || artifactsLoading}
+                              className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              {deletingArtifactId === artifact.id ? (
-                                <div className="w-4 h-4 animate-spin rounded-full border-2 border-destructive border-t-transparent"></div>
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              )}
+                              Next
                             </button>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  {/* Pagination */}
-                  {artifactsPagination.totalPages > 1 && (
-                    <div className="flex items-center justify-between pt-4 border-t">
-                      <p className="text-sm text-muted-foreground">
-                        Showing {((artifactsPagination.page - 1) * artifactsPagination.limit) + 1} to{' '}
-                        {Math.min(artifactsPagination.page * artifactsPagination.limit, artifactsPagination.totalCount)} of{' '}
-                        {artifactsPagination.totalCount} documents
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => loadArtifacts(artifactsPagination.page - 1)}
-                          disabled={artifactsPagination.page === 1 || artifactsLoading}
-                          className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Previous
-                        </button>
-                        <button
-                          onClick={() => loadArtifacts(artifactsPagination.page + 1)}
-                          disabled={artifactsPagination.page >= artifactsPagination.totalPages || artifactsLoading}
-                          className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Next
-                        </button>
+                  {/* Gamma Pro Documents Section */}
+                  {(documentFilter === 'all' || documentFilter === 'gamma') && gammaDocuments.length > 0 && (
+                    <div className="space-y-4">
+                      {documentFilter === 'all' && (
+                        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                          Pro Documents (Gamma)
+                        </h3>
+                      )}
+                      <div className="space-y-3">
+                        {gammaDocuments.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-start gap-3 flex-1 min-w-0">
+                                {/* Format Icon with Thumbnail */}
+                                <div className="relative flex-shrink-0">
+                                  {doc.gamma_thumbnail_url ? (
+                                    <img
+                                      src={doc.gamma_thumbnail_url}
+                                      alt={doc.title}
+                                      className="w-16 h-12 rounded-lg object-cover border"
+                                    />
+                                  ) : (
+                                    <div className="w-16 h-12 rounded-lg flex items-center justify-center bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 text-xl">
+                                      {getGammaFormatIcon(doc.format)}
+                                    </div>
+                                  )}
+                                  {doc.status === 'processing' && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                                      <div className="w-4 h-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Document Info */}
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium truncate">{doc.title}</h4>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+                                    <span className="px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 rounded text-xs capitalize">
+                                      {doc.format}
+                                    </span>
+                                    {doc.template && (
+                                      <span className="px-2 py-0.5 bg-muted rounded text-xs">
+                                        {getTemplateLabel(doc.template)}
+                                      </span>
+                                    )}
+                                    <span>
+                                      {new Date(doc.created_at).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                      })}
+                                    </span>
+                                    {doc.card_count > 0 && (
+                                      <span>{doc.card_count} slides</span>
+                                    )}
+                                    {doc.view_count > 0 && (
+                                      <span>{doc.view_count} view{doc.view_count !== 1 ? 's' : ''}</span>
+                                    )}
+                                    {doc.is_public && (
+                                      <span className="px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs">
+                                        Public
+                                      </span>
+                                    )}
+                                    {doc.status === 'processing' && (
+                                      <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded text-xs animate-pulse">
+                                        Processing...
+                                      </span>
+                                    )}
+                                    {doc.status === 'failed' && (
+                                      <span className="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded text-xs">
+                                        Failed
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Open in Gamma */}
+                                {doc.gamma_url && doc.status === 'completed' && (
+                                  <a
+                                    href={doc.gamma_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 hover:bg-accent rounded-md"
+                                    title="Open in Gamma"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                    </svg>
+                                  </a>
+                                )}
+
+                                {/* Download PDF */}
+                                {doc.pdf_url && (
+                                  <a
+                                    href={doc.pdf_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 hover:bg-accent rounded-md"
+                                    title="Download PDF"
+                                  >
+                                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                  </a>
+                                )}
+
+                                {/* Download PPTX */}
+                                {doc.pptx_url && (
+                                  <a
+                                    href={doc.pptx_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-2 hover:bg-accent rounded-md"
+                                    title="Download PowerPoint"
+                                  >
+                                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                  </a>
+                                )}
+
+                                {/* Share Toggle */}
+                                <button
+                                  onClick={() => handleToggleGammaShare(doc.id, doc.is_public)}
+                                  disabled={sharingGammaId === doc.id || doc.status !== 'completed'}
+                                  className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
+                                  title={doc.is_public ? 'Make private' : 'Share document'}
+                                >
+                                  {sharingGammaId === doc.id ? (
+                                    <div className="w-4 h-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                                  ) : (
+                                    <svg className={`w-4 h-4 ${doc.is_public ? 'text-green-600' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                    </svg>
+                                  )}
+                                </button>
+
+                                {/* Delete */}
+                                <button
+                                  onClick={() => handleDeleteGammaDoc(doc.id)}
+                                  disabled={deletingGammaId === doc.id}
+                                  className="p-2 hover:bg-destructive/10 text-destructive rounded-md disabled:opacity-50"
+                                  title="Delete document"
+                                >
+                                  {deletingGammaId === doc.id ? (
+                                    <div className="w-4 h-4 animate-spin rounded-full border-2 border-destructive border-t-transparent"></div>
+                                  ) : (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
+
+                      {/* Gamma Pagination */}
+                      {documentFilter === 'gamma' && gammaPagination.totalPages > 1 && (
+                        <div className="flex items-center justify-between pt-4 border-t">
+                          <p className="text-sm text-muted-foreground">
+                            Showing {((gammaPagination.page - 1) * gammaPagination.limit) + 1} to{' '}
+                            {Math.min(gammaPagination.page * gammaPagination.limit, gammaPagination.totalCount)} of{' '}
+                            {gammaPagination.totalCount} documents
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => loadGammaDocuments(gammaPagination.page - 1)}
+                              disabled={gammaPagination.page === 1 || gammaLoading}
+                              className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Previous
+                            </button>
+                            <button
+                              onClick={() => loadGammaDocuments(gammaPagination.page + 1)}
+                              disabled={gammaPagination.page >= gammaPagination.totalPages || gammaLoading}
+                              className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Empty states for filtered views */}
+                  {documentFilter === 'artifacts' && artifacts.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No chat artifacts yet. Generate reports and slides in chat to see them here.</p>
+                    </div>
+                  )}
+
+                  {documentFilter === 'gamma' && gammaDocuments.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <p>No pro documents yet. Use the &quot;Create Pro Document&quot; button on any artifact to generate professional presentations.</p>
                     </div>
                   )}
 
                   {/* Summary */}
                   <div className="bg-muted p-4 rounded-lg">
                     <p className="text-sm">
-                      <strong>{artifactsPagination.totalCount}</strong> document{artifactsPagination.totalCount !== 1 ? 's' : ''} total
+                      {documentFilter === 'all' && (
+                        <>
+                          <strong>{artifactsPagination.totalCount + gammaPagination.totalCount}</strong> total documents
+                          {artifactsPagination.totalCount > 0 && ` (${artifactsPagination.totalCount} artifacts`}
+                          {gammaPagination.totalCount > 0 && `, ${gammaPagination.totalCount} pro)`}
+                          {artifactsPagination.totalCount > 0 && gammaPagination.totalCount === 0 && ')'}
+                        </>
+                      )}
+                      {documentFilter === 'artifacts' && (
+                        <>
+                          <strong>{artifactsPagination.totalCount}</strong> chat artifact{artifactsPagination.totalCount !== 1 ? 's' : ''}
+                        </>
+                      )}
+                      {documentFilter === 'gamma' && (
+                        <>
+                          <strong>{gammaPagination.totalCount}</strong> pro document{gammaPagination.totalCount !== 1 ? 's' : ''}
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>

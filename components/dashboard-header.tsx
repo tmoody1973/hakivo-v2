@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
-import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, AlertTriangle, Crown, Zap, Bookmark } from 'lucide-react'
+import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, AlertTriangle, Crown, Zap, Bookmark, Sparkles } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { HakivoLogo } from "@/components/hakivo-logo"
@@ -32,6 +32,11 @@ const routes = [
     label: "Dashboard",
     icon: LayoutDashboard,
     href: "/dashboard",
+  },
+  {
+    label: "Studio",
+    icon: Sparkles,
+    href: "/studio",
   },
   {
     label: "Legislation",

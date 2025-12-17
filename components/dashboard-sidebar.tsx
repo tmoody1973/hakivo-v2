@@ -3,13 +3,18 @@
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, Users, Radio, MessageSquare, Settings, Mic } from 'lucide-react'
+import { LayoutDashboard, FileText, Users, Radio, MessageSquare, Settings, Mic, Sparkles } from 'lucide-react'
 
 const routes = [
   {
     label: "Dashboard",
     icon: LayoutDashboard,
     href: "/dashboard",
+  },
+  {
+    label: "Hakivo Studio",
+    icon: Sparkles,
+    href: "/studio",
   },
   {
     label: "Legislation",

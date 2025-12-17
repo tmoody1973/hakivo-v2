@@ -26,7 +26,9 @@ import {
   MoreVertical,
   ExternalLink,
   FileDown,
+  Sparkles,
 } from "lucide-react";
+import { GammaExportModal } from "@/components/gamma";
 
 // Artifact type from the database
 export interface Artifact {
@@ -94,6 +96,7 @@ export function ArtifactViewer({
   const [isCopied, setIsCopied] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [isGammaModalOpen, setIsGammaModalOpen] = useState(false);
 
   // Get icon based on artifact type
   const TypeIcon = artifact.type === "slides" ? Presentation : FileText;
@@ -239,6 +242,11 @@ export function ArtifactViewer({
                   {isCopied ? "Copied!" : "Copy"}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsGammaModalOpen(true)}>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Create Professional Document
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleExportPDF}>
                   <FileDown className="h-4 w-4 mr-2" />
                   Export PDF
@@ -348,6 +356,19 @@ export function ArtifactViewer({
           </div>
         )}
       </CardContent>
+
+      {/* Gamma Export Modal */}
+      {!readOnly && (
+        <GammaExportModal
+          isOpen={isGammaModalOpen}
+          onClose={() => setIsGammaModalOpen(false)}
+          artifact={artifact}
+          onSuccess={(result) => {
+            console.log("Gamma document created:", result);
+            setIsGammaModalOpen(false);
+          }}
+        />
+      )}
     </Card>
   );
 }
