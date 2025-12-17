@@ -122,6 +122,11 @@ application "hakivo-prod" {
     secret = true
   }
 
+  // Gamma API for professional document generation
+  env "GAMMA_API_KEY" {
+    secret = true
+  }
+
   // Public-facing HTTP services
   service "auth-service" {
     visibility = "public"
@@ -220,6 +225,16 @@ application "hakivo-prod" {
   // FEC API client for campaign finance data
   service "fec-client" {
     visibility = "private"
+  }
+
+  // Gamma API client for professional document/presentation generation
+  service "gamma-client" {
+    visibility = "private"
+  }
+
+  // Gamma service - public API for document generation and management
+  service "gamma-service" {
+    visibility = "public"
   }
 
   // Podcast generator service for "100 Laws That Shaped America"

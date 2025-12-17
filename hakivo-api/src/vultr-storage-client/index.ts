@@ -209,6 +209,124 @@ export default class extends Service<Env> {
   }
 
   /**
+   * Upload a generic file to Vultr object storage
+   * @param key - Full file key/path (e.g., 'gamma/user123/doc.pdf')
+   * @param fileBuffer - File buffer
+   * @param contentType - MIME type
+   * @param metadata - Additional metadata
+   * @returns File key and public URL
+   */
+  async uploadFile(
+    key: string,
+    fileBuffer: Uint8Array | ArrayBuffer,
+    contentType: string,
+    metadata?: Record<string, string>
+  ): Promise<{ key: string; url: string; size: number }> {
+    const aws = this.getAwsClient();
+    const endpoint = this.env.VULTR_ENDPOINT;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
+
+    if (!endpoint) {
+      throw new Error('VULTR_ENDPOINT environment variable is not set');
+    }
+
+    if (!bucketName) {
+      throw new Error('VULTR_BUCKET_NAME environment variable is not set');
+    }
+
+    const buffer = fileBuffer instanceof ArrayBuffer ? new Uint8Array(fileBuffer) : fileBuffer;
+
+    console.log(`[VULTR] Uploading file to bucket: ${bucketName}, key: ${key}`);
+
+    // Build headers with metadata
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'x-amz-meta-uploadedat': new Date().toISOString(),
+    };
+
+    // Add custom metadata
+    if (metadata) {
+      for (const [metaKey, value] of Object.entries(metadata)) {
+        headers[`x-amz-meta-${metaKey.toLowerCase()}`] = value;
+      }
+    }
+
+    // Construct the S3 URL (path-style)
+    const uploadUrl = `https://${endpoint}/${bucketName}/${key}`;
+
+    // Sign and send the request using aws4fetch
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+    const response = await aws.fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: arrayBuffer,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`S3 file upload failed: ${response.status} - ${errorText}`);
+    }
+
+    // Generate public URL (path-style)
+    const url = `https://${endpoint}/${bucketName}/${key}`;
+
+    console.log(`[VULTR] File uploaded: ${key} (${buffer.length} bytes)`);
+
+    return {
+      key,
+      url,
+      size: buffer.length
+    };
+  }
+
+  /**
+   * Delete a file from storage
+   * @param key - File key
+   * @returns True if deleted successfully
+   */
+  async deleteFile(key: string): Promise<boolean> {
+    const aws = this.getAwsClient();
+    const endpoint = this.env.VULTR_ENDPOINT;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
+
+    if (!endpoint || !bucketName) {
+      throw new Error('VULTR_ENDPOINT or VULTR_BUCKET_NAME environment variable is not set');
+    }
+
+    const deleteUrl = `https://${endpoint}/${bucketName}/${key}`;
+
+    console.log(`[VULTR] Deleting file: ${key}`);
+
+    const response = await aws.fetch(deleteUrl, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok && response.status !== 404) {
+      const errorText = await response.text();
+      throw new Error(`S3 delete failed: ${response.status} - ${errorText}`);
+    }
+
+    console.log(`[VULTR] File deleted: ${key}`);
+    return true;
+  }
+
+  /**
+   * Get public URL for a file
+   * @param key - File key
+   * @returns Public URL
+   */
+  getFileUrl(key: string): string {
+    const endpoint = this.env.VULTR_ENDPOINT;
+    const bucketName = this.env.VULTR_BUCKET_NAME;
+
+    if (!endpoint || !bucketName) {
+      throw new Error('VULTR_ENDPOINT or VULTR_BUCKET_NAME environment variable is not set');
+    }
+
+    return `https://${endpoint}/${bucketName}/${key}`;
+  }
+
+  /**
    * Check if file exists in storage
    * @param key - File key
    * @returns True if file exists

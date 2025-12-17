@@ -25,6 +25,15 @@ interface UserPreferences {
   district?: string;
   zipCode?: string;
   city?: string;
+  // Document generation preferences
+  docDefaultFormat?: 'presentation' | 'document' | 'webpage';
+  docDefaultTemplate?: 'lesson_guide' | 'advocacy_deck' | 'policy_brief' | 'citizen_explainer' | 'news_summary' | 'executive_summary' | 'research_report' | 'social_share';
+  docDefaultAudience?: string;
+  docDefaultTone?: string;
+  docAutoExportPdf?: boolean;
+  docAutoEnrich?: boolean;
+  docTextAmount?: 'brief' | 'medium' | 'detailed' | 'extensive';
+  docImageSource?: 'stock' | 'ai' | 'none';
 }
 
 export default class extends Service<Env> {
@@ -166,14 +175,23 @@ export default class extends Service<Env> {
       .bind(userId)
       .first();
 
-    const updated = {
+    const updated: UserPreferences = {
       policyInterests: preferences.policyInterests || (current?.policy_interests ? JSON.parse(current.policy_interests as string) : []),
       briefingTime: preferences.briefingTime || current?.briefing_time as string || '08:00',
       briefingDays: preferences.briefingDays || (current?.briefing_days ? JSON.parse(current.briefing_days as string) : ['Monday', 'Wednesday', 'Friday']),
       playbackSpeed: preferences.playbackSpeed ?? (current?.playback_speed as number || 1.0),
       autoplay: preferences.autoplay ?? Boolean(current?.autoplay ?? true),
       emailNotifications: preferences.emailNotifications ?? Boolean(current?.email_notifications ?? true),
-      state: preferences.state ?? (current?.state as string || '')
+      state: preferences.state ?? (current?.state as string || ''),
+      // Document generation preferences
+      docDefaultFormat: preferences.docDefaultFormat ?? (current?.doc_default_format as UserPreferences['docDefaultFormat']) ?? 'presentation',
+      docDefaultTemplate: preferences.docDefaultTemplate ?? (current?.doc_default_template as UserPreferences['docDefaultTemplate']) ?? 'policy_brief',
+      docDefaultAudience: preferences.docDefaultAudience ?? (current?.doc_default_audience as string) ?? 'General audience',
+      docDefaultTone: preferences.docDefaultTone ?? (current?.doc_default_tone as string) ?? 'Professional and informative',
+      docAutoExportPdf: preferences.docAutoExportPdf ?? Boolean(current?.doc_auto_export_pdf ?? false),
+      docAutoEnrich: preferences.docAutoEnrich ?? (current?.doc_auto_enrich !== undefined ? Boolean(current.doc_auto_enrich) : true),
+      docTextAmount: preferences.docTextAmount ?? (current?.doc_text_amount as UserPreferences['docTextAmount']) ?? 'medium',
+      docImageSource: preferences.docImageSource ?? (current?.doc_image_source as UserPreferences['docImageSource']) ?? 'stock',
     };
 
     if (current) {
@@ -187,7 +205,15 @@ export default class extends Service<Env> {
             playback_speed = ?,
             autoplay = ?,
             email_notifications = ?,
-            state = ?
+            state = ?,
+            doc_default_format = ?,
+            doc_default_template = ?,
+            doc_default_audience = ?,
+            doc_default_tone = ?,
+            doc_auto_export_pdf = ?,
+            doc_auto_enrich = ?,
+            doc_text_amount = ?,
+            doc_image_source = ?
           WHERE user_id = ?`
         )
         .bind(
@@ -198,6 +224,14 @@ export default class extends Service<Env> {
           updated.autoplay ? 1 : 0,
           updated.emailNotifications ? 1 : 0,
           updated.state,
+          updated.docDefaultFormat,
+          updated.docDefaultTemplate,
+          updated.docDefaultAudience,
+          updated.docDefaultTone,
+          updated.docAutoExportPdf ? 1 : 0,
+          updated.docAutoEnrich ? 1 : 0,
+          updated.docTextAmount,
+          updated.docImageSource,
           userId
         )
         .run();
@@ -207,8 +241,10 @@ export default class extends Service<Env> {
         .prepare(
           `INSERT INTO user_preferences (
             user_id, policy_interests, briefing_time, briefing_days,
-            playback_speed, autoplay, email_notifications, state
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            playback_speed, autoplay, email_notifications, state,
+            doc_default_format, doc_default_template, doc_default_audience, doc_default_tone,
+            doc_auto_export_pdf, doc_auto_enrich, doc_text_amount, doc_image_source
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           userId,
@@ -218,7 +254,15 @@ export default class extends Service<Env> {
           updated.playbackSpeed,
           updated.autoplay ? 1 : 0,
           updated.emailNotifications ? 1 : 0,
-          updated.state
+          updated.state,
+          updated.docDefaultFormat,
+          updated.docDefaultTemplate,
+          updated.docDefaultAudience,
+          updated.docDefaultTone,
+          updated.docAutoExportPdf ? 1 : 0,
+          updated.docAutoEnrich ? 1 : 0,
+          updated.docTextAmount,
+          updated.docImageSource
         )
         .run();
     }
@@ -251,7 +295,16 @@ export default class extends Service<Env> {
         state: undefined,
         district: undefined,
         zipCode: undefined,
-        city: undefined
+        city: undefined,
+        // Document generation defaults
+        docDefaultFormat: 'presentation',
+        docDefaultTemplate: 'policy_brief',
+        docDefaultAudience: 'General audience',
+        docDefaultTone: 'Professional and informative',
+        docAutoExportPdf: false,
+        docAutoEnrich: true,
+        docTextAmount: 'medium',
+        docImageSource: 'stock',
       };
     }
 
@@ -286,7 +339,16 @@ export default class extends Service<Env> {
       state: result.state as string | undefined,
       district: result.district as string | undefined,
       zipCode: result.zipcode as string | undefined,
-      city: result.city as string | undefined
+      city: result.city as string | undefined,
+      // Document generation preferences
+      docDefaultFormat: (result.doc_default_format as 'presentation' | 'document' | 'webpage') || 'presentation',
+      docDefaultTemplate: (result.doc_default_template as UserPreferences['docDefaultTemplate']) || 'policy_brief',
+      docDefaultAudience: (result.doc_default_audience as string) || 'General audience',
+      docDefaultTone: (result.doc_default_tone as string) || 'Professional and informative',
+      docAutoExportPdf: Boolean(result.doc_auto_export_pdf),
+      docAutoEnrich: result.doc_auto_enrich !== undefined ? Boolean(result.doc_auto_enrich) : true,
+      docTextAmount: (result.doc_text_amount as 'brief' | 'medium' | 'detailed' | 'extensive') || 'medium',
+      docImageSource: (result.doc_image_source as 'stock' | 'ai' | 'none') || 'stock',
     };
   }
 
