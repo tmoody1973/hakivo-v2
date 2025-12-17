@@ -259,6 +259,8 @@ app.post('/api/gamma/generate-enriched', async (c) => {
       exportAs?: 'pdf' | 'pptx';
     };
     title?: string;
+    /** Skip enrichment to avoid timeout - just use raw artifact content */
+    skipEnrichment?: boolean;
   };
 
   if (!body.artifact || !body.artifact.content) {
