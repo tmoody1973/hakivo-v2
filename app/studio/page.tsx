@@ -107,7 +107,7 @@ export default function StudioPage() {
         audience: template.defaults.audience,
       },
       imageOptions: {
-        source: template.defaults.imageSource || 'stock',
+        source: template.defaults.imageSource || 'unsplash',
       },
     };
 

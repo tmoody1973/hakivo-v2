@@ -9,7 +9,18 @@
 
 export type GammaFormat = "presentation" | "document" | "webpage";
 export type TextAmount = "brief" | "medium" | "detailed" | "extensive";
-export type ImageSource = "stock" | "ai" | "none";
+// Valid Gamma API image source values
+export type ImageSource =
+  | "webAllImages"
+  | "webFreeToUse"
+  | "webFreeToUseCommercially"
+  | "aiGenerated"
+  | "pictographic"
+  | "giphy"
+  | "unsplash"
+  | "placeholder"
+  | "noImages"
+  | "themeAccent";
 
 export interface TemplateDefaults {
   format: GammaFormat;
@@ -46,7 +57,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "detailed",
       audience: "Teachers and students",
       tone: "Educational and engaging",
-      imageSource: "stock",
+      imageSource: "unsplash",
       cardCount: 12,
     },
     suggestedUses: [
@@ -68,7 +79,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "medium",
       audience: "Community stakeholders and decision makers",
       tone: "Professional and persuasive",
-      imageSource: "stock",
+      imageSource: "unsplash",
       cardCount: 15,
     },
     suggestedUses: [
@@ -90,7 +101,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "detailed",
       audience: "Policy makers and analysts",
       tone: "Formal and analytical",
-      imageSource: "none",
+      imageSource: "noImages",
       cardCount: 8,
     },
     suggestedUses: [
@@ -112,7 +123,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "brief",
       audience: "General public",
       tone: "Simple and accessible",
-      imageSource: "ai",
+      imageSource: "aiGenerated",
       cardCount: 6,
     },
     suggestedUses: [
@@ -134,7 +145,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "brief",
       audience: "News readers and general public",
       tone: "Journalistic and factual",
-      imageSource: "stock",
+      imageSource: "unsplash",
       cardCount: 5,
     },
     suggestedUses: [
@@ -156,7 +167,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "brief",
       audience: "Executives and senior leaders",
       tone: "Concise and actionable",
-      imageSource: "none",
+      imageSource: "noImages",
       cardCount: 5,
     },
     suggestedUses: [
@@ -178,7 +189,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "extensive",
       audience: "Researchers and academics",
       tone: "Academic and thorough",
-      imageSource: "none",
+      imageSource: "noImages",
       cardCount: 20,
     },
     suggestedUses: [
@@ -200,7 +211,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
       textAmount: "brief",
       audience: "Social media users",
       tone: "Engaging and shareable",
-      imageSource: "ai",
+      imageSource: "aiGenerated",
       cardCount: 3,
     },
     suggestedUses: [
