@@ -3,6 +3,8 @@
  *
  * These presets define default configurations for different document types
  * that can be generated through the Gamma API integration.
+ *
+ * @module lib/gamma/templates
  */
 
 export type GammaFormat = "presentation" | "document" | "webpage";
