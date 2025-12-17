@@ -15,6 +15,9 @@ import { MetadataRoute } from 'next'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://hakivo.com'
 const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
   'https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run'
+// Podcast data is on the briefs service (different from bills)
+const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run'
 
 interface Bill {
   id: string
@@ -85,7 +88,8 @@ async function getMembersForSitemap(): Promise<Member[]> {
  */
 async function getPodcastEpisodesForSitemap(): Promise<PodcastEpisode[]> {
   try {
-    const response = await fetch(`${BILLS_API_URL}/podcasts?limit=500`, {
+    // Podcasts are on briefs service, API uses /podcast (singular)
+    const response = await fetch(`${BRIEFS_API_URL}/podcast?limit=500`, {
       next: { revalidate: 3600 }, // Cache for 1 hour
     })
 

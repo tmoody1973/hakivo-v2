@@ -9,8 +9,9 @@ import {
 } from "@/components/seo/json-ld"
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hakivo.com"
-const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
-  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+// Podcast data is on the briefs service, not the bills service
+const BRIEFS_API_URL = process.env.NEXT_PUBLIC_BRIEFS_API_URL ||
+  "https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
 
 /**
  * Fetch podcast episode data from API
@@ -18,7 +19,8 @@ const BILLS_API_URL = process.env.NEXT_PUBLIC_BILLS_API_URL ||
  */
 async function getEpisodeData(id: string): Promise<PodcastEpisode | null> {
   try {
-    const response = await fetch(`${BILLS_API_URL}/podcasts/${id}`, {
+    // API uses /podcast (singular), not /podcasts
+    const response = await fetch(`${BRIEFS_API_URL}/podcast/${id}`, {
       next: { revalidate: 3600 }, // Cache for 1 hour
     })
 
