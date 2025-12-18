@@ -295,12 +295,13 @@ export default class extends Service<Env> {
 
       // Check if we got a valid generation ID
       if (!result.id) {
-        console.error(`[GAMMA] No generation ID in response. Error: ${result.error || result.message || 'Unknown'}`);
-        // Return with error info so caller can handle it
+        const errorDetail = result.error || result.message || 'Unknown';
+        console.error(`[GAMMA] No generation ID in response. Error: ${errorDetail}. Full response: ${JSON.stringify(result)}`);
+        // Return with error info so caller can handle it - include full response for debugging
         return {
           id: '',
           status: 'failed' as GammaGenerationStatus,
-          error: result.error || result.message || 'No generation ID returned from Gamma API',
+          error: `Gamma API error: ${errorDetail}. Response: ${JSON.stringify(result).substring(0, 500)}`,
           createdAt: new Date().toISOString(),
         };
       }
