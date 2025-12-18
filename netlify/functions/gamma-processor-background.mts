@@ -88,13 +88,15 @@ interface GammaGenerateResult {
 }
 
 /**
- * Query database for gamma documents ready for enrichment processing
+ * Query GAMMA_DB for gamma documents ready for enrichment processing
+ * Note: Uses /api/gamma-database/query which queries GAMMA_DB (separate from APP_DB)
  */
 async function getDocumentsReadyForEnrichment(): Promise<GammaDocument[]> {
   const query = `SELECT id, user_id, status, request_payload, gamma_generation_id FROM gamma_documents WHERE status = 'enrichment_pending' ORDER BY created_at ASC LIMIT 1`;
 
   try {
-    const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+    // Use gamma-database endpoint which queries GAMMA_DB (not APP_DB)
+    const response = await fetch(`${DASHBOARD_URL}/api/gamma-database/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),
@@ -114,7 +116,8 @@ async function getDocumentsReadyForEnrichment(): Promise<GammaDocument[]> {
 }
 
 /**
- * Update gamma document status in database
+ * Update gamma document status in GAMMA_DB
+ * Note: Uses /api/gamma-database/query which queries GAMMA_DB (separate from APP_DB)
  */
 async function updateDocumentStatus(
   docId: string,
@@ -157,7 +160,8 @@ async function updateDocumentStatus(
   const query = `UPDATE gamma_documents SET ${setClauses.join(', ')} WHERE id = '${docId}'`;
 
   try {
-    const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+    // Use gamma-database endpoint which queries GAMMA_DB (not APP_DB)
+    const response = await fetch(`${DASHBOARD_URL}/api/gamma-database/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),

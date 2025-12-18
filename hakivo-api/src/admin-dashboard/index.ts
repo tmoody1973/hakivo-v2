@@ -152,11 +152,46 @@ app.get('/api/database/tables', async (c) => {
 
 /**
  * POST /api/database/query
- * Execute a custom SQL query
+ * Execute a custom SQL query against APP_DB
  */
 app.post('/api/database/query', async (c) => {
   try {
     const db = c.env.APP_DB;
+    const { query, limit = 100 } = await c.req.json();
+
+    if (!query) {
+      return c.json({ success: false, error: 'Query is required' }, 400);
+    }
+
+    // Add LIMIT if it's a SELECT query without one
+    let finalQuery = query.trim();
+    if (/^SELECT/i.test(finalQuery) && !/LIMIT/i.test(finalQuery)) {
+      finalQuery += ` LIMIT ${limit}`;
+    }
+
+    const result = await db.prepare(finalQuery).all();
+
+    return c.json({
+      success: true,
+      results: result.results || [],
+      count: result.results?.length || 0,
+      query: finalQuery
+    });
+  } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/gamma-database/query
+ * Execute a custom SQL query against GAMMA_DB (separate database for Gamma documents)
+ */
+app.post('/api/gamma-database/query', async (c) => {
+  try {
+    const db = c.env.GAMMA_DB;
     const { query, limit = 100 } = await c.req.json();
 
     if (!query) {
