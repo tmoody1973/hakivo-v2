@@ -49,6 +49,8 @@ export default function PublicGammaPage() {
   const [error, setError] = useState<string | null>(null);
   const [iframeLoading, setIframeLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingPptx, setDownloadingPptx] = useState(false);
 
   useEffect(() => {
     const fetchDocument = async () => {
@@ -149,6 +151,56 @@ export default function PublicGammaPage() {
 
     if (shareLink) {
       window.open(shareLink, '_blank', 'width=600,height=400');
+    }
+  };
+
+  // Handle download - fetch export on-demand if not cached
+  const handleDownload = async (format: 'pdf' | 'pptx') => {
+    if (!document) return;
+
+    // Check if we already have the URL
+    const existingUrl = format === 'pdf' ? document.pdfUrl : document.pptxUrl;
+    if (existingUrl) {
+      window.open(existingUrl, '_blank');
+      return;
+    }
+
+    // Need to fetch/save exports on-demand using public export endpoint
+    const setLoading = format === 'pdf' ? setDownloadingPdf : setDownloadingPptx;
+    setLoading(true);
+
+    try {
+      // Call public export endpoint (uses share token, no auth needed)
+      const response = await fetch(`/api/gamma/share/${token}/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formats: [format] }),
+      });
+
+      const data = await response.json();
+
+      if (data.exports) {
+        const url = format === 'pdf' ? data.exports.pdf : data.exports.pptx;
+        if (url) {
+          // Update local state with new URL
+          setDocument(prev => prev ? {
+            ...prev,
+            pdfUrl: data.exports.pdf || prev.pdfUrl,
+            pptxUrl: data.exports.pptx || prev.pptxUrl,
+          } : null);
+          window.open(url, '_blank');
+        } else {
+          // Export not ready yet
+          alert(`${format.toUpperCase()} export is being prepared. Please try again in a few seconds.`);
+        }
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Failed to prepare download. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -295,25 +347,33 @@ export default function PublicGammaPage() {
                 <Linkedin className="h-4 w-4" />
               </Button>
 
-              {/* Download buttons */}
-              {document.pdfUrl && (
+              {/* Download buttons - always show, fetch on-demand if needed */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownload('pdf')}
+                disabled={downloadingPdf}
+              >
+                {downloadingPdf ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-1" />
+                )}
+                {downloadingPdf ? 'Preparing...' : 'PDF'}
+              </Button>
+              {document.format === 'presentation' && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.open(document.pdfUrl, '_blank')}
+                  onClick={() => handleDownload('pptx')}
+                  disabled={downloadingPptx}
                 >
-                  <Download className="h-4 w-4 mr-1" />
-                  PDF
-                </Button>
-              )}
-              {document.pptxUrl && document.format === 'presentation' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open(document.pptxUrl, '_blank')}
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  PPTX
+                  {downloadingPptx ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-1" />
+                  )}
+                  {downloadingPptx ? 'Preparing...' : 'PPTX'}
                 </Button>
               )}
 

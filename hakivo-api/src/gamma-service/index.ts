@@ -1325,6 +1325,150 @@ app.post('/api/gamma/share/:token/view', async (c) => {
 });
 
 /**
+ * POST /api/gamma/share/:token/export
+ * Fetch exports for a public shared document (no auth required)
+ * Validates access via share token
+ */
+app.post('/api/gamma/share/:token/export', async (c) => {
+  const shareToken = c.req.param('token');
+
+  try {
+    const gammaDb = c.env.GAMMA_DB;
+    const gammaClient = c.env.GAMMA_CLIENT;
+    const vultrStorage = c.env.VULTR_STORAGE_CLIENT;
+
+    // Parse request body
+    const body = await c.req.json().catch(() => ({}));
+    const formats: ('pdf' | 'pptx')[] = body.formats || ['pdf'];
+
+    // Find document by share token (must be public)
+    const doc = await gammaDb
+      .prepare(`
+        SELECT id, gamma_generation_id, pdf_url, pptx_url
+        FROM gamma_documents
+        WHERE share_token = ? AND is_public = 1 AND status = 'completed'
+      `)
+      .bind(shareToken)
+      .first();
+
+    if (!doc) {
+      return c.json({ error: 'Document not found or not public' }, 404);
+    }
+
+    const documentId = doc.id as string;
+    const generationId = doc.gamma_generation_id as string;
+    const exports: { pdf?: string; pptx?: string } = {};
+    const storageKeys: { pdf?: string; pptx?: string } = {};
+
+    // Check if we already have cached exports
+    if (doc.pdf_url && formats.includes('pdf')) {
+      exports.pdf = doc.pdf_url as string;
+    }
+    if (doc.pptx_url && formats.includes('pptx')) {
+      exports.pptx = doc.pptx_url as string;
+    }
+
+    // If we have all requested formats cached, return them
+    const allCached = formats.every(f => exports[f]);
+    if (allCached) {
+      return c.json({ success: true, documentId, exports });
+    }
+
+    // Fetch generation status from Gamma to get export URLs
+    const generation = await gammaClient.getGenerationStatus(generationId);
+
+    if (generation.state !== 'completed') {
+      return c.json({
+        success: true,
+        documentId,
+        exports,
+        message: 'Generation still processing',
+      });
+    }
+
+    // Process each requested format
+    for (const format of formats) {
+      if (exports[format]) continue; // Already cached
+
+      try {
+        const gammaExportUrl = format === 'pdf' ? generation.exportUrl?.pdf : generation.exportUrl?.pptx;
+
+        if (!gammaExportUrl) {
+          console.log(`[Gamma Service] No ${format} export URL from Gamma for ${documentId}`);
+          continue;
+        }
+
+        // Fetch export from Gamma
+        const exportResponse = await fetch(gammaExportUrl);
+        if (!exportResponse.ok) {
+          console.error(`[Gamma Service] Failed to fetch ${format} from Gamma: ${exportResponse.status}`);
+          continue;
+        }
+
+        const buffer = await exportResponse.arrayBuffer();
+        const fileName = `gamma-exports/${documentId}/${documentId}.${format}`;
+        const contentType = format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+        // Upload to Vultr
+        const cdnUrl = await vultrStorage.uploadFile(
+          fileName,
+          new Uint8Array(buffer),
+          contentType
+        );
+
+        if (format === 'pdf') {
+          exports.pdf = cdnUrl;
+          storageKeys.pdf = fileName;
+        } else {
+          exports.pptx = cdnUrl;
+          storageKeys.pptx = fileName;
+        }
+      } catch (exportError) {
+        console.error(`[Gamma Service] Public export ${format} error:`, exportError);
+      }
+    }
+
+    // Update database with new storage info
+    if (Object.keys(storageKeys).length > 0) {
+      const now = Date.now();
+      await gammaDb
+        .prepare(`
+          UPDATE gamma_documents SET
+            pdf_storage_key = COALESCE(?, pdf_storage_key),
+            pdf_url = COALESCE(?, pdf_url),
+            pptx_storage_key = COALESCE(?, pptx_storage_key),
+            pptx_url = COALESCE(?, pptx_url),
+            updated_at = ?
+          WHERE id = ?
+        `)
+        .bind(
+          storageKeys.pdf || null,
+          exports.pdf || null,
+          storageKeys.pptx || null,
+          exports.pptx || null,
+          now,
+          documentId
+        )
+        .run();
+
+      console.log(`[Gamma Service] Saved public exports for document ${documentId}`);
+    }
+
+    return c.json({
+      success: true,
+      documentId,
+      exports,
+    });
+  } catch (error) {
+    console.error('[Gamma Service] Public export error:', error);
+    return c.json({
+      error: 'Failed to get exports',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
  * GET /api/gamma/share/:token
  * Get public document by share token (no auth required)
  */
