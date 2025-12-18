@@ -81,6 +81,7 @@ interface GammaGenerateResult {
   cardCount?: number;
   exports?: { pdf?: string; pptx?: string };
   error?: string;
+  details?: string;  // Added: contains full Gamma API response for debugging
   enrichment?: {
     sourcesUsed: string[];
     errors?: Array<{ source: string; error: string }>;
@@ -218,7 +219,9 @@ async function processEnrichmentAndGeneration(
     const data = await response.json() as GammaGenerateResult;
 
     if (!response.ok || !data.success) {
-      return { success: false, error: data.error || 'Generation failed' };
+      const errorMsg = data.details || data.error || 'Generation failed';
+      console.error(`[GAMMA-BG] Gamma service error: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
 
     return data;
