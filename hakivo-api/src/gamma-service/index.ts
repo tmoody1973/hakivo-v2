@@ -778,10 +778,6 @@ app.post('/api/gamma/save/:documentId', async (c) => {
       return c.json({ error: 'Document not found' }, 404);
     }
 
-    if (doc.status !== 'completed') {
-      return c.json({ error: 'Document generation not completed' }, 400);
-    }
-
     const exports: { pdf?: string; pptx?: string } = {};
     const storageKeys: { pdf?: string; pptx?: string } = {};
     const formats = body.exportFormats || ['pdf'];
@@ -795,6 +791,28 @@ app.post('/api/gamma/save/:documentId', async (c) => {
         exports.pptx = doc.pptx_url as string;
         console.log(`[Gamma Service] Using cached PPTX URL for ${documentId}`);
       }
+    }
+
+    // If document isn't completed or has no gamma_generation_id, return what we have (may be empty)
+    if (doc.status !== 'completed') {
+      console.log(`[Gamma Service] Document ${documentId} status is ${doc.status}, returning cached exports`);
+      return c.json({
+        success: true,
+        documentId,
+        exports,
+        status: doc.status,
+        message: 'Document generation not yet completed',
+      });
+    }
+
+    if (!doc.gamma_generation_id) {
+      console.log(`[Gamma Service] Document ${documentId} has no gamma_generation_id`);
+      return c.json({
+        success: true,
+        documentId,
+        exports,
+        message: 'No generation ID available yet',
+      });
     }
 
     // Filter out formats that are already cached
