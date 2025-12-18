@@ -278,6 +278,7 @@ export default class extends Service<Env> {
 
       const result = await response.json() as {
         id?: string;
+        generationId?: string;  // Gamma API returns this field name
         status?: string;
         url?: string;
         thumbnailUrl?: string;
@@ -293,8 +294,11 @@ export default class extends Service<Env> {
       // Log full response for debugging
       console.log(`[GAMMA] API response:`, JSON.stringify(result));
 
+      // Gamma API returns 'generationId', normalize to 'id'
+      const generationId = result.generationId || result.id;
+
       // Check if we got a valid generation ID
-      if (!result.id) {
+      if (!generationId) {
         const errorDetail = result.error || result.message || 'Unknown';
         console.error(`[GAMMA] No generation ID in response. Error: ${errorDetail}. Full response: ${JSON.stringify(result)}`);
         // Return with error info so caller can handle it - include full response for debugging
@@ -306,10 +310,10 @@ export default class extends Service<Env> {
         };
       }
 
-      console.log(`[GAMMA] Generation started: ${result.id} (status: ${result.status})`);
+      console.log(`[GAMMA] Generation started: ${generationId} (status: ${result.status})`);
 
       return {
-        id: result.id,
+        id: generationId,
         status: (result.status || 'pending') as GammaGenerationStatus,
         url: result.url,
         thumbnailUrl: result.thumbnailUrl,
