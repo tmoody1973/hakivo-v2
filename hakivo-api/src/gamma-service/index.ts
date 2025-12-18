@@ -174,6 +174,7 @@ app.post('/api/gamma/generate', async (c) => {
     const docId = generateId();
     const now = Date.now();
 
+    // Use nullish coalescing (??) to properly convert undefined to null for D1
     await gammaDb
       .prepare(`
         INSERT INTO gamma_documents (
@@ -184,14 +185,14 @@ app.post('/api/gamma/generate', async (c) => {
       .bind(
         docId,
         auth.userId,
-        body.artifactId || null,
+        body.artifactId ?? null,
         generation.id,
-        body.title || 'Untitled Document',
-        body.format || 'presentation',
-        body.template || null,
-        body.subjectType || null,
-        body.subjectId || null,
-        body.textOptions?.audience || null,
+        body.title ?? 'Untitled Document',
+        body.format ?? 'presentation',
+        body.template ?? null,
+        body.subjectType ?? null,
+        body.subjectId ?? null,
+        body.textOptions?.audience ?? null,
         'pending',
         now,
         now
@@ -338,6 +339,7 @@ app.post('/api/gamma/generate-enriched', async (c) => {
     const docId = generateId();
     const now = Date.now();
 
+    // Use nullish coalescing (??) to properly convert undefined to null for D1
     await gammaDb
       .prepare(`
         INSERT INTO gamma_documents (
@@ -348,14 +350,14 @@ app.post('/api/gamma/generate-enriched', async (c) => {
       .bind(
         docId,
         auth.userId,
-        body.artifact.id || null,
+        body.artifact?.id ?? null,
         generation.id,
-        body.title || body.artifact.title || 'Untitled Document',
-        gammaOptions.format || 'presentation',
-        gammaOptions.template || null,
-        body.artifact.subjectType || null,
-        body.artifact.subjectId || null,
-        gammaOptions.textOptions?.audience || null,
+        body.title ?? body.artifact?.title ?? 'Untitled Document',
+        gammaOptions?.format ?? 'presentation',
+        gammaOptions?.template ?? null,
+        body.artifact?.subjectType ?? null,
+        body.artifact?.subjectId ?? null,
+        gammaOptions?.textOptions?.audience ?? null,
         'pending',
         now,
         now
@@ -465,6 +467,7 @@ app.post('/api/gamma/enqueue-enriched', async (c) => {
 
     // Create pending record - use empty string for gamma_generation_id since it's NOT NULL
     // The background function will update this once Gamma API is called
+    // Use nullish coalescing (??) to properly convert undefined to null for D1
     await gammaDb
       .prepare(`
         INSERT INTO gamma_documents (
@@ -476,14 +479,14 @@ app.post('/api/gamma/enqueue-enriched', async (c) => {
       .bind(
         docId,
         auth.userId,
-        body.artifact.id || null,
+        body.artifact?.id ?? null,
         '', // Empty string placeholder - will be updated when Gamma API is called
-        body.title || body.artifact.title || 'Untitled Document',
-        gammaOptions.format || 'presentation',
-        gammaOptions.template || null,
-        body.artifact.subjectType || null,
-        body.artifact.subjectId || null,
-        gammaOptions.textOptions?.audience || null,
+        body.title ?? body.artifact?.title ?? 'Untitled Document',
+        gammaOptions?.format ?? 'presentation',
+        gammaOptions?.template ?? null,
+        body.artifact?.subjectType ?? null,
+        body.artifact?.subjectId ?? null,
+        gammaOptions?.textOptions?.audience ?? null,
         'enrichment_pending', // New status for background processing
         requestPayload,
         now,
