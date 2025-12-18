@@ -1375,9 +1375,9 @@ app.post('/api/gamma/share/:token/export', async (c) => {
     }
 
     // Fetch generation status from Gamma to get export URLs
-    const generation = await gammaClient.getGenerationStatus(generationId);
+    const generation = await gammaClient.getStatus(generationId);
 
-    if (generation.state !== 'completed') {
+    if (generation.status !== 'completed') {
       return c.json({
         success: true,
         documentId,
@@ -1391,7 +1391,7 @@ app.post('/api/gamma/share/:token/export', async (c) => {
       if (exports[format]) continue; // Already cached
 
       try {
-        const gammaExportUrl = format === 'pdf' ? generation.exportUrl?.pdf : generation.exportUrl?.pptx;
+        const gammaExportUrl = format === 'pdf' ? generation.exports?.pdf : generation.exports?.pptx;
 
         if (!gammaExportUrl) {
           console.log(`[Gamma Service] No ${format} export URL from Gamma for ${documentId}`);
@@ -1410,17 +1410,17 @@ app.post('/api/gamma/share/:token/export', async (c) => {
         const contentType = format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
         // Upload to Vultr
-        const cdnUrl = await vultrStorage.uploadFile(
+        const uploadResult = await vultrStorage.uploadFile(
           fileName,
           new Uint8Array(buffer),
           contentType
         );
 
         if (format === 'pdf') {
-          exports.pdf = cdnUrl;
+          exports.pdf = uploadResult.url;
           storageKeys.pdf = fileName;
         } else {
-          exports.pptx = cdnUrl;
+          exports.pptx = uploadResult.url;
           storageKeys.pptx = fileName;
         }
       } catch (exportError) {
