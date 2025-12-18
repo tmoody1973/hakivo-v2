@@ -267,8 +267,9 @@ export function useReportGenerator() {
           message: 'Enriching content with external data...',
         });
 
-        // Start enriched generation
-        const response = await fetch('/api/gamma/generate-enriched', {
+        // Use async enqueue-enriched flow for background processing (15-min timeout)
+        // This allows full enrichment without Netlify's 10-second timeout
+        const enqueueResponse = await fetch('/api/gamma/enqueue-enriched', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -279,29 +280,37 @@ export function useReportGenerator() {
             enrichmentOptions,
             gammaOptions,
             title: title || dataSource.title,
-            // Skip slow enrichment for now to avoid timeout
-            skipEnrichment: true,
           }),
           signal: abortControllerRef.current.signal,
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
+        if (!enqueueResponse.ok) {
+          const errorData = await enqueueResponse.json();
           const errorDetails = errorData.details ? `: ${errorData.details}` : '';
-          throw new Error((errorData.error || 'Generation failed') + errorDetails);
+          throw new Error((errorData.error || 'Failed to enqueue') + errorDetails);
         }
 
-        const data = await response.json();
+        const enqueueData = await enqueueResponse.json();
 
         updateState({
-          phase: 'generating',
-          progress: 30,
-          message: 'Content enriched. Starting document generation...',
-          generationResult: data,
+          phase: 'enriching',
+          progress: 20,
+          message: 'Document queued. Starting background enrichment...',
+          generationResult: enqueueData,
         });
 
-        // Start polling for status
-        return await pollForCompletion(data.generationId, data.documentId);
+        // Trigger the Netlify background function to process the document
+        // Background functions have 15-minute timeout for full enrichment
+        fetch('/.netlify/functions/gamma-processor-background', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }).catch(() => {
+          // Fire and forget - background function polls database
+          console.log('[useReportGenerator] Background function triggered');
+        });
+
+        // Poll for completion using document status endpoint
+        return await pollForDocumentCompletion(enqueueData.documentId);
       } catch (error) {
         if ((error as Error).name === 'AbortError') {
           return null;
@@ -410,6 +419,121 @@ export function useReportGenerator() {
           } catch {
             // Silently retry on transient errors
             console.error('[useReportGenerator] Status check error, retrying...');
+          }
+        };
+
+        // Start polling
+        checkStatus();
+        pollingIntervalRef.current = setInterval(checkStatus, 5000);
+      });
+    },
+    [accessToken, updateState]
+  );
+
+  /**
+   * Poll for document completion using document ID
+   * Used for async enqueue-enriched flow with background processing
+   */
+  const pollForDocumentCompletion = useCallback(
+    async (documentId: string): Promise<GenerationResult | null> => {
+      return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 180; // 15 minutes max (5 second intervals)
+
+        const checkStatus = async () => {
+          attempts++;
+
+          if (attempts > maxAttempts) {
+            updateState({
+              phase: 'failed',
+              error: 'Document processing timed out',
+            });
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+            }
+            resolve(null);
+            return;
+          }
+
+          try {
+            const response = await fetch(`/api/gamma/document-status/${documentId}`, {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Status check failed');
+            }
+
+            const data = await response.json();
+
+            // Update progress based on status
+            const progressMap: Record<string, number> = {
+              enrichment_pending: 25,
+              enriching: 40,
+              generating: 60,
+              pending: 70,
+              processing: 80,
+              completed: 100,
+            };
+
+            const progress = progressMap[data.status] || 50;
+
+            // Update message based on status
+            const messageMap: Record<string, string> = {
+              enrichment_pending: 'Waiting for background processor...',
+              enriching: 'Fetching bill details, news, and related data...',
+              generating: 'Creating document with Gamma AI...',
+              pending: 'Gamma is processing your document...',
+              processing: 'Finalizing document...',
+              completed: 'Document generated successfully!',
+            };
+
+            if (data.status === 'completed') {
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+              }
+
+              const result: GenerationResult = {
+                documentId,
+                generationId: data.gamma_generation_id || '',
+                status: 'completed',
+                url: data.gamma_url,
+                thumbnailUrl: data.gamma_thumbnail_url,
+                title: data.title,
+                cardCount: data.card_count,
+              };
+
+              updateState({
+                phase: 'completed',
+                progress: 100,
+                message: 'Document generated successfully!',
+                generationResult: result,
+              });
+
+              resolve(result);
+            } else if (data.status === 'failed') {
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+              }
+
+              updateState({
+                phase: 'failed',
+                error: data.error_message || 'Document generation failed',
+              });
+
+              resolve(null);
+            } else {
+              updateState({
+                phase: data.status === 'enriching' ? 'enriching' : 'processing',
+                progress,
+                message: messageMap[data.status] || `Processing... ${data.status}`,
+              });
+            }
+          } catch {
+            // Silently retry on transient errors
+            console.error('[useReportGenerator] Document status check error, retrying...');
           }
         };
 
