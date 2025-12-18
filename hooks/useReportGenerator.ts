@@ -287,7 +287,8 @@ export function useReportGenerator() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || 'Generation failed');
+          const errorDetails = errorData.details ? `: ${errorData.details}` : '';
+          throw new Error((errorData.error || 'Generation failed') + errorDetails);
         }
 
         const data = await response.json();

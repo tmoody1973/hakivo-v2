@@ -45,8 +45,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error('[API] Gamma generate-enriched proxy error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorName = error instanceof Error ? error.name : 'Error';
     return NextResponse.json(
-      { error: 'Failed to generate enriched document' },
+      {
+        error: 'Failed to generate enriched document',
+        details: errorMessage,
+        type: errorName,
+      },
       { status: 500 }
     );
   }
