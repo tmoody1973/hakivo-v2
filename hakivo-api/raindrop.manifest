@@ -330,6 +330,10 @@ application "hakivo-prod" {
   // SQL database for application data
   sql_database "app-db" {}
 
+  // Separate database for Gamma document generation
+  // Isolated to avoid migration cache issues with app-db
+  sql_database "gamma-db" {}
+
   // SmartSQL for AI-powered natural language to SQL translation
   // Enables direct textQuery for user questions like "show me healthcare bills"
   smartsql "congressional-db" {}

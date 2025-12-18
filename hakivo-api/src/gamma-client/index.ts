@@ -264,7 +264,7 @@ export default class extends Service<Env> {
       const response = await fetch(`${this.API_BASE}/generations`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'X-API-KEY': apiKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -322,7 +322,7 @@ export default class extends Service<Env> {
       const response = await fetch(`${this.API_BASE}/generations/${generationId}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'X-API-KEY': apiKey,
         },
       });
 
@@ -440,7 +440,7 @@ export default class extends Service<Env> {
       const response = await fetch(`${this.API_BASE}/themes`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'X-API-KEY': apiKey,
         },
       });
 
@@ -484,7 +484,7 @@ export default class extends Service<Env> {
       const response = await fetch(`${this.API_BASE}/folders`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          'X-API-KEY': apiKey,
         },
       });
 

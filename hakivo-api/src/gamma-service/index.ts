@@ -152,7 +152,7 @@ app.post('/api/gamma/generate', async (c) => {
 
   try {
     const gammaClient = c.env.GAMMA_CLIENT;
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     // Build Gamma request
     const gammaRequest: GammaGenerateRequest = {
@@ -170,11 +170,11 @@ app.post('/api/gamma/generate', async (c) => {
     // Start Gamma generation
     const generation = await gammaClient.generate(gammaRequest);
 
-    // Create record in database
+    // Create record in gamma database
     const docId = generateId();
     const now = Date.now();
 
-    await db
+    await gammaDb
       .prepare(`
         INSERT INTO gamma_documents (
           id, user_id, artifact_id, gamma_generation_id, title, format, template,
@@ -316,7 +316,7 @@ app.post('/api/gamma/generate-enriched', async (c) => {
 
     // Step 2: Generate Gamma document with enriched content
     const gammaClient = c.env.GAMMA_CLIENT;
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     const gammaOptions = body.gammaOptions || {};
     const gammaRequest: GammaGenerateRequest = {
@@ -334,11 +334,11 @@ app.post('/api/gamma/generate-enriched', async (c) => {
     // Start Gamma generation
     const generation = await gammaClient.generate(gammaRequest);
 
-    // Create record in database
+    // Create record in gamma database
     const docId = generateId();
     const now = Date.now();
 
-    await db
+    await gammaDb
       .prepare(`
         INSERT INTO gamma_documents (
           id, user_id, artifact_id, gamma_generation_id, title, format, template,
@@ -387,6 +387,181 @@ app.post('/api/gamma/generate-enriched', async (c) => {
     console.error('[Gamma Service] Enriched generation error:', error);
     return c.json({
       error: 'Failed to generate enriched document',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * POST /api/gamma/enqueue-enriched
+ * Enqueue a document for background enrichment processing
+ *
+ * This endpoint creates a pending record and returns immediately.
+ * The actual enrichment and Gamma generation happens in a Netlify background function.
+ *
+ * This avoids timeout issues with the synchronous generate-enriched endpoint.
+ *
+ * Body: Same as generate-enriched
+ * - artifact: { title, content, subjectType?, subjectId? }
+ * - enrichmentOptions: { includeBillDetails?, includeNewsContext?, ... }
+ * - gammaOptions: { format, textMode, template, themeId, ... }
+ *
+ * Returns:
+ * - documentId: string - ID to poll for status
+ * - status: 'enrichment_pending' - Initial status
+ */
+app.post('/api/gamma/enqueue-enriched', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const auth = await verifyAuth(authHeader, c.env.JWT_SECRET);
+  if (!auth) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const body = await c.req.json() as {
+    artifact: ArtifactContent;
+    enrichmentOptions?: EnrichmentOptions;
+    gammaOptions?: {
+      textMode?: GammaTextMode;
+      format?: GammaFormat;
+      template?: string;
+      themeId?: string;
+      numCards?: number;
+      textOptions?: {
+        amount?: GammaTextAmount;
+        tone?: string;
+        audience?: string;
+        language?: string;
+      };
+      imageOptions?: {
+        source?: GammaImageSource;
+        style?: string;
+      };
+      exportAs?: 'pdf' | 'pptx';
+    };
+    title?: string;
+    skipEnrichment?: boolean;
+  };
+
+  if (!body.artifact || !body.artifact.content) {
+    return c.json({ error: 'artifact.content is required' }, 400);
+  }
+
+  try {
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
+    const docId = generateId();
+    const now = Date.now();
+    const gammaOptions = body.gammaOptions || {};
+
+    // Store the request payload including the JWT token for background processing
+    const requestPayload = JSON.stringify({
+      artifact: body.artifact,
+      enrichmentOptions: body.enrichmentOptions,
+      gammaOptions: body.gammaOptions,
+      title: body.title,
+      skipEnrichment: body.skipEnrichment,
+      // Store the JWT token so background function can make authenticated calls
+      jwtToken: authHeader?.replace('Bearer ', ''),
+    });
+
+    // Create pending record - use empty string for gamma_generation_id since it's NOT NULL
+    // The background function will update this once Gamma API is called
+    await gammaDb
+      .prepare(`
+        INSERT INTO gamma_documents (
+          id, user_id, artifact_id, gamma_generation_id, title, format, template,
+          subject_type, subject_id, audience, status, request_payload,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        docId,
+        auth.userId,
+        body.artifact.id || null,
+        '', // Empty string placeholder - will be updated when Gamma API is called
+        body.title || body.artifact.title || 'Untitled Document',
+        gammaOptions.format || 'presentation',
+        gammaOptions.template || null,
+        body.artifact.subjectType || null,
+        body.artifact.subjectId || null,
+        gammaOptions.textOptions?.audience || null,
+        'enrichment_pending', // New status for background processing
+        requestPayload,
+        now,
+        now
+      )
+      .run();
+
+    console.log(`[Gamma Service] Enqueued document ${docId} for background enrichment`);
+
+    return c.json({
+      success: true,
+      documentId: docId,
+      status: 'enrichment_pending',
+      message: 'Document queued for background processing',
+    });
+  } catch (error) {
+    console.error('[Gamma Service] Enqueue error:', error);
+    return c.json({
+      error: 'Failed to enqueue document',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * GET /api/gamma/document-status/:documentId
+ * Get the status of a document by its internal ID (not Gamma generation ID)
+ * This is useful for polling before Gamma generation starts
+ */
+app.get('/api/gamma/document-status/:documentId', async (c) => {
+  const auth = await verifyAuth(c.req.header('Authorization'), c.env.JWT_SECRET);
+  if (!auth) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const documentId = c.req.param('documentId');
+  if (!documentId) {
+    return c.json({ error: 'documentId is required' }, 400);
+  }
+
+  try {
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
+
+    const doc = await gammaDb
+      .prepare(`
+        SELECT id, status, gamma_generation_id, gamma_url, gamma_thumbnail_url,
+               card_count, error_message, title, format, template,
+               created_at, updated_at, completed_at
+        FROM gamma_documents
+        WHERE id = ? AND user_id = ?
+      `)
+      .bind(documentId, auth.userId)
+      .first();
+
+    if (!doc) {
+      return c.json({ error: 'Document not found' }, 404);
+    }
+
+    return c.json({
+      success: true,
+      documentId: doc.id,
+      status: doc.status,
+      generationId: doc.gamma_generation_id || null,
+      url: doc.gamma_url || null,
+      thumbnailUrl: doc.gamma_thumbnail_url || null,
+      cardCount: doc.card_count || 0,
+      title: doc.title,
+      format: doc.format,
+      template: doc.template,
+      error: doc.error_message || null,
+      createdAt: doc.created_at,
+      updatedAt: doc.updated_at,
+      completedAt: doc.completed_at,
+    });
+  } catch (error) {
+    console.error('[Gamma Service] Document status error:', error);
+    return c.json({
+      error: 'Failed to get document status',
       details: error instanceof Error ? error.message : 'Unknown error',
     }, 500);
   }
@@ -480,7 +655,7 @@ app.get('/api/gamma/status/:generationId', async (c) => {
 
   try {
     const gammaClient = c.env.GAMMA_CLIENT;
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     // Get status from Gamma
     const status = await gammaClient.getStatus(generationId);
@@ -489,7 +664,7 @@ app.get('/api/gamma/status/:generationId', async (c) => {
     if (status.status === 'completed' || status.status === 'failed') {
       const now = Date.now();
 
-      await db
+      await gammaDb
         .prepare(`
           UPDATE gamma_documents SET
             status = ?,
@@ -555,12 +730,12 @@ app.post('/api/gamma/save/:documentId', async (c) => {
   };
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
     const gammaClient = c.env.GAMMA_CLIENT;
     const vultrClient = c.env.VULTR_STORAGE_CLIENT;
 
     // Get document
-    const doc = await db
+    const doc = await gammaDb
       .prepare(`
         SELECT * FROM gamma_documents
         WHERE id = ? AND user_id = ?
@@ -621,7 +796,7 @@ app.post('/api/gamma/save/:documentId', async (c) => {
 
     // Update database with storage info
     const now = Date.now();
-    await db
+    await gammaDb
       .prepare(`
         UPDATE gamma_documents SET
           pdf_storage_key = COALESCE(?, pdf_storage_key),
@@ -673,7 +848,7 @@ app.get('/api/gamma/documents', async (c) => {
   const template = c.req.query('template');
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     let query = `
       SELECT
@@ -702,7 +877,7 @@ app.get('/api/gamma/documents', async (c) => {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
-    const results = await db.prepare(query).bind(...params).all();
+    const results = await gammaDb.prepare(query).bind(...params).all();
 
     // Get total count
     let countQuery = 'SELECT COUNT(*) as count FROM gamma_documents WHERE user_id = ?';
@@ -718,7 +893,7 @@ app.get('/api/gamma/documents', async (c) => {
       countParams.push(template);
     }
 
-    const countResult = await db.prepare(countQuery).bind(...countParams).first();
+    const countResult = await gammaDb.prepare(countQuery).bind(...countParams).first();
 
     return c.json({
       success: true,
@@ -747,10 +922,10 @@ app.get('/api/gamma/documents/:id', async (c) => {
   }
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     // First try to get by share token (public access)
-    let doc = await db
+    let doc = await gammaDb
       .prepare(`
         SELECT * FROM gamma_documents
         WHERE share_token = ? AND is_public = 1
@@ -760,7 +935,7 @@ app.get('/api/gamma/documents/:id', async (c) => {
 
     if (doc) {
       // Increment view count for public access
-      await db
+      await gammaDb
         .prepare('UPDATE gamma_documents SET view_count = view_count + 1 WHERE id = ?')
         .bind(doc.id)
         .run();
@@ -778,7 +953,7 @@ app.get('/api/gamma/documents/:id', async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    doc = await db
+    doc = await gammaDb
       .prepare('SELECT * FROM gamma_documents WHERE id = ? AND user_id = ?')
       .bind(documentId, auth.userId)
       .first();
@@ -817,11 +992,11 @@ app.delete('/api/gamma/documents/:id', async (c) => {
   }
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
     const vultrClient = c.env.VULTR_STORAGE_CLIENT;
 
     // Get document to delete storage files
-    const doc = await db
+    const doc = await gammaDb
       .prepare('SELECT * FROM gamma_documents WHERE id = ? AND user_id = ?')
       .bind(documentId, auth.userId)
       .first();
@@ -848,7 +1023,7 @@ app.delete('/api/gamma/documents/:id', async (c) => {
     }
 
     // Delete database record
-    await db
+    await gammaDb
       .prepare('DELETE FROM gamma_documents WHERE id = ?')
       .bind(documentId)
       .run();
@@ -882,10 +1057,10 @@ app.patch('/api/gamma/documents/:id/share', async (c) => {
   const body = await c.req.json() as { isPublic: boolean };
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     // Verify ownership
-    const doc = await db
+    const doc = await gammaDb
       .prepare('SELECT * FROM gamma_documents WHERE id = ? AND user_id = ?')
       .bind(documentId, auth.userId)
       .first();
@@ -902,7 +1077,7 @@ app.patch('/api/gamma/documents/:id/share', async (c) => {
       shareToken = generateShareToken();
     }
 
-    await db
+    await gammaDb
       .prepare(`
         UPDATE gamma_documents SET
           is_public = ?,
@@ -951,10 +1126,10 @@ app.post('/api/gamma/documents/:id/email', async (c) => {
   }
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     // Verify ownership and get document
-    const doc = await db
+    const doc = await gammaDb
       .prepare('SELECT * FROM gamma_documents WHERE id = ? AND user_id = ?')
       .bind(documentId, auth.userId)
       .first();
@@ -972,7 +1147,7 @@ app.post('/api/gamma/documents/:id/email', async (c) => {
     if (!shareToken) {
       shareToken = generateShareToken();
       const now = Date.now();
-      await db
+      await gammaDb
         .prepare(`
           UPDATE gamma_documents SET
             is_public = 1,
@@ -1047,10 +1222,10 @@ app.post('/api/gamma/share/:token/view', async (c) => {
   const shareToken = c.req.param('token');
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
 
     // Find document by share token
-    const doc = await db
+    const doc = await gammaDb
       .prepare('SELECT id, view_count FROM gamma_documents WHERE share_token = ? AND is_public = 1')
       .bind(shareToken)
       .first();
@@ -1061,7 +1236,7 @@ app.post('/api/gamma/share/:token/view', async (c) => {
 
     // Increment view count
     const newViewCount = ((doc.view_count as number) || 0) + 1;
-    await db
+    await gammaDb
       .prepare('UPDATE gamma_documents SET view_count = ? WHERE id = ?')
       .bind(newViewCount, doc.id)
       .run();
@@ -1087,26 +1262,37 @@ app.get('/api/gamma/share/:token', async (c) => {
   const shareToken = c.req.param('token');
 
   try {
-    const db = c.env.APP_DB;
+    const gammaDb = c.env.GAMMA_DB;  // Use separate gamma database
+    const appDb = c.env.APP_DB;      // For user lookup
 
-    // Find document by share token
-    const doc = await db
+    // Find document by share token (from gamma-db)
+    const doc = await gammaDb
       .prepare(`
         SELECT
-          gd.id, gd.title, gd.format, gd.template, gd.card_count,
-          gd.gamma_url, gd.gamma_thumbnail_url, gd.pdf_url, gd.pptx_url,
-          gd.subject_type, gd.subject_id, gd.audience,
-          gd.view_count, gd.created_at,
-          u.first_name as author_first_name, u.last_name as author_last_name
-        FROM gamma_documents gd
-        LEFT JOIN users u ON gd.user_id = u.id
-        WHERE gd.share_token = ? AND gd.is_public = 1 AND gd.status = 'completed'
+          id, user_id, title, format, template, card_count,
+          gamma_url, gamma_thumbnail_url, pdf_url, pptx_url,
+          subject_type, subject_id, audience,
+          view_count, created_at
+        FROM gamma_documents
+        WHERE share_token = ? AND is_public = 1 AND status = 'completed'
       `)
       .bind(shareToken)
       .first();
 
     if (!doc) {
       return c.json({ error: 'Document not found or not public' }, 404);
+    }
+
+    // Get author info from app-db (separate query since it's a different database)
+    let authorName: string | null = null;
+    if (doc.user_id) {
+      const user = await appDb
+        .prepare('SELECT first_name, last_name FROM users WHERE id = ?')
+        .bind(doc.user_id)
+        .first();
+      if (user && user.first_name) {
+        authorName = `${user.first_name} ${user.last_name || ''}`.trim();
+      }
     }
 
     return c.json({
@@ -1126,7 +1312,7 @@ app.get('/api/gamma/share/:token', async (c) => {
         audience: doc.audience,
         viewCount: doc.view_count,
         createdAt: doc.created_at,
-        author: doc.author_first_name ? `${doc.author_first_name} ${doc.author_last_name || ''}`.trim() : null,
+        author: authorName,
       },
     });
   } catch (error) {
