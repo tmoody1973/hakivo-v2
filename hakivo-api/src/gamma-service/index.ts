@@ -165,7 +165,8 @@ app.post('/api/gamma/generate', async (c) => {
     if (body.numCards) gammaRequest.numCards = body.numCards;
     if (body.textOptions) gammaRequest.textOptions = body.textOptions;
     if (body.imageOptions) gammaRequest.imageOptions = body.imageOptions;
-    if (body.exportAs) gammaRequest.exportAs = body.exportAs;
+    // Default to PDF export
+    gammaRequest.exportAs = body.exportAs || 'pdf';
 
     // Start Gamma generation
     const generation = await gammaClient.generate(gammaRequest);
@@ -339,7 +340,8 @@ app.post('/api/gamma/generate-enriched', async (c) => {
     if (gammaOptions.numCards) gammaRequest.numCards = gammaOptions.numCards;
     if (gammaOptions.textOptions) gammaRequest.textOptions = gammaOptions.textOptions;
     if (gammaOptions.imageOptions) gammaRequest.imageOptions = gammaOptions.imageOptions;
-    if (gammaOptions.exportAs) gammaRequest.exportAs = gammaOptions.exportAs;
+    // Default to PDF export
+    gammaRequest.exportAs = gammaOptions.exportAs || 'pdf';
 
     // Start Gamma generation
     const generation = await gammaClient.generate(gammaRequest);
@@ -552,6 +554,7 @@ app.get('/api/gamma/document-status/:documentId', async (c) => {
       .prepare(`
         SELECT id, status, gamma_generation_id, gamma_url, gamma_thumbnail_url,
                card_count, error_message, title, format, template,
+               pdf_url, pptx_url,
                created_at, updated_at, completed_at
         FROM gamma_documents
         WHERE id = ? AND user_id = ?
@@ -562,6 +565,11 @@ app.get('/api/gamma/document-status/:documentId', async (c) => {
     if (!doc) {
       return c.json({ error: 'Document not found' }, 404);
     }
+
+    // Build exports object if URLs are available
+    const exports: { pdf?: string; pptx?: string } = {};
+    if (doc.pdf_url) exports.pdf = doc.pdf_url as string;
+    if (doc.pptx_url) exports.pptx = doc.pptx_url as string;
 
     return c.json({
       success: true,
@@ -574,6 +582,7 @@ app.get('/api/gamma/document-status/:documentId', async (c) => {
       title: doc.title,
       format: doc.format,
       template: doc.template,
+      exports: Object.keys(exports).length > 0 ? exports : undefined,
       error: doc.error_message || null,
       createdAt: doc.created_at,
       updatedAt: doc.updated_at,
@@ -734,6 +743,7 @@ app.get('/api/gamma/status/:generationId', async (c) => {
 /**
  * POST /api/gamma/save/:documentId
  * Save export files (PDF/PPTX) to Vultr storage
+ * Also checks if exports are already cached in the database
  */
 app.post('/api/gamma/save/:documentId', async (c) => {
   const auth = await verifyAuth(c.req.header('Authorization'), c.env.JWT_SECRET);
@@ -776,7 +786,24 @@ app.post('/api/gamma/save/:documentId', async (c) => {
     const storageKeys: { pdf?: string; pptx?: string } = {};
     const formats = body.exportFormats || ['pdf'];
 
+    // Check if exports are already saved in the database
     for (const format of formats) {
+      if (format === 'pdf' && doc.pdf_url) {
+        exports.pdf = doc.pdf_url as string;
+        console.log(`[Gamma Service] Using cached PDF URL for ${documentId}`);
+      } else if (format === 'pptx' && doc.pptx_url) {
+        exports.pptx = doc.pptx_url as string;
+        console.log(`[Gamma Service] Using cached PPTX URL for ${documentId}`);
+      }
+    }
+
+    // Filter out formats that are already cached
+    const formatsToFetch = formats.filter((f) =>
+      (f === 'pdf' && !exports.pdf) || (f === 'pptx' && !exports.pptx)
+    );
+
+    // Fetch remaining formats from Gamma
+    for (const format of formatsToFetch) {
       try {
         // Get export URL from Gamma
         const exportUrl = await gammaClient.getExportUrl(doc.gamma_generation_id as string, format);
@@ -812,33 +839,37 @@ app.post('/api/gamma/save/:documentId', async (c) => {
         }
       } catch (exportError) {
         console.error(`[Gamma Service] Export ${format} error:`, exportError);
+        // Continue with other formats instead of failing completely
       }
     }
 
-    // Update database with storage info
-    const now = Date.now();
-    await gammaDb
-      .prepare(`
-        UPDATE gamma_documents SET
-          pdf_storage_key = COALESCE(?, pdf_storage_key),
-          pdf_url = COALESCE(?, pdf_url),
-          pptx_storage_key = COALESCE(?, pptx_storage_key),
-          pptx_url = COALESCE(?, pptx_url),
-          updated_at = ?
-        WHERE id = ?
-      `)
-      .bind(
-        storageKeys.pdf || null,
-        exports.pdf || null,
-        storageKeys.pptx || null,
-        exports.pptx || null,
-        now,
-        documentId
-      )
-      .run();
+    // Update database with new storage info (only if we fetched new exports)
+    if (Object.keys(storageKeys).length > 0) {
+      const now = Date.now();
+      await gammaDb
+        .prepare(`
+          UPDATE gamma_documents SET
+            pdf_storage_key = COALESCE(?, pdf_storage_key),
+            pdf_url = COALESCE(?, pdf_url),
+            pptx_storage_key = COALESCE(?, pptx_storage_key),
+            pptx_url = COALESCE(?, pptx_url),
+            updated_at = ?
+          WHERE id = ?
+        `)
+        .bind(
+          storageKeys.pdf || null,
+          exports.pdf || null,
+          storageKeys.pptx || null,
+          exports.pptx || null,
+          now,
+          documentId
+        )
+        .run();
 
-    console.log(`[Gamma Service] Saved exports for document ${documentId}`);
+      console.log(`[Gamma Service] Saved exports for document ${documentId}`);
+    }
 
+    // Return whatever exports we have (cached or newly fetched)
     return c.json({
       success: true,
       documentId,

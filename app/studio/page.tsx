@@ -120,20 +120,19 @@ export default function StudioPage() {
       imageOptions: {
         source: selectedImageSource,
       },
+      // Request PDF export by default
+      exportAs: 'pdf',
     };
 
-    const result = await generate(
+    await generate(
       selectedDataSource,
       enrichmentOptions,
       gammaOptions,
       selectedDataSource.title
     );
-
-    // Auto-save PDF export on completion
-    if (result && result.documentId) {
-      await saveExports(result.documentId, ['pdf']);
-    }
-  }, [selectedDataSource, selectedTemplate, enrichmentOptions, generate, saveExports]);
+    // Note: Export URLs are saved by the background function
+    // Downloads will work once the generation completes and exports are available
+  }, [selectedDataSource, selectedTemplate, enrichmentOptions, generate, selectedImageSource]);
 
   // Open document in Gamma
   const handleViewDocument = useCallback(() => {
@@ -143,13 +142,30 @@ export default function StudioPage() {
   }, [generationState.generationResult]);
 
   // Download export
-  const handleDownload = useCallback((format: 'pdf' | 'pptx') => {
+  const handleDownload = useCallback(async (format: 'pdf' | 'pptx') => {
     const exports = generationState.generationResult?.exports;
-    const url = format === 'pdf' ? exports?.pdf : exports?.pptx;
+    let url = format === 'pdf' ? exports?.pdf : exports?.pptx;
+
+    // If URL is available, open it directly
     if (url) {
       window.open(url, '_blank');
+      return;
     }
-  }, [generationState.generationResult]);
+
+    // If no URL but we have a documentId, try to fetch/save exports
+    const documentId = generationState.generationResult?.documentId;
+    if (documentId) {
+      console.log(`[Studio] No ${format} URL available, attempting to save exports...`);
+      const savedExports = await saveExports(documentId, [format]);
+      url = format === 'pdf' ? savedExports?.pdf : savedExports?.pptx;
+      if (url) {
+        window.open(url, '_blank');
+      } else {
+        // Exports not ready yet - user can try again later
+        console.log(`[Studio] ${format.toUpperCase()} export not available yet`);
+      }
+    }
+  }, [generationState.generationResult, saveExports]);
 
   // Show loading state while checking auth
   if (authLoading) {

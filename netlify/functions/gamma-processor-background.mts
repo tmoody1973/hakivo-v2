@@ -130,6 +130,8 @@ async function updateDocumentStatus(
     card_count?: number;
     error_message?: string;
     completed_at?: number;
+    pdf_url?: string;
+    pptx_url?: string;
   } = {}
 ): Promise<void> {
   const timestamp = Date.now();
@@ -156,6 +158,12 @@ async function updateDocumentStatus(
   }
   if (updates.completed_at) {
     setClauses.push(`completed_at = ${updates.completed_at}`);
+  }
+  if (updates.pdf_url) {
+    setClauses.push(`pdf_url = '${updates.pdf_url}'`);
+  }
+  if (updates.pptx_url) {
+    setClauses.push(`pptx_url = '${updates.pptx_url}'`);
   }
 
   const query = `UPDATE gamma_documents SET ${setClauses.join(', ')} WHERE id = '${docId}'`;
@@ -357,12 +365,19 @@ async function processDocument(doc: GammaDocument): Promise<void> {
 
       if (completionResult.status === 'completed') {
         console.log(`[GAMMA-BG] Document ${doc.id} completed successfully`);
+        // Save export URLs if available from Gamma
+        const exports = completionResult.exports;
         await updateDocumentStatus(doc.id, 'completed', {
           gamma_url: completionResult.url,
           gamma_thumbnail_url: completionResult.thumbnailUrl,
           card_count: completionResult.cardCount,
           completed_at: Date.now(),
+          pdf_url: exports?.pdf,
+          pptx_url: exports?.pptx,
         });
+        if (exports?.pdf || exports?.pptx) {
+          console.log(`[GAMMA-BG] Export URLs saved: pdf=${!!exports.pdf}, pptx=${!!exports.pptx}`);
+        }
       } else {
         console.error(`[GAMMA-BG] Document ${doc.id} failed: ${completionResult.error}`);
         await updateDocumentStatus(doc.id, 'failed', {

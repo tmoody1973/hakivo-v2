@@ -503,6 +503,8 @@ export function useReportGenerator() {
                 thumbnailUrl: data.gamma_thumbnail_url,
                 title: data.title,
                 cardCount: data.card_count,
+                // Include exports if available from Gamma
+                exports: data.exports,
               };
 
               updateState({
@@ -568,11 +570,17 @@ export function useReportGenerator() {
           body: JSON.stringify({ exportFormats: formats }),
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to save exports');
-        }
-
         const data = await response.json();
+
+        if (!response.ok) {
+          console.error('[useReportGenerator] Save exports API error:', data);
+          // Don't throw if we got partial exports back
+          if (data.exports && (data.exports.pdf || data.exports.pptx)) {
+            console.log('[useReportGenerator] Got partial exports despite error:', data.exports);
+          } else {
+            throw new Error(data.error || data.details || 'Failed to save exports');
+          }
+        }
 
         updateState({
           phase: 'completed',
