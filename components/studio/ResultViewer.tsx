@@ -41,6 +41,7 @@ import {
   Layers,
 } from 'lucide-react';
 import type { GenerationResult } from '@/hooks/useReportGenerator';
+import { PDFViewer } from './PDFViewer';
 
 interface ResultViewerProps {
   result: GenerationResult;
@@ -62,6 +63,17 @@ export function ResultViewer({
   const [copied, setCopied] = useState(false);
   const [shareEmail, setShareEmail] = useState('');
   const [shareMessage, setShareMessage] = useState('');
+  const [showPdfViewer, setShowPdfViewer] = useState(false);
+
+  const pdfUrl = result.exports?.pdf;
+
+  const handleDownloadPdf = () => {
+    if (pdfUrl) {
+      window.open(pdfUrl, '_blank');
+    } else {
+      onDownload?.('pdf');
+    }
+  };
 
   const shareUrl = result.url || `https://hakivo.com/gamma/${result.documentId}`;
 
@@ -138,9 +150,35 @@ export function ResultViewer({
         )}
 
         {/* Primary Actions */}
-        <div className="flex gap-2">
-          {result.url && (
-            <Button onClick={onViewInGamma} className="flex-1 gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* View PDF Button */}
+          {pdfUrl && (
+            <Dialog open={showPdfViewer} onOpenChange={setShowPdfViewer}>
+              <DialogTrigger asChild>
+                <Button className="gap-2">
+                  <Eye className="h-4 w-4" />
+                  View PDF
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl h-[80vh]">
+                <DialogHeader>
+                  <DialogTitle>{result.title || 'Document'}</DialogTitle>
+                </DialogHeader>
+                <div className="flex-1 overflow-hidden">
+                  <PDFViewer
+                    url={pdfUrl}
+                    title={result.title}
+                    onDownload={handleDownloadPdf}
+                    className="h-full"
+                  />
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* View in Gamma (fallback if no PDF) */}
+          {result.url && !pdfUrl && (
+            <Button onClick={onViewInGamma} className="gap-2">
               <ExternalLink className="h-4 w-4" />
               View in Gamma
             </Button>
@@ -155,28 +193,33 @@ export function ResultViewer({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => onDownload?.('pdf')}
-                disabled={!result.exports?.pdf}
-              >
+              <DropdownMenuItem onClick={handleDownloadPdf}>
                 <FileText className="h-4 w-4 mr-2" />
                 Download PDF
-                {!result.exports?.pdf && (
-                  <span className="ml-2 text-xs text-muted-foreground">(generating...)</span>
+                {!pdfUrl && (
+                  <span className="ml-2 text-xs text-muted-foreground">(click to generate)</span>
                 )}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onDownload?.('pptx')}
-                disabled={!result.exports?.pptx}
-              >
+              <DropdownMenuItem onClick={() => onDownload?.('pptx')}>
                 <Presentation className="h-4 w-4 mr-2" />
                 Download PowerPoint
                 {!result.exports?.pptx && (
-                  <span className="ml-2 text-xs text-muted-foreground">(generating...)</span>
+                  <span className="ml-2 text-xs text-muted-foreground">(click to generate)</span>
                 )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Save to Account */}
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => onDownload?.('pdf')}
+            title="Save document to your account"
+          >
+            <FileText className="h-4 w-4" />
+            Save
+          </Button>
 
           {/* Share dialog */}
           <Dialog>
