@@ -21,6 +21,8 @@ export async function POST(
     const { documentId } = await params;
     const body = await request.json();
 
+    console.log(`[API] Gamma save proxy: calling ${GAMMA_SERVICE_URL}/api/gamma/save/${documentId}`);
+
     const response = await fetch(`${GAMMA_SERVICE_URL}/api/gamma/save/${documentId}`, {
       method: 'POST',
       headers: {
@@ -30,9 +32,20 @@ export async function POST(
       body: JSON.stringify(body),
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error('[API] Gamma save proxy: non-JSON response:', text.substring(0, 500));
+      return NextResponse.json(
+        { error: 'Invalid response from gamma service', details: text.substring(0, 200) },
+        { status: 502 }
+      );
+    }
 
     if (!response.ok) {
+      console.error('[API] Gamma save proxy error response:', response.status, data);
       return NextResponse.json(data, { status: response.status });
     }
 
@@ -40,7 +53,7 @@ export async function POST(
   } catch (error) {
     console.error('[API] Gamma save proxy error:', error);
     return NextResponse.json(
-      { error: 'Failed to save exports' },
+      { error: 'Failed to save exports', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
