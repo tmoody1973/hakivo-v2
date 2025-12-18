@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS gamma_documents (
   -- Enrichment options used
   enrichment_options TEXT,  -- JSON of options used during generation
 
+  -- Request payload for background processing
+  -- request_payload TEXT,  -- Commented out - added by Raindrop's cached migration
+
   -- Generation status
   status TEXT DEFAULT 'pending',  -- pending, processing, completed, failed
   error_message TEXT,

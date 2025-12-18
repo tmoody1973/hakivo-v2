@@ -40,6 +40,7 @@ export interface Env {
   FEC_CLIENT: ServiceStub<import('../fec-client/index.js').default>;
   GAMMA_API_KEY: string;
   GAMMA_CLIENT: ServiceStub<import('../gamma-client/index.js').default>;
+  GAMMA_DB: SqlDatabase;
   GAMMA_SERVICE: ServiceStub<import('../gamma-service/index.js').default>;
   GEMINI_API_KEY: string;
   GEMINI_TTS_CLIENT: ServiceStub<import('../gemini-tts-client/index.js').default>;
