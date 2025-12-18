@@ -170,6 +170,15 @@ app.post('/api/gamma/generate', async (c) => {
     // Start Gamma generation
     const generation = await gammaClient.generate(gammaRequest);
 
+    // Validate that we got a generation ID back from Gamma API
+    if (!generation.id) {
+      console.error('[Gamma Service] Gamma API returned no generation ID:', generation);
+      return c.json({
+        error: 'Gamma API returned invalid response',
+        details: generation.error || 'No generation ID returned',
+      }, 502);
+    }
+
     // Create record in gamma database
     const docId = generateId();
     const now = Date.now();
@@ -334,6 +343,15 @@ app.post('/api/gamma/generate-enriched', async (c) => {
 
     // Start Gamma generation
     const generation = await gammaClient.generate(gammaRequest);
+
+    // Validate that we got a generation ID back from Gamma API
+    if (!generation.id) {
+      console.error('[Gamma Service] Gamma API returned no generation ID:', generation);
+      return c.json({
+        error: 'Gamma API returned invalid response',
+        details: generation.error || 'No generation ID returned',
+      }, 502);
+    }
 
     // Create record in gamma database
     const docId = generateId();
