@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 export const runtime = "edge";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://svc-01k66gywmx8x4r0w31fdjjfekf.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hakivo.com";
 
 async function getMemberData(bioguideId: string) {
