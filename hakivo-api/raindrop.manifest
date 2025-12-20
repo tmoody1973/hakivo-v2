@@ -313,6 +313,13 @@ application "hakivo-prod" {
     cron = "0 2 * * *"  // Daily at 2 AM UTC
   }
 
+  // Spreaker sync scheduler - uploads completed episodes to Spreaker
+  // Runs after podcast-scheduler and audio processing
+  task "spreaker-sync-scheduler" {
+    type = "cron"
+    cron = "0 4 * * *"  // Daily at 4 AM UTC
+  }
+
   // Admin utilities
   service "index-bills-service" {
     visibility = "public"
