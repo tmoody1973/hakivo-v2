@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 
 const DB_ADMIN_URL = process.env.DB_ADMIN_URL ||
-  'https://svc-01kbwj6m2fjpvfp9jj2xpefwqm.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  'https://svc-01kc6rbecv0s5k4yk6ksdaqyzq.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
