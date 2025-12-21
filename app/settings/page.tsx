@@ -463,8 +463,16 @@ function SettingsPageContent() {
           ));
           // Open the download in a new tab
           window.open(url, '_blank');
+        } else if (data.gammaUrl) {
+          // Export not available from API - offer to open Gamma directly
+          const openGamma = confirm(
+            `${format.toUpperCase()} export is not available for this document (it may have been created before export support was added).\n\nWould you like to open it in Gamma to download manually?`
+          );
+          if (openGamma) {
+            window.open(data.gammaUrl, '_blank');
+          }
         } else {
-          alert(`Failed to generate ${format.toUpperCase()} export. The file may not be available yet.`);
+          alert(`${format.toUpperCase()} export is not available. Please try regenerating the document.`);
         }
       } else {
         const error = await response.json();
