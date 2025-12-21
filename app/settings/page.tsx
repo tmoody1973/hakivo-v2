@@ -197,6 +197,8 @@ function SettingsPageContent() {
   });
   const [deletingGammaId, setDeletingGammaId] = useState<string | null>(null);
   const [sharingGammaId, setSharingGammaId] = useState<string | null>(null);
+  const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
+  const [downloadingFormat, setDownloadingFormat] = useState<'pdf' | 'pptx' | null>(null);
 
   // Load subscription status
   useEffect(() => {
@@ -421,6 +423,60 @@ function SettingsPageContent() {
       alert('Failed to update sharing status. Please try again.');
     } finally {
       setSharingGammaId(null);
+    }
+  };
+
+  // Handle downloading export (PDF or PPTX) from Gamma
+  const handleDownloadExport = async (doc: GammaDocument, format: 'pdf' | 'pptx') => {
+    if (!accessToken) return;
+
+    // If URL already exists, open directly
+    const existingUrl = format === 'pdf' ? doc.pdf_url : doc.pptx_url;
+    if (existingUrl) {
+      window.open(existingUrl, '_blank');
+      return;
+    }
+
+    // Fetch export URL from Gamma and save to database
+    setDownloadingExportId(doc.id);
+    setDownloadingFormat(format);
+    try {
+      const response = await fetch(`/api/gamma/save/${doc.id}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ exportFormats: [format] }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const url = format === 'pdf' ? data.exports?.pdf : data.exports?.pptx;
+
+        if (url) {
+          // Update local state with the new URL
+          setGammaDocuments(prev => prev.map(d =>
+            d.id === doc.id
+              ? { ...d, [format === 'pdf' ? 'pdf_url' : 'pptx_url']: url }
+              : d
+          ));
+          // Open the download in a new tab
+          window.open(url, '_blank');
+        } else {
+          alert(`Failed to generate ${format.toUpperCase()} export. The file may not be available yet.`);
+        }
+      } else {
+        const error = await response.json();
+        console.error('[Settings] Error downloading export:', error);
+        alert(`Failed to download ${format.toUpperCase()}. Please try again.`);
+      }
+    } catch (error) {
+      console.error('[Settings] Error downloading export:', error);
+      alert(`Failed to download ${format.toUpperCase()}. Please try again.`);
+    } finally {
+      setDownloadingExportId(null);
+      setDownloadingFormat(null);
     }
   };
 
@@ -1829,33 +1885,39 @@ function SettingsPageContent() {
                                 )}
 
                                 {/* Download PDF */}
-                                {doc.pdf_url && (
-                                  <a
-                                    href={doc.pdf_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="p-2 hover:bg-accent rounded-md"
-                                    title="Download PDF"
+                                {doc.status === 'completed' && (
+                                  <button
+                                    onClick={() => handleDownloadExport(doc, 'pdf')}
+                                    disabled={downloadingExportId === doc.id && downloadingFormat === 'pdf'}
+                                    className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
+                                    title={doc.pdf_url ? 'Download PDF' : 'Generate & Download PDF'}
                                   >
-                                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                  </a>
+                                    {downloadingExportId === doc.id && downloadingFormat === 'pdf' ? (
+                                      <div className="w-4 h-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent"></div>
+                                    ) : (
+                                      <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                    )}
+                                  </button>
                                 )}
 
                                 {/* Download PPTX */}
-                                {doc.pptx_url && (
-                                  <a
-                                    href={doc.pptx_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="p-2 hover:bg-accent rounded-md"
-                                    title="Download PowerPoint"
+                                {doc.status === 'completed' && (
+                                  <button
+                                    onClick={() => handleDownloadExport(doc, 'pptx')}
+                                    disabled={downloadingExportId === doc.id && downloadingFormat === 'pptx'}
+                                    className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
+                                    title={doc.pptx_url ? 'Download PowerPoint' : 'Generate & Download PowerPoint'}
                                   >
-                                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
-                                  </a>
+                                    {downloadingExportId === doc.id && downloadingFormat === 'pptx' ? (
+                                      <div className="w-4 h-4 animate-spin rounded-full border-2 border-orange-600 border-t-transparent"></div>
+                                    ) : (
+                                      <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                      </svg>
+                                    )}
+                                  </button>
                                 )}
 
                                 {/* Share Toggle */}
