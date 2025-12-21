@@ -432,18 +432,20 @@ export default class extends Service<Env> {
    *
    * @param generationId - The generation ID
    * @param format - Export format
-   * @returns Download URL
+   * @returns Download URL or null if not available
    */
-  async getExportUrl(generationId: string, format: GammaExportFormat): Promise<string> {
+  async getExportUrl(generationId: string, format: GammaExportFormat): Promise<string | null> {
     const status = await this.getStatus(generationId);
 
     if (status.status !== 'completed') {
-      throw new Error(`Cannot get export URL: generation is ${status.status}`);
+      console.log(`[GAMMA] Cannot get export URL: generation ${generationId} is ${status.status}`);
+      return null;
     }
 
     const url = status.exports?.[format];
     if (!url) {
-      throw new Error(`Export format ${format} not available for this generation`);
+      console.log(`[GAMMA] Export format ${format} not available for generation ${generationId}. Exports:`, status.exports);
+      return null;
     }
 
     return url;

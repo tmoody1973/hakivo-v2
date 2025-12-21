@@ -887,11 +887,21 @@ app.post('/api/gamma/save/:documentId', async (c) => {
       console.log(`[Gamma Service] Saved exports for document ${documentId}`);
     }
 
+    // Check if we were asked for formats we couldn't provide
+    const missingFormats = formatsToFetch.filter(f =>
+      (f === 'pdf' && !exports.pdf) || (f === 'pptx' && !exports.pptx)
+    );
+
     // Return whatever exports we have (cached or newly fetched)
     return c.json({
       success: true,
       documentId,
       exports,
+      gammaUrl: doc.gamma_url, // Include gamma URL as fallback
+      ...(missingFormats.length > 0 && {
+        message: `Export(s) not available from Gamma API. This document may have been created before export support was added. You can download directly from Gamma.`,
+        missingFormats,
+      }),
     });
   } catch (error) {
     console.error('[Gamma Service] Save error:', error);
