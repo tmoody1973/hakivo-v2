@@ -182,6 +182,7 @@ export default function StudioContent() {
     let url = format === 'pdf' ? exports?.pdf : exports?.pptx;
     const title = generationState.generationResult?.title || 'document';
     const filename = `${title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
+    const gammaUrl = generationState.generationResult?.url;
 
     // If URL is available, download it
     if (url) {
@@ -197,11 +198,21 @@ export default function StudioContent() {
       url = format === 'pdf' ? savedExports?.pdf : savedExports?.pptx;
       if (url) {
         await forceDownload(url, filename);
-      } else {
-        // Exports not ready yet - user can try again later
-        console.log(`[Studio] ${format.toUpperCase()} export not available yet`);
-        alert(`${format.toUpperCase()} export is not available yet. Please try again.`);
+        return;
       }
+    }
+
+    // If still no URL, offer Gamma fallback
+    console.log(`[Studio] ${format.toUpperCase()} export not available, offering Gamma fallback`);
+    if (gammaUrl) {
+      const openGamma = window.confirm(
+        `PDF export is not available for this document.\n\nWould you like to open it in Gamma where you can export manually?`
+      );
+      if (openGamma) {
+        window.open(gammaUrl, '_blank');
+      }
+    } else {
+      alert(`${format.toUpperCase()} export is not available. The document may need to be regenerated.`);
     }
   }, [generationState.generationResult, saveExports, forceDownload]);
 

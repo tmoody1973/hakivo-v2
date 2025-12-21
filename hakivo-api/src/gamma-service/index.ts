@@ -694,6 +694,12 @@ app.get('/api/gamma/status/:generationId', async (c) => {
     if (status.status === 'completed' || status.status === 'failed') {
       const now = Date.now();
 
+      // Also save PDF/PPTX URLs if available in exports
+      const pdfUrl = status.exports?.pdf || null;
+      const pptxUrl = status.exports?.pptx || null;
+
+      console.log(`[Gamma Service] Status ${status.status} for ${generationId}. Exports: pdf=${!!pdfUrl}, pptx=${!!pptxUrl}`);
+
       await gammaDb
         .prepare(`
           UPDATE gamma_documents SET
@@ -701,6 +707,8 @@ app.get('/api/gamma/status/:generationId', async (c) => {
             gamma_url = ?,
             gamma_thumbnail_url = ?,
             card_count = ?,
+            pdf_url = COALESCE(?, pdf_url),
+            pptx_url = COALESCE(?, pptx_url),
             error_message = ?,
             completed_at = ?,
             updated_at = ?
@@ -711,6 +719,8 @@ app.get('/api/gamma/status/:generationId', async (c) => {
           status.url || null,
           status.thumbnailUrl || null,
           status.cardCount || 0,
+          pdfUrl,
+          pptxUrl,
           status.error || null,
           status.status === 'completed' ? now : null,
           now,

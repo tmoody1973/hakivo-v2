@@ -1,10 +1,4 @@
-application "hakivo-prod" {
-
-  // TEMPORARILY DISABLED: payments block causes annotation-bucket SmartBucket creation which fails
-  // Re-enable after Raindrop fixes SmartBucket index creation
-  // payments {
-  //   mode = "test"
-  // }
+application "hakivo-new" {
 
   // Environment variables for API keys
   env "WORKOS_API_KEY" {
@@ -51,14 +45,6 @@ application "hakivo-prod" {
     secret = true
   }
 
-  env "OPENSTATES_API_KEY" {
-    secret = true
-  }
-
-  env "PERPLEXITY_API_KEY" {
-    secret = true
-  }
-
   env "VULTR_ENDPOINT" {
     secret = true
   }
@@ -72,58 +58,6 @@ application "hakivo-prod" {
   }
 
   env "VULTR_BUCKET_NAME" {
-    secret = true
-  }
-
-  env "INNGEST_EVENT_KEY" {
-    secret = true
-  }
-
-  env "INNGEST_SIGNING_KEY" {
-    secret = true
-  }
-
-  env "PEXELS_API_KEY" {
-    secret = true
-  }
-
-  env "FEC_API_KEY" {
-    secret = true
-  }
-
-  // Spreaker OAuth credentials for podcast distribution
-  env "SPREAKER_CLIENT_ID" {
-    secret = true
-  }
-
-  env "SPREAKER_CLIENT_SECRET" {
-    secret = true
-  }
-
-  env "SPREAKER_SHOW_ID" {
-    secret = true
-  }
-
-  env "SPREAKER_REDIRECT_URI" {
-    secret = true
-  }
-
-  // Resend API for email notifications and newsletters
-  env "RESEND_API_KEY" {
-    secret = true
-  }
-
-  // Stripe API keys for subscription payments
-  env "STRIPE_SECRET_KEY" {
-    secret = true
-  }
-
-  env "STRIPE_WEBHOOK_SECRET" {
-    secret = true
-  }
-
-  // Gamma API for professional document generation
-  env "GAMMA_API_KEY" {
     secret = true
   }
 
@@ -148,33 +82,13 @@ application "hakivo-prod" {
     visibility = "public"
   }
 
-  service "members-service" {
-    visibility = "public"
-  }
-
   service "admin-dashboard" {
     visibility = "public"
   }
 
   service "db-admin" {
-    visibility = "public"
+    visibility = "private"
   }
-
-  // Stripe webhook handler - must be public for Stripe to reach
-  service "stripe-webhook" {
-    visibility = "public"
-  }
-
-  // Subscription management API - handles status, checkout, portal, usage tracking
-  service "subscription-api" {
-    visibility = "public"
-  }
-
-  // Inngest webhook handler - disabled due to edge runtime compatibility issues
-  // The Inngest SDK has dependencies that don't work with Cloudflare Workers edge runtime
-  // service "inngest-service" {
-  //   visibility = "public"
-  // }
 
   // Private internal services
   service "user-service" {
@@ -205,40 +119,7 @@ application "hakivo-prod" {
     visibility = "private"
   }
 
-  service "openstates-client" {
-    visibility = "private"
-  }
-
   service "vultr-storage-client" {
-    visibility = "public"
-  }
-
-  service "gemini-tts-client" {
-    visibility = "private"
-  }
-
-  // Perplexity API client for news search with structured JSON output
-  service "perplexity-client" {
-    visibility = "private"
-  }
-
-  // FEC API client for campaign finance data
-  service "fec-client" {
-    visibility = "private"
-  }
-
-  // Gamma API client for professional document/presentation generation
-  service "gamma-client" {
-    visibility = "private"
-  }
-
-  // Gamma service - public API for document generation and management
-  service "gamma-service" {
-    visibility = "public"
-  }
-
-  // Podcast generator service for "100 Laws That Shaped America"
-  service "podcast-generator" {
     visibility = "private"
   }
 
@@ -258,12 +139,6 @@ application "hakivo-prod" {
   observer "enrichment-observer" {
     source {
       queue = "enrichment-queue"
-    }
-  }
-
-  observer "bill-indexing-observer" {
-    source {
-      queue = "bill-indexing-queue"
     }
   }
 
@@ -293,38 +168,6 @@ application "hakivo-prod" {
     cron = "0 6,18 * * *"
   }
 
-  // State legislation sync - runs daily for user states
-  // Fetches state bills from OpenStates API for active user states
-  task "state-sync-scheduler" {
-    type = "cron"
-    cron = "0 3 * * *"  // 3 AM daily (after congress sync at 2 AM)
-  }
-
-  // Audio retry task - processes script_ready briefs
-  // Uses 4-min fetch timeout, processes 1 brief per run
-  task "audio-retry-scheduler" {
-    type = "cron"
-    cron = "*/5 * * * *"  // Every 5 minutes
-  }
-
-  // Podcast generator scheduler - generates next "100 Laws" episode nightly
-  task "podcast-scheduler" {
-    type = "cron"
-    cron = "0 2 * * *"  // Daily at 2 AM UTC
-  }
-
-  // Spreaker sync scheduler - uploads completed episodes to Spreaker
-  // Runs after podcast-scheduler and audio processing
-  task "spreaker-sync-scheduler" {
-    type = "cron"
-    cron = "0 4 * * *"  // Daily at 4 AM UTC
-  }
-
-  // Admin utilities
-  service "index-bills-service" {
-    visibility = "public"
-  }
-
   // Message queues
   queue "brief-queue" {}
 
@@ -332,18 +175,8 @@ application "hakivo-prod" {
 
   queue "enrichment-queue" {}
 
-  queue "bill-indexing-queue" {}
-
   // SQL database for application data
   sql_database "app-db" {}
-
-  // Separate database for Gamma document generation
-  // Isolated to avoid migration cache issues with app-db
-  sql_database "gamma-db" {}
-
-  // SmartSQL for AI-powered natural language to SQL translation
-  // Enables direct textQuery for user questions like "show me healthcare bills"
-  smartsql "congressional-db" {}
 
   // KV caches for performance
   kv_cache "news-cache" {}
@@ -358,31 +191,8 @@ application "hakivo-prod" {
 
   kv_cache "actions-cache" {}
 
-  // Spreaker OAuth token storage
-  kv_cache "spreaker-tokens" {}
+  // SmartBuckets for storage with automatic search
+  smartbucket "bill-texts" {}
 
-  // Regular buckets for document storage
-  // NOTE: Cannot convert to SmartBuckets - existing buckets don't support index creation
-  // To enable semantic search later, create NEW SmartBuckets with different names
-  // bill-texts: stores full bill text for RAG retrieval
-  bucket "bill-texts" {}
-
-  // audio-briefs: stores generated audio files with metadata
-  bucket "audio-briefs" {}
-
-  // SmartBucket for semantic search on legislation
-  // Enables RAG and semantic search for congressional assistant and /legislation search
-  // Indexes bill metadata + full text from SQL bills table
-  smartbucket "legislation-search" {}
-
-  // SmartMemory for multi-layered AI memory (congressional assistant + briefs)
-  // Enables:
-  // - Working Memory: Active session context (current conversation, playback state)
-  // - Episodic Memory: Past session summaries, brief episodes (searchable history)
-  // - Semantic Memory: User civic knowledge profiles, preferences
-  // - Procedural Memory: System prompts, legislative expertise templates
-  smartmemory "civic_memory" {}
-
-  // KV cache for agent memory (legacy fallback - keep for backwards compatibility)
-  kv_cache "congressional_memory" {}
+  smartbucket "audio-briefs" {}
 }

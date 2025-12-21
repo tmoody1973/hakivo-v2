@@ -461,11 +461,36 @@ function SettingsPageContent() {
     }
   };
 
+  // Helper to get Gamma URL for a document (construct from generation ID if needed)
+  const getGammaUrl = (doc: GammaDocument): string | null => {
+    if (doc.gamma_url) return doc.gamma_url;
+    // Gamma URLs follow the pattern: https://gamma.app/docs/{generation_id}
+    if (doc.gamma_generation_id) {
+      return `https://gamma.app/docs/${doc.gamma_generation_id}`;
+    }
+    return null;
+  };
+
+  // Helper to open Gamma for manual PDF export
+  const offerGammaFallback = (doc: GammaDocument, reason: string) => {
+    const gammaUrl = getGammaUrl(doc);
+    if (gammaUrl) {
+      const openGamma = confirm(
+        `${reason}\n\nWould you like to open this document in Gamma where you can export/download it manually?`
+      );
+      if (openGamma) {
+        window.open(gammaUrl, '_blank');
+      }
+    } else {
+      alert(`${reason}\n\nNo Gamma URL is available for this document.`);
+    }
+  };
+
   // Handle downloading export (PDF) from Gamma
   const handleDownloadExport = async (doc: GammaDocument, format: 'pdf' | 'pptx') => {
     if (!accessToken) return;
 
-    console.log('[Settings] handleDownloadExport called:', { docId: doc.id, format, pdfUrl: doc.pdf_url, gammaUrl: doc.gamma_url });
+    console.log('[Settings] handleDownloadExport called:', { docId: doc.id, format, pdfUrl: doc.pdf_url, gammaUrl: doc.gamma_url, generationId: doc.gamma_generation_id });
 
     const filename = `${doc.title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
 
@@ -479,13 +504,8 @@ function SettingsPageContent() {
 
     // For "webpage" format documents, PDF export may not be available from Gamma
     // Offer to open in Gamma directly instead
-    if (doc.format === 'webpage' && doc.gamma_url) {
-      const openGamma = confirm(
-        'PDF export is not available for webpage-format documents.\n\nWould you like to open it in Gamma where you can export manually?'
-      );
-      if (openGamma) {
-        window.open(doc.gamma_url, '_blank');
-      }
+    if (doc.format === 'webpage') {
+      offerGammaFallback(doc, 'PDF export is not available for webpage-format documents.');
       return;
     }
 
@@ -519,46 +539,18 @@ function SettingsPageContent() {
           ));
           // Force download the file
           await forceDownload(url, filename);
-        } else if (data.gammaUrl || doc.gamma_url) {
-          // Export not available from API - offer to open Gamma directly
-          const gammaUrl = data.gammaUrl || doc.gamma_url;
-          const openGamma = confirm(
-            'PDF export is not available for this document (it may have been created before export support was added).\n\nWould you like to open it in Gamma to download manually?'
-          );
-          if (openGamma) {
-            window.open(gammaUrl, '_blank');
-          }
         } else {
-          alert('PDF export is not available. Please try creating a new document with the PDF export option enabled.');
+          // Export not available from API - offer to open Gamma directly
+          offerGammaFallback(doc, 'PDF export is not immediately available from the Gamma API.');
         }
       } else {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('[Settings] Error downloading export:', error);
-        // Even on error, offer to open in Gamma if we have the URL
-        if (doc.gamma_url) {
-          const openGamma = confirm(
-            'Failed to get PDF export. Would you like to open the document in Gamma instead?'
-          );
-          if (openGamma) {
-            window.open(doc.gamma_url, '_blank');
-          }
-        } else {
-          alert('Failed to download PDF. Please try again.');
-        }
+        offerGammaFallback(doc, 'Failed to get PDF export from the server.');
       }
     } catch (error) {
       console.error('[Settings] Error downloading export:', error);
-      // Even on error, offer to open in Gamma if we have the URL
-      if (doc.gamma_url) {
-        const openGamma = confirm(
-          'Failed to get PDF export. Would you like to open the document in Gamma instead?'
-        );
-        if (openGamma) {
-          window.open(doc.gamma_url, '_blank');
-        }
-      } else {
-        alert('Failed to download PDF. Please try again.');
-      }
+      offerGammaFallback(doc, 'An error occurred while fetching the PDF export.');
     } finally {
       setDownloadingExportId(null);
       setDownloadingFormat(null);
