@@ -43,7 +43,8 @@ export function PodcastWidget() {
 
   const fetchLatestEpisode = async () => {
     try {
-      const response = await fetch('/api/podcast?status=completed&limit=1');
+      // Use the /latest endpoint to get the most recently published episode
+      const response = await fetch('/api/podcast/latest');
 
       if (!response.ok) {
         setEpisode(null);
@@ -52,10 +53,8 @@ export function PodcastWidget() {
 
       const data = await response.json();
 
-      if (data.success && data.episodes && data.episodes.length > 0) {
-        // Sort by episode number descending and select the newest
-        const sorted = [...data.episodes].sort((a: PodcastEpisode, b: PodcastEpisode) => b.episodeNumber - a.episodeNumber);
-        setEpisode(sorted[0]);
+      if (data.success && data.episode) {
+        setEpisode(data.episode);
       } else {
         setEpisode(null);
       }
