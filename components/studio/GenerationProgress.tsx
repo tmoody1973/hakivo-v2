@@ -272,16 +272,10 @@ export function GenerationProgress({
                 </Button>
               )}
               {onDownload && (
-                <>
-                  <Button variant="outline" onClick={() => onDownload('pdf')} className="gap-2">
-                    <Download className="h-4 w-4" />
-                    PDF
-                  </Button>
-                  <Button variant="outline" onClick={() => onDownload('pptx')} className="gap-2">
-                    <Download className="h-4 w-4" />
-                    PowerPoint
-                  </Button>
-                </>
+                <Button variant="outline" onClick={() => onDownload('pdf')} className="gap-2">
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </Button>
               )}
             </div>
           </div>

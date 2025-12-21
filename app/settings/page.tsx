@@ -426,14 +426,66 @@ function SettingsPageContent() {
     }
   };
 
-  // Handle downloading export (PDF or PPTX) from Gamma
+  // Force download a file from URL
+  const forceDownload = async (url: string, filename: string) => {
+    console.log('[Settings] Starting download:', { url, filename });
+    try {
+      // Try using the download proxy to avoid CORS issues
+      const proxyUrl = `/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+      console.log('[Settings] Using download proxy:', proxyUrl);
+
+      const response = await fetch(proxyUrl);
+      console.log('[Settings] Proxy response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`Proxy failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      console.log('[Settings] Blob created, size:', blob.size);
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      console.log('[Settings] Download triggered successfully');
+    } catch (error) {
+      console.error('[Settings] Download failed:', error);
+      // Fallback to opening in new tab
+      console.log('[Settings] Falling back to opening in new tab');
+      window.open(url, '_blank');
+    }
+  };
+
+  // Handle downloading export (PDF) from Gamma
   const handleDownloadExport = async (doc: GammaDocument, format: 'pdf' | 'pptx') => {
     if (!accessToken) return;
 
-    // If URL already exists, open directly
+    console.log('[Settings] handleDownloadExport called:', { docId: doc.id, format, pdfUrl: doc.pdf_url, gammaUrl: doc.gamma_url });
+
+    const filename = `${doc.title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
+
+    // If URL already exists, download directly
     const existingUrl = format === 'pdf' ? doc.pdf_url : doc.pptx_url;
     if (existingUrl) {
-      window.open(existingUrl, '_blank');
+      console.log('[Settings] Using existing URL:', existingUrl);
+      await forceDownload(existingUrl, filename);
+      return;
+    }
+
+    // For "webpage" format documents, PDF export may not be available from Gamma
+    // Offer to open in Gamma directly instead
+    if (doc.format === 'webpage' && doc.gamma_url) {
+      const openGamma = confirm(
+        'PDF export is not available for webpage-format documents.\n\nWould you like to open it in Gamma where you can export manually?'
+      );
+      if (openGamma) {
+        window.open(doc.gamma_url, '_blank');
+      }
       return;
     }
 
@@ -441,6 +493,7 @@ function SettingsPageContent() {
     setDownloadingExportId(doc.id);
     setDownloadingFormat(format);
     try {
+      console.log('[Settings] Fetching export from API...');
       const response = await fetch(`/api/gamma/save/${doc.id}`, {
         method: 'POST',
         headers: {
@@ -450,8 +503,11 @@ function SettingsPageContent() {
         body: JSON.stringify({ exportFormats: [format] }),
       });
 
+      console.log('[Settings] API response status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('[Settings] API response data:', data);
         const url = format === 'pdf' ? data.exports?.pdf : data.exports?.pptx;
 
         if (url) {
@@ -461,27 +517,48 @@ function SettingsPageContent() {
               ? { ...d, [format === 'pdf' ? 'pdf_url' : 'pptx_url']: url }
               : d
           ));
-          // Open the download in a new tab
-          window.open(url, '_blank');
-        } else if (data.gammaUrl) {
+          // Force download the file
+          await forceDownload(url, filename);
+        } else if (data.gammaUrl || doc.gamma_url) {
           // Export not available from API - offer to open Gamma directly
+          const gammaUrl = data.gammaUrl || doc.gamma_url;
           const openGamma = confirm(
-            `${format.toUpperCase()} export is not available for this document (it may have been created before export support was added).\n\nWould you like to open it in Gamma to download manually?`
+            'PDF export is not available for this document (it may have been created before export support was added).\n\nWould you like to open it in Gamma to download manually?'
           );
           if (openGamma) {
-            window.open(data.gammaUrl, '_blank');
+            window.open(gammaUrl, '_blank');
           }
         } else {
-          alert(`${format.toUpperCase()} export is not available. Please try regenerating the document.`);
+          alert('PDF export is not available. Please try creating a new document with the PDF export option enabled.');
         }
       } else {
-        const error = await response.json();
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('[Settings] Error downloading export:', error);
-        alert(`Failed to download ${format.toUpperCase()}. Please try again.`);
+        // Even on error, offer to open in Gamma if we have the URL
+        if (doc.gamma_url) {
+          const openGamma = confirm(
+            'Failed to get PDF export. Would you like to open the document in Gamma instead?'
+          );
+          if (openGamma) {
+            window.open(doc.gamma_url, '_blank');
+          }
+        } else {
+          alert('Failed to download PDF. Please try again.');
+        }
       }
     } catch (error) {
       console.error('[Settings] Error downloading export:', error);
-      alert(`Failed to download ${format.toUpperCase()}. Please try again.`);
+      // Even on error, offer to open in Gamma if we have the URL
+      if (doc.gamma_url) {
+        const openGamma = confirm(
+          'Failed to get PDF export. Would you like to open the document in Gamma instead?'
+        );
+        if (openGamma) {
+          window.open(doc.gamma_url, '_blank');
+        }
+      } else {
+        alert('Failed to download PDF. Please try again.');
+      }
     } finally {
       setDownloadingExportId(null);
       setDownloadingFormat(null);
@@ -1905,24 +1982,6 @@ function SettingsPageContent() {
                                     ) : (
                                       <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
-                                    )}
-                                  </button>
-                                )}
-
-                                {/* Download PPTX */}
-                                {doc.status === 'completed' && (
-                                  <button
-                                    onClick={() => handleDownloadExport(doc, 'pptx')}
-                                    disabled={downloadingExportId === doc.id && downloadingFormat === 'pptx'}
-                                    className="p-2 hover:bg-accent rounded-md disabled:opacity-50"
-                                    title={doc.pptx_url ? 'Download PowerPoint' : 'Generate & Download PowerPoint'}
-                                  >
-                                    {downloadingExportId === doc.id && downloadingFormat === 'pptx' ? (
-                                      <div className="w-4 h-4 animate-spin rounded-full border-2 border-orange-600 border-t-transparent"></div>
-                                    ) : (
-                                      <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                       </svg>
                                     )}
                                   </button>

@@ -141,14 +141,51 @@ export default function StudioContent() {
     }
   }, [generationState.generationResult]);
 
+  // Force download a file from URL
+  const forceDownload = useCallback(async (url: string, filename: string) => {
+    console.log('[Studio] Starting download:', { url, filename });
+    try {
+      // Use download proxy to avoid CORS issues
+      const proxyUrl = `/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+      console.log('[Studio] Using download proxy:', proxyUrl);
+
+      const response = await fetch(proxyUrl);
+      console.log('[Studio] Proxy response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`Proxy failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      console.log('[Studio] Blob created, size:', blob.size);
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      console.log('[Studio] Download triggered successfully');
+    } catch (error) {
+      console.error('[Studio] Download failed:', error);
+      // Fallback to opening in new tab
+      console.log('[Studio] Falling back to opening in new tab');
+      window.open(url, '_blank');
+    }
+  }, []);
+
   // Download export
   const handleDownload = useCallback(async (format: 'pdf' | 'pptx') => {
     const exports = generationState.generationResult?.exports;
     let url = format === 'pdf' ? exports?.pdf : exports?.pptx;
+    const title = generationState.generationResult?.title || 'document';
+    const filename = `${title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
 
-    // If URL is available, open it directly
+    // If URL is available, download it
     if (url) {
-      window.open(url, '_blank');
+      await forceDownload(url, filename);
       return;
     }
 
@@ -159,13 +196,14 @@ export default function StudioContent() {
       const savedExports = await saveExports(documentId, [format]);
       url = format === 'pdf' ? savedExports?.pdf : savedExports?.pptx;
       if (url) {
-        window.open(url, '_blank');
+        await forceDownload(url, filename);
       } else {
         // Exports not ready yet - user can try again later
         console.log(`[Studio] ${format.toUpperCase()} export not available yet`);
+        alert(`${format.toUpperCase()} export is not available yet. Please try again.`);
       }
     }
-  }, [generationState.generationResult, saveExports]);
+  }, [generationState.generationResult, saveExports, forceDownload]);
 
   // Show loading state while checking auth
   if (authLoading) {
