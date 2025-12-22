@@ -51,10 +51,14 @@ export async function POST(request: NextRequest) {
     };
     gammaRequest.sharingOptions = sharingOptions;
 
-    console.log('[API] Calling Gamma API with request:', JSON.stringify({
+    // Log the FULL request for debugging (mask long text)
+    const debugRequest = {
       ...gammaRequest,
-      inputText: `${enrichedText.substring(0, 100)}... (${enrichedText.length} chars)`,
-    }));
+      inputText: `[${enrichedText.length} chars]`,
+    };
+    console.log('[API] FULL Gamma API request:', JSON.stringify(debugRequest));
+    console.log('[API] exportAs value:', gammaRequest.exportAs);
+    console.log('[API] format value:', gammaRequest.format);
 
     // Call Gamma API directly
     const response = await fetch(`${GAMMA_API_BASE}/generations`, {

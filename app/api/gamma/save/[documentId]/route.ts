@@ -3,9 +3,52 @@ import { NextRequest, NextResponse } from 'next/server';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
+ * Helper to fetch generation status with retry for exports
+ */
+async function fetchWithRetry(
+  generationId: string,
+  apiKey: string,
+  maxRetries: number = 3,
+  delayMs: number = 2000
+): Promise<{ status: string; exports?: { pdf?: string; pptx?: string }; url?: string; [key: string]: unknown }> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+      method: 'GET',
+      headers: { 'X-API-KEY': apiKey },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gamma API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log(`[API] Attempt ${attempt + 1}: status=${result.status}, exports=${JSON.stringify(result.exports)}, url=${result.url}`);
+
+    // Log full response on first attempt for debugging
+    if (attempt === 0) {
+      console.log('[API] Full Gamma response:', JSON.stringify(result));
+    }
+
+    // If we have exports, return immediately
+    if (result.exports && (result.exports.pdf || result.exports.pptx)) {
+      return result;
+    }
+
+    // If status is completed but no exports, wait and retry
+    if (result.status === 'completed' && attempt < maxRetries - 1) {
+      console.log(`[API] No exports yet, waiting ${delayMs}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    } else {
+      return result;
+    }
+  }
+
+  throw new Error('Max retries exceeded');
+}
+
+/**
  * POST /api/gamma/save/[documentId]
- * Get export URLs directly from Gamma API
- * (documentId is actually the generationId when calling Gamma directly)
+ * Get export URLs directly from Gamma API with retry logic
  */
 export async function POST(
   request: NextRequest,
@@ -29,26 +72,8 @@ export async function POST(
 
     console.log(`[API] Getting exports for generation: ${documentId}, formats: ${requestedFormats.join(', ')}`);
 
-    // Get generation status from Gamma API
-    const response = await fetch(`${GAMMA_API_BASE}/generations/${documentId}`, {
-      method: 'GET',
-      headers: {
-        'X-API-KEY': gammaApiKey,
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[API] Gamma status error:', response.status, errorText);
-      return NextResponse.json(
-        { error: 'Failed to get generation status', details: errorText },
-        { status: response.status }
-      );
-    }
-
-    const result = await response.json();
-    console.log('[API] Gamma generation status:', result.status);
-    console.log('[API] Gamma exports:', JSON.stringify(result.exports));
+    // Fetch with retry logic for exports
+    const result = await fetchWithRetry(documentId, gammaApiKey, 3, 3000);
 
     if (result.status !== 'completed') {
       return NextResponse.json({
@@ -65,14 +90,15 @@ export async function POST(
     const missingFormats: string[] = [];
 
     for (const format of requestedFormats) {
-      if (result.exports?.[format]) {
-        exports[format as 'pdf' | 'pptx'] = result.exports[format];
+      const exportUrl = result.exports?.[format as keyof typeof result.exports];
+      if (exportUrl) {
+        exports[format as 'pdf' | 'pptx'] = exportUrl as string;
       } else {
         missingFormats.push(format);
       }
     }
 
-    console.log('[API] Returning exports:', JSON.stringify(exports));
+    console.log('[API] Final exports:', JSON.stringify(exports));
 
     return NextResponse.json({
       success: true,
@@ -80,7 +106,7 @@ export async function POST(
       exports,
       gammaUrl: result.url,
       ...(missingFormats.length > 0 && {
-        message: `Export format(s) not available: ${missingFormats.join(', ')}. The document may need to be regenerated with export support.`,
+        message: `Export format(s) not available: ${missingFormats.join(', ')}. The generation may not have included exportAs parameter.`,
         missingFormats,
       }),
     });
