@@ -267,9 +267,9 @@ export function useReportGenerator() {
           message: 'Enriching content with external data...',
         });
 
-        // Use async enqueue-enriched flow for background processing (15-min timeout)
-        // This allows full enrichment without Netlify's 10-second timeout
-        const enqueueResponse = await fetch('/api/gamma/enqueue-enriched', {
+        // Use synchronous generate-enriched endpoint
+        // This calls Gamma API directly and returns generationId
+        const generateResponse = await fetch('/api/gamma/generate-enriched', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -284,33 +284,23 @@ export function useReportGenerator() {
           signal: abortControllerRef.current.signal,
         });
 
-        if (!enqueueResponse.ok) {
-          const errorData = await enqueueResponse.json();
+        if (!generateResponse.ok) {
+          const errorData = await generateResponse.json();
           const errorDetails = errorData.details ? `: ${errorData.details}` : '';
-          throw new Error((errorData.error || 'Failed to enqueue') + errorDetails);
+          throw new Error((errorData.error || 'Failed to generate') + errorDetails);
         }
 
-        const enqueueData = await enqueueResponse.json();
+        const generateData = await generateResponse.json();
 
         updateState({
-          phase: 'enriching',
-          progress: 20,
-          message: 'Document queued. Starting background enrichment...',
-          generationResult: enqueueData,
+          phase: 'processing',
+          progress: 40,
+          message: 'Document generation started. Waiting for Gamma...',
+          generationResult: generateData,
         });
 
-        // Trigger the Netlify background function to process the document
-        // Background functions have 15-minute timeout for full enrichment
-        fetch('/.netlify/functions/gamma-processor-background', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        }).catch(() => {
-          // Fire and forget - background function polls database
-          console.log('[useReportGenerator] Background function triggered');
-        });
-
-        // Poll for completion using document status endpoint
-        return await pollForDocumentCompletion(enqueueData.documentId);
+        // Poll for completion using generation ID
+        return await pollForCompletion(generateData.generationId, generateData.documentId);
       } catch (error) {
         if ((error as Error).name === 'AbortError') {
           return null;
