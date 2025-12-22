@@ -26,10 +26,8 @@ const VOICE_PAIRS = [
 // Fixed voice pair for podcast episodes (consistent branding)
 const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David' };
 
-// Flash for daily briefs (cost-efficient, shorter content)
-const GEMINI_FLASH_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent';
-// Pro for podcasts (higher quality, structured multi-speaker content)
-const GEMINI_PRO_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-tts:generateContent';
+// Gemini Pro TTS for all audio generation
+const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-tts:generateContent';
 
 // Raindrop service URLs (hakivo-prod @01kc6cdq deployment)
 // Admin-dashboard service for database queries (uses /api/database/query)
@@ -403,9 +401,9 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
       return;
     }
 
-    // Call Gemini Flash TTS API (cost-efficient for daily briefs)
-    console.log('[AUDIO] Calling Gemini Flash TTS API...');
-    const ttsResponse = await fetch(`${GEMINI_FLASH_TTS_ENDPOINT}?key=${geminiApiKey}`, {
+    // Call Gemini Pro TTS API
+    console.log('[AUDIO] Calling Gemini Pro TTS API...');
+    const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -533,8 +531,7 @@ async function generateAudioChunk(
 ): Promise<Buffer | null> {
   console.log(`[AUDIO] Processing chunk ${chunkIndex + 1}, length: ${dialogueChunk.length} chars`);
 
-  // Use Pro model for podcasts (higher quality structured content)
-  const ttsResponse = await fetch(`${GEMINI_PRO_TTS_ENDPOINT}?key=${geminiApiKey}`, {
+  const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
