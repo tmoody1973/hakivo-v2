@@ -8,29 +8,35 @@ const RATE_LIMIT_KEY = 'netlify_audio_trigger_last_run';
 const RATE_LIMIT_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes between trigger attempts
 
 /**
- * Netlify Background Function URL
+ * Netlify Background Function URLs
  * Background functions have 15-minute timeout (vs 30s for Raindrop Tasks)
  */
 const NETLIFY_AUDIO_FUNCTION_URL = 'https://hakivo-v2.netlify.app/.netlify/functions/audio-processor-background';
+const NETLIFY_IMAGE_FUNCTION_URL = 'https://hakivo-v2.netlify.app/.netlify/functions/image-processor-background';
 
 /**
- * Audio Retry Scheduler - Netlify Background Function Trigger
+ * Audio & Image Retry Scheduler - Netlify Background Function Trigger
  *
- * Runs every 5 minutes to check if there are briefs pending audio generation.
- * Instead of processing audio directly (which times out), this scheduler
- * triggers the Netlify Background Function which has a 15-minute timeout.
+ * Runs every 5 minutes to check if there are briefs pending processing.
+ * Instead of processing directly (which times out), this scheduler
+ * triggers Netlify Background Functions which have a 15-minute timeout.
  *
- * The Netlify Background Function:
- * - Polls the database for briefs with status='script_ready'
- * - Calls Gemini TTS API (can take 60-90+ seconds)
- * - Uploads audio to Vultr storage
- * - Updates brief status
+ * Triggers two Netlify Background Functions:
+ * 1. audio-processor-background:
+ *    - Polls for briefs/podcasts with status='script_ready'
+ *    - Calls Gemini TTS API (can take 60-90+ seconds)
+ *    - Uploads audio to Vultr storage
  *
- * Schedule: Every 5 minutes (cron: 0/5 * * * *)
+ * 2. image-processor-background:
+ *    - Polls for briefs with missing featured_image
+ *    - Generates WSJ-style editorial sketch images using Gemini
+ *    - Uploads images to Vultr storage
+ *
+ * Schedule: Every 5 minutes (cron: */5 * * * *)
  */
 export default class extends Task<Env> {
   async handle(_event: Event): Promise<void> {
-    console.log('🎧 [AUDIO-RETRY] Checking for briefs pending audio generation');
+    console.log('🎧 [MEDIA-RETRY] Checking for briefs pending audio/image generation');
 
     try {
       // Check rate limit cooldown to avoid triggering too frequently
@@ -157,10 +163,27 @@ export default class extends Task<Env> {
       });
 
       if (response.ok || response.status === 202) {
-        console.log(`✅ [AUDIO-RETRY] Netlify background function triggered successfully (${response.status})`);
+        console.log(`✅ [AUDIO-RETRY] Netlify audio function triggered successfully (${response.status})`);
       } else {
         const errorText = await response.text();
-        console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify function: ${response.status} - ${errorText}`);
+        console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify audio function: ${response.status} - ${errorText}`);
+      }
+
+      // Also trigger image processor for briefs needing featured images
+      console.log(`🖼️ [AUDIO-RETRY] Triggering Netlify image processor...`);
+      const imageResponse = await fetch(NETLIFY_IMAGE_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ trigger: 'raindrop-scheduler' }),
+      });
+
+      if (imageResponse.ok || imageResponse.status === 202) {
+        console.log(`✅ [AUDIO-RETRY] Netlify image function triggered successfully (${imageResponse.status})`);
+      } else {
+        const errorText = await imageResponse.text();
+        console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify image function: ${imageResponse.status} - ${errorText}`);
       }
 
     } catch (error) {
