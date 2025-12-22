@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const GAMMA_SERVICE_URL = process.env.NEXT_PUBLIC_GAMMA_SERVICE_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  'https://svc-01kcp5rv55e6psxh5ht7byqrgd.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
  * GET /api/gamma/status/[generationId]
- * Proxy to Raindrop gamma-service to poll generation status
+ * Call Gamma API directly to poll generation status
  */
 export async function GET(
   request: NextRequest,
@@ -18,24 +16,59 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const gammaApiKey = process.env.GAMMA_API_KEY;
+    if (!gammaApiKey) {
+      console.error('[API] GAMMA_API_KEY not configured');
+      return NextResponse.json({ error: 'Gamma API not configured' }, { status: 500 });
+    }
+
     const { generationId } = await params;
 
-    const response = await fetch(`${GAMMA_SERVICE_URL}/api/gamma/status/${generationId}`, {
+    console.log('[API] Checking Gamma status for:', generationId);
+
+    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       method: 'GET',
       headers: {
-        'Authorization': authHeader,
+        'X-API-KEY': gammaApiKey,
       },
     });
 
-    const data = await response.json();
+    const responseText = await response.text();
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+      console.error('[API] Gamma status error:', response.status, responseText);
+      return NextResponse.json(
+        { error: 'Gamma API error', details: responseText },
+        { status: response.status }
+      );
     }
 
-    return NextResponse.json(data);
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      console.error('[API] Failed to parse Gamma status response:', responseText);
+      return NextResponse.json(
+        { error: 'Invalid Gamma API response' },
+        { status: 502 }
+      );
+    }
+
+    console.log('[API] Gamma status:', result.status, 'exports:', JSON.stringify(result.exports));
+
+    return NextResponse.json({
+      success: true,
+      generationId: result.id || generationId,
+      status: result.status,
+      url: result.url,
+      thumbnailUrl: result.thumbnailUrl,
+      title: result.title,
+      cardCount: result.cardCount,
+      exports: result.exports,
+      error: result.error,
+    });
   } catch (error) {
-    console.error('[API] Gamma status proxy error:', error);
+    console.error('[API] Gamma status error:', error);
     return NextResponse.json(
       { error: 'Failed to check status' },
       { status: 500 }

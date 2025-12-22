@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const GAMMA_SERVICE_URL = process.env.NEXT_PUBLIC_GAMMA_SERVICE_URL ||
-  'https://svc-01kcp5rv55e6psxh5ht7byqrgd.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
  * POST /api/gamma/generate-enriched
- * Proxy to Raindrop gamma-service to generate a Gamma document with enrichment
+ * Call Gamma API directly (bypassing Raindrop for faster iteration)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -15,44 +14,108 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const { artifact, gammaOptions, title } = body;
 
-    const response = await fetch(`${GAMMA_SERVICE_URL}/api/gamma/generate-enriched`, {
+    if (!artifact?.content) {
+      return NextResponse.json({ error: 'artifact.content is required' }, { status: 400 });
+    }
+
+    const gammaApiKey = process.env.GAMMA_API_KEY;
+    if (!gammaApiKey) {
+      console.error('[API] GAMMA_API_KEY not configured');
+      return NextResponse.json({ error: 'Gamma API not configured' }, { status: 500 });
+    }
+
+    // Build enriched text (simple version - no external enrichment for now)
+    const enrichedText = `# ${title || artifact.title}\n\n${artifact.content}`;
+
+    // Build Gamma API request - matching the exact structure from Gamma docs
+    const gammaRequest: Record<string, unknown> = {
+      inputText: enrichedText,
+      textMode: gammaOptions?.textMode || 'generate',
+      cardSplit: 'auto',
+      format: gammaOptions?.format || 'document', // Default to document (supports PDF)
+      exportAs: gammaOptions?.exportAs || 'pdf', // Default to PDF export
+    };
+
+    // Add optional fields
+    if (gammaOptions?.themeId) gammaRequest.themeId = gammaOptions.themeId;
+    if (gammaOptions?.numCards) gammaRequest.numCards = gammaOptions.numCards;
+    if (gammaOptions?.textOptions) gammaRequest.textOptions = gammaOptions.textOptions;
+    if (gammaOptions?.imageOptions) gammaRequest.imageOptions = gammaOptions.imageOptions;
+
+    // Build sharingOptions nested object (per Gamma API spec)
+    const sharingOptions: Record<string, unknown> = {
+      workspaceAccess: 'fullAccess',
+      externalAccess: 'view',
+    };
+    gammaRequest.sharingOptions = sharingOptions;
+
+    console.log('[API] Calling Gamma API with request:', JSON.stringify({
+      ...gammaRequest,
+      inputText: `${enrichedText.substring(0, 100)}... (${enrichedText.length} chars)`,
+    }));
+
+    // Call Gamma API directly
+    const response = await fetch(`${GAMMA_API_BASE}/generations`, {
       method: 'POST',
       headers: {
+        'X-API-KEY': gammaApiKey,
         'Content-Type': 'application/json',
-        'Authorization': authHeader,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(gammaRequest),
     });
 
-    // Check content type to avoid parsing HTML as JSON
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      const text = await response.text();
-      console.error('[API] Gamma service returned non-JSON:', text.substring(0, 200));
+    const responseText = await response.text();
+    console.log('[API] Gamma API response status:', response.status);
+    console.log('[API] Gamma API response:', responseText.substring(0, 500));
+
+    if (!response.ok) {
+      console.error('[API] Gamma API error:', responseText);
       return NextResponse.json(
-        { error: 'Gamma service unavailable', details: `Service returned ${response.status}` },
+        { error: 'Gamma API error', details: responseText },
+        { status: response.status }
+      );
+    }
+
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      console.error('[API] Failed to parse Gamma response:', responseText);
+      return NextResponse.json(
+        { error: 'Invalid Gamma API response', details: responseText },
         { status: 502 }
       );
     }
 
-    const data = await response.json();
+    // Gamma API returns 'generationId', normalize to 'id'
+    const generationId = result.generationId || result.id;
 
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    if (!generationId) {
+      console.error('[API] No generation ID in Gamma response:', result);
+      return NextResponse.json(
+        { error: 'No generation ID returned', details: JSON.stringify(result) },
+        { status: 502 }
+      );
     }
 
-    return NextResponse.json(data);
+    console.log('[API] Gamma generation started:', generationId);
+
+    // Return the generation ID for polling
+    // Note: We're not saving to database since we're bypassing Raindrop
+    // The frontend will poll /api/gamma/status/:generationId directly
+    return NextResponse.json({
+      success: true,
+      documentId: generationId, // Use generation ID as document ID for now
+      generationId: generationId,
+      status: result.status || 'pending',
+    });
   } catch (error) {
-    console.error('[API] Gamma generate-enriched proxy error:', error);
+    console.error('[API] Gamma generate-enriched error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorName = error instanceof Error ? error.name : 'Error';
     return NextResponse.json(
-      {
-        error: 'Failed to generate enriched document',
-        details: errorMessage,
-        type: errorName,
-      },
+      { error: 'Failed to generate document', details: errorMessage },
       { status: 500 }
     );
   }
