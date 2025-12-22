@@ -16,6 +16,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { artifact, gammaOptions, title } = body;
 
+    // Log incoming request from frontend
+    console.log('[API] Incoming gammaOptions from frontend:', JSON.stringify(gammaOptions));
+
     if (!artifact?.content) {
       return NextResponse.json({ error: 'artifact.content is required' }, { status: 400 });
     }
@@ -72,7 +75,7 @@ export async function POST(request: NextRequest) {
 
     const responseText = await response.text();
     console.log('[API] Gamma API response status:', response.status);
-    console.log('[API] Gamma API response:', responseText.substring(0, 500));
+    console.log('[API] Gamma API FULL response:', responseText);
 
     if (!response.ok) {
       console.error('[API] Gamma API error:', responseText);
