@@ -567,9 +567,50 @@ app.get('/api/gamma/document-status/:documentId', async (c) => {
     }
 
     // Build exports object if URLs are available
+    let pdfUrl = doc.pdf_url as string | null;
+    let pptxUrl = doc.pptx_url as string | null;
+
+    // If status is completed but we don't have export URLs, try to fetch them from Gamma
+    if (doc.status === 'completed' && doc.gamma_generation_id && (!pdfUrl || !pptxUrl)) {
+      try {
+        const gammaClient = c.env.GAMMA_CLIENT;
+        const status = await gammaClient.getStatus(doc.gamma_generation_id as string);
+
+        if (status.exports) {
+          const newPdfUrl = status.exports.pdf || null;
+          const newPptxUrl = status.exports.pptx || null;
+
+          // Update database with export URLs if we got new ones
+          if ((newPdfUrl && !pdfUrl) || (newPptxUrl && !pptxUrl)) {
+            const now = Date.now();
+            await gammaDb
+              .prepare(`
+                UPDATE gamma_documents SET
+                  pdf_url = COALESCE(?, pdf_url),
+                  pptx_url = COALESCE(?, pptx_url),
+                  gamma_url = COALESCE(?, gamma_url),
+                  updated_at = ?
+                WHERE id = ?
+              `)
+              .bind(newPdfUrl, newPptxUrl, status.url || null, now, documentId)
+              .run();
+
+            console.log(`[Gamma Service] Fetched and saved exports for ${documentId}: pdf=${!!newPdfUrl}, pptx=${!!newPptxUrl}`);
+
+            // Use new URLs
+            if (newPdfUrl) pdfUrl = newPdfUrl;
+            if (newPptxUrl) pptxUrl = newPptxUrl;
+          }
+        }
+      } catch (fetchError) {
+        console.error('[Gamma Service] Failed to fetch exports from Gamma:', fetchError);
+        // Continue with whatever we have in database
+      }
+    }
+
     const exports: { pdf?: string; pptx?: string } = {};
-    if (doc.pdf_url) exports.pdf = doc.pdf_url as string;
-    if (doc.pptx_url) exports.pptx = doc.pptx_url as string;
+    if (pdfUrl) exports.pdf = pdfUrl;
+    if (pptxUrl) exports.pptx = pptxUrl;
 
     return c.json({
       success: true,

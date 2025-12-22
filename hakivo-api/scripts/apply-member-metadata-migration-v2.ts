@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+ #!/usr/bin/env tsx
 
 /**
  * Apply Member Metadata Migration v2

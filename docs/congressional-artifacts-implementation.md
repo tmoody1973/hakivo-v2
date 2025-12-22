@@ -1,4 +1,4 @@
-# Congressional Artifacts: Document Generation System
+1# Congressional Artifacts: Document Generation System
 
 **Purpose:** Enable journalists, advocacy groups, educators, and students to create professional documents, reports, and presentations from the Congressional Assistant using Thesys.dev Artifacts
 **Date:** December 2025

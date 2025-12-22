@@ -9,13 +9,12 @@
 Hakivo is a comprehensive civic intelligence platform that connects citizens with their government at both federal and state levels. The platform provides:
 
 - **Personalized Daily Briefings** - AI-generated audio briefings tailored to your policy interests
-- **100 Laws That Shaped America Podcast** - Daily AI-generated episodes exploring landmark legislation, auto-published to Spreaker
+- **100 Laws That Shaped America Podcast** - Weekly AI-generated episodes exploring landmark legislation, auto-published to Spreaker
 - **Federal & State Bill Tracking** - Monitor legislation from Congress and your state legislature
 - **AI-Powered Bill Analysis** - Deep forensic analysis of bills using Claude AI with extended thinking
 - **Personalized News Feed** - News aggregated from Perplexity AI based on your policy interests
 - **Find Your Representatives** - Discover your federal and state legislators based on your location
-- **AI Congressional Assistant (C1)** - Advanced conversational AI with real-time tool calling, rich artifact generation, and shareable conversations
-- **Social Sharing** - Share bills, briefs, and representative profiles with dynamic Open Graph images
+- **AI Chat** - Ask questions about bills and policies with Claude AI
 - **Hakivo Pro Subscription** - Premium features with Stripe billing integration
 
 ## Tech Stack
@@ -28,7 +27,7 @@ Hakivo is a comprehensive civic intelligence platform that connects citizens wit
 | **Database** | Cloudflare D1 (SQLite) |
 | **Authentication** | WorkOS AuthKit |
 | **Payments** | Stripe (subscriptions, customer portal) |
-| **AI** | Claude (Anthropic), Gemini (Google), Cerebras, Thesys C1 |
+| **AI** | Claude (Anthropic), Gemini (Google), Cerebras |
 | **Text-to-Speech** | Google Gemini TTS, ElevenLabs |
 | **Podcast Distribution** | Spreaker (auto-upload via OAuth) |
 | **APIs** | Congress.gov, OpenStates, Geocodio, Perplexity |
@@ -51,7 +50,7 @@ Hakivo is a comprehensive civic intelligence platform that connects citizens wit
 - Automated pipeline: script generation, TTS audio, artwork creation
 - Auto-upload to Spreaker via OAuth integration
 - Episodes distributed to major podcast platforms
-- AI-generated episode artwork using Gemini image generation
+
 
 ### 3. Bill Tracking & Analysis
 
@@ -90,53 +89,7 @@ Hakivo is a comprehensive civic intelligence platform that connects citizens wit
 - Smart rotation system - unseen articles first, then viewed articles by recency
 - Bookmark articles for later reading
 
-### 6. AI Congressional Assistant (C1)
-
-The C1 Congressional Assistant is a next-generation conversational AI interface powered by Thesys C1 and Claude:
-
-**Core Capabilities:**
-- **Real-time tool calling** - Searches news, bills, and Congress members in real-time
-- **Rich artifact generation** - Creates interactive reports, cards, and visualizations
-- **Streaming responses** - Real-time token streaming with thinking indicators
-- **Conversation persistence** - Threads saved to database for history access
-- **Thread sharing** - Generate public links to share conversations with anyone
-
-**Available Tools:**
-| Tool | Description |
-|------|-------------|
-| `searchNews` | Real-time news search via Exa with policy filtering |
-| `searchBills` | Search federal and state legislation |
-| `searchMembers` | Find Congress members by name, state, or party |
-| `searchImages` | Find relevant images for reports |
-| `getUserInterests` | Personalize responses based on user's policy interests |
-| `generateReport` | Create multi-page PDF-style reports |
-| `generateSlides` | Build presentation slide decks |
-
-**Technical Implementation:**
-- Built on `@thesysai/genui-sdk` for generative UI
-- Uses `runTools()` API for native tool execution
-- Custom Hakivo theming with light/dark mode support
-- Authentication-aware with user personalization
-- Follow-up suggestion buttons for guided exploration
-
-### 7. Social Sharing & Open Graph
-
-Share any content with beautiful preview cards on social media:
-
-**Shareable Content:**
-- **Bills** - `/bills/[id]` with bill title, sponsor, and policy area
-- **Representatives** - `/representatives/[id]` with photo, party, and role
-- **Daily Briefs** - `/briefs/[id]` with headline and topics
-- **Chat Conversations** - Generate public share links from C1 chat
-
-**Features:**
-- Dynamic OG image generation using Next.js ImageResponse API
-- LinkedIn-optimized descriptions (100+ characters)
-- Twitter card support with large images
-- Canonical URLs for SEO
-- Audio metadata for briefs with podcast support
-
-### 8. Hakivo Pro Subscription
+### 6. Hakivo Pro Subscription
 
 - Stripe-powered subscription management at $12/month
 - Free tier: 3 briefs/month, 3 tracked bills, 3 followed members
@@ -144,7 +97,7 @@ Share any content with beautiful preview cards on social media:
 - Customer portal for subscription management
 - Webhook integration for real-time subscription status
 
-### 9. Dashboard Widgets
+### 7. Dashboard Widgets
 
 | Widget | Description |
 |--------|-------------|
@@ -157,7 +110,7 @@ Share any content with beautiful preview cards on social media:
 
 ## Architecture
 
-### Backend Services (40+ Handlers)
+### Backend Services (36+ Handlers)
 
 **Public Services**
 - `auth-service` - JWT authentication with WorkOS
@@ -228,8 +181,7 @@ Share any content with beautiful preview cards on social media:
 | `/representatives` | Find your representatives |
 | `/representatives/[id]` | Representative detail page |
 | `/briefs` | Browse generated briefs |
-| `/chat/c1` | AI Congressional Assistant (C1) |
-| `/share/[token]` | Public shared conversation viewer |
+| `/chat` | AI chat interface |
 | `/settings` | User preferences, subscription management |
 
 ## Quick Start
@@ -379,7 +331,7 @@ This project is dual-licensed:
 - **AGPL-3.0** for open source use by nonprofits, civic tech organizations, academic institutions, and government agencies
 - **Commercial License** for proprietary use by for-profit entities
 
-See [LICENSE](./LICENSE) for details. For commercial licensing inquiries, contact info@hakivo.com.
+See [LICENSE](./LICENSE) for details. For commercial licensing inquiries, contact tarik@hakivo.app.
 
 ## Acknowledgments
 

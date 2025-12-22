@@ -1,4 +1,4 @@
-application "hakivo-new" {
+application "hakivo-prod" {
 
   // Environment variables for API keys
   env "WORKOS_API_KEY" {
@@ -45,6 +45,14 @@ application "hakivo-new" {
     secret = true
   }
 
+  env "OPENSTATES_API_KEY" {
+    secret = true
+  }
+
+  env "PERPLEXITY_API_KEY" {
+    secret = true
+  }
+
   env "VULTR_ENDPOINT" {
     secret = true
   }
@@ -58,6 +66,54 @@ application "hakivo-new" {
   }
 
   env "VULTR_BUCKET_NAME" {
+    secret = true
+  }
+
+  env "INNGEST_EVENT_KEY" {
+    secret = true
+  }
+
+  env "INNGEST_SIGNING_KEY" {
+    secret = true
+  }
+
+  env "PEXELS_API_KEY" {
+    secret = true
+  }
+
+  env "FEC_API_KEY" {
+    secret = true
+  }
+
+  env "GAMMA_API_KEY" {
+    secret = true
+  }
+
+  env "SPREAKER_CLIENT_ID" {
+    secret = true
+  }
+
+  env "SPREAKER_CLIENT_SECRET" {
+    secret = true
+  }
+
+  env "SPREAKER_SHOW_ID" {
+    secret = true
+  }
+
+  env "SPREAKER_REDIRECT_URI" {
+    secret = true
+  }
+
+  env "RESEND_API_KEY" {
+    secret = true
+  }
+
+  env "STRIPE_SECRET_KEY" {
+    secret = true
+  }
+
+  env "STRIPE_WEBHOOK_SECRET" {
     secret = true
   }
 
@@ -82,12 +138,36 @@ application "hakivo-new" {
     visibility = "public"
   }
 
+  service "members-service" {
+    visibility = "public"
+  }
+
   service "admin-dashboard" {
     visibility = "public"
   }
 
   service "db-admin" {
-    visibility = "private"
+    visibility = "public"
+  }
+
+  service "index-bills-service" {
+    visibility = "public"
+  }
+
+  service "gamma-service" {
+    visibility = "public"
+  }
+
+  service "stripe-webhook" {
+    visibility = "public"
+  }
+
+  service "subscription-api" {
+    visibility = "public"
+  }
+
+  service "vultr-storage-client" {
+    visibility = "public"
   }
 
   // Private internal services
@@ -119,7 +199,27 @@ application "hakivo-new" {
     visibility = "private"
   }
 
-  service "vultr-storage-client" {
+  service "openstates-client" {
+    visibility = "private"
+  }
+
+  service "gemini-tts-client" {
+    visibility = "private"
+  }
+
+  service "perplexity-client" {
+    visibility = "private"
+  }
+
+  service "fec-client" {
+    visibility = "private"
+  }
+
+  service "gamma-client" {
+    visibility = "private"
+  }
+
+  service "podcast-generator" {
     visibility = "private"
   }
 
@@ -139,6 +239,12 @@ application "hakivo-new" {
   observer "enrichment-observer" {
     source {
       queue = "enrichment-queue"
+    }
+  }
+
+  observer "bill-indexing-observer" {
+    source {
+      queue = "bill-indexing-queue"
     }
   }
 
@@ -168,6 +274,26 @@ application "hakivo-new" {
     cron = "0 6,18 * * *"
   }
 
+  task "state-sync-scheduler" {
+    type = "cron"
+    cron = "0 3 * * *"
+  }
+
+  task "audio-retry-scheduler" {
+    type = "cron"
+    cron = "*/5 * * * *"
+  }
+
+  task "podcast-scheduler" {
+    type = "cron"
+    cron = "0 2 * * *"
+  }
+
+  task "spreaker-sync-scheduler" {
+    type = "cron"
+    cron = "0 10 * * *"
+  }
+
   // Message queues
   queue "brief-queue" {}
 
@@ -175,10 +301,17 @@ application "hakivo-new" {
 
   queue "enrichment-queue" {}
 
-  // SQL database for application data
+  queue "bill-indexing-queue" {}
+
+  // SQL databases
   sql_database "app-db" {}
 
-  // KV caches for performance
+  sql_database "gamma-db" {}
+
+  // SmartSQL for AI-powered natural language to SQL translation
+  smartsql "congressional-db" {}
+
+  // KV caches
   kv_cache "news-cache" {}
 
   kv_cache "dashboard-cache" {}
@@ -191,8 +324,18 @@ application "hakivo-new" {
 
   kv_cache "actions-cache" {}
 
-  // SmartBuckets for storage with automatic search
-  smartbucket "bill-texts" {}
+  kv_cache "spreaker-tokens" {}
 
-  smartbucket "audio-briefs" {}
+  kv_cache "congressional-memory" {}
+
+  // Regular buckets for document storage
+  bucket "bill-texts" {}
+
+  bucket "audio-briefs" {}
+
+  // SmartBucket for semantic search on legislation
+  smartbucket "legislation-search" {}
+
+  // SmartMemory for multi-layered AI memory
+  smartmemory "civic-memory" {}
 }

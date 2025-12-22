@@ -243,22 +243,28 @@ export default class extends Service<Env> {
     const body: Record<string, unknown> = {
       inputText: request.inputText,
       textMode: request.textMode,
+      cardSplit: request.cardSplit || 'auto', // Default to auto card splitting
     };
 
     // Add optional fields if provided
     if (request.format) body.format = request.format;
     if (request.themeId) body.themeId = request.themeId;
     if (request.numCards) body.numCards = request.numCards;
-    if (request.cardSplit) body.cardSplit = request.cardSplit;
     if (request.textOptions) body.textOptions = request.textOptions;
     if (request.imageOptions) body.imageOptions = request.imageOptions;
     if (request.cardOptions) body.cardOptions = request.cardOptions;
-    if (request.workspaceAccess) body.workspaceAccess = request.workspaceAccess;
-    if (request.externalAccess) body.externalAccess = request.externalAccess;
-    if (request.emailOptions) body.emailOptions = request.emailOptions;
     if (request.exportAs) body.exportAs = request.exportAs;
     if (request.additionalInstructions) body.additionalInstructions = request.additionalInstructions;
     if (request.folderIds?.length) body.folderIds = request.folderIds;
+
+    // Build sharingOptions nested object (per Gamma API spec)
+    const sharingOptions: Record<string, unknown> = {};
+    if (request.workspaceAccess) sharingOptions.workspaceAccess = request.workspaceAccess;
+    if (request.externalAccess) sharingOptions.externalAccess = request.externalAccess;
+    if (request.emailOptions) sharingOptions.emailOptions = request.emailOptions;
+    if (Object.keys(sharingOptions).length > 0) {
+      body.sharingOptions = sharingOptions;
+    }
 
     try {
       const response = await fetch(`${this.API_BASE}/generations`, {

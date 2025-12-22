@@ -1,4 +1,4 @@
--- schema.sql
+11-- schema.sql
 -- Database schema for storing OpenStates bill data with full text
 -- Supports PostgreSQL (recommended) or SQLite
 

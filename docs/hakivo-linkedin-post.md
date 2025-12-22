@@ -75,7 +75,7 @@ A few takeaways from adding this feature to Hakivo:
 
 1. **Tool design matters more than prompts** - Clear, focused tools with good descriptions let the LLM make smart decisions
 2. **Memory changes everything** - The jump from stateless chatbot to personalized assistant is massive for UX
-3. **Frameworks accelerate development** - Mastra and CopilotKit handled the hard parts so I could focus on the congressional domain logic
+3. **Frameworks accelerate development** - Mastra and Thesys C1 handled the hard parts so I could focus on the congressional domain logic
 4. **Build for a real problem** - Civic engagement kept me motivated through the debugging sessions
 
 **Why This Feature Matters**

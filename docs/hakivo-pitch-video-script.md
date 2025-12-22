@@ -352,7 +352,7 @@ Integrate these naturally throughout the script:
 - **SmartMemory** provides persistent context across sessions (remembers user interests, past conversations)
 - **ElevenLabs** provides text-to-speech for audio briefs
 - Together, they enable Hakivo to deliver personalized, context-aware civic intelligence at scale
-
+sh
 ---
 
 ## B-Roll Suggestions

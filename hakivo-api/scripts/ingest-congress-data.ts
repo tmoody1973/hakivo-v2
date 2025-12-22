@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+1#!/usr/bin/env tsx
 
 /**
  * Congress Data Ingestion Script

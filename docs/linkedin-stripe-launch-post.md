@@ -22,7 +22,7 @@ Putting Hakivo out there as a paid service feels like standing naked in a spotli
 
 But I'm doing it anyway.
 
-When I flip that switch, Hakivo will become the first product I've ever built that generates revenue.
+When I flip that switch, Hakivo will become the first product I've ever built that could generates revenue.
 
 Not a side project. Not a prototype. Not "something I'm working on." A real product.
 

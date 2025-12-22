@@ -1,6 +1,6 @@
 # CRITICAL: Cloudflare Workers - Correct Patterns for Raindrop
 
-## 🚨 THE RULE: NEVER USE `process.env` IN CLOUDFLARE WORKERS
+## 🚨 THE RULE: NEVER USE ` 
 
 **Cloudflare Workers DO NOT support `process.env`** - using it causes Error 1101 "Worker threw exception"
 
