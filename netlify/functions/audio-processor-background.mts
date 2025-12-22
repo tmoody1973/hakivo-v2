@@ -27,7 +27,7 @@ const VOICE_PAIRS = [
 const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David' };
 
 // Gemini Pro TTS for all audio generation
-const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-tts:generateContent';
+const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent';
 
 // Raindrop service URLs (hakivo-prod @01kc6cdq deployment)
 // Admin-dashboard service for database queries (uses /api/database/query)
