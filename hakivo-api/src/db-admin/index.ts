@@ -1053,6 +1053,7 @@ app.post('/spreaker/upload/:episodeId', async (c) => {
     formData.append('episode_number', episode.episode_number.toString());
     formData.append('download_enabled', 'true');
     formData.append('visibility', 'PUBLIC');
+    formData.append('ai_generated', 'true'); // Mark as AI-generated content
 
     // Add audio file
     formData.append('media_file', new Blob([audioBuffer], { type: 'audio/mpeg' }), `episode-${episode.episode_number}.mp3`);
@@ -1582,6 +1583,124 @@ app.delete('/artifacts/:id', async (c) => {
     });
 
   } catch (error) {
+    return c.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
+ * POST /spreaker/mark-ai-generated
+ * Update all Spreaker episodes to set ai_generated: true
+ * This is required for podcasts that contain AI-generated content
+ */
+app.post('/spreaker/mark-ai-generated', async (c) => {
+  try {
+    const db = c.env.APP_DB;
+
+    // Get access token
+    const accessToken = await getValidSpreakerToken(c.env);
+
+    // Get all episodes with Spreaker IDs
+    const result = await db
+      .prepare(`
+        SELECT id, episode_number, title, spreaker_episode_id
+        FROM podcast_episodes
+        WHERE spreaker_episode_id IS NOT NULL
+        ORDER BY episode_number
+      `)
+      .all();
+
+    const episodes = result.results as Array<{
+      id: string;
+      episode_number: number;
+      title: string;
+      spreaker_episode_id: string;
+    }>;
+
+    if (episodes.length === 0) {
+      return c.json({
+        success: true,
+        message: 'No episodes with Spreaker IDs found',
+        updated: 0,
+      });
+    }
+
+    console.log(`[Spreaker] Marking ${episodes.length} episodes as AI-generated...`);
+
+    const results: Array<{
+      episodeNumber: number;
+      spreakerEpisodeId: string;
+      success: boolean;
+      error?: string;
+    }> = [];
+
+    for (const episode of episodes) {
+      try {
+        console.log(`[Spreaker] Updating episode ${episode.episode_number}: ${episode.spreaker_episode_id}`);
+
+        // Create form data for the update
+        const formData = new FormData();
+        formData.append('ai_generated', 'true');
+
+        const response = await fetch(`${SPREAKER_API_URL}/episodes/${episode.spreaker_episode_id}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[Spreaker] Failed to update episode ${episode.episode_number}:`, response.status, errorText);
+          results.push({
+            episodeNumber: episode.episode_number,
+            spreakerEpisodeId: episode.spreaker_episode_id,
+            success: false,
+            error: `${response.status}: ${errorText}`,
+          });
+        } else {
+          console.log(`[Spreaker] ✅ Episode ${episode.episode_number} marked as AI-generated`);
+          results.push({
+            episodeNumber: episode.episode_number,
+            spreakerEpisodeId: episode.spreaker_episode_id,
+            success: true,
+          });
+        }
+
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[Spreaker] Episode ${episode.episode_number} error:`, errorMessage);
+        results.push({
+          episodeNumber: episode.episode_number,
+          spreakerEpisodeId: episode.spreaker_episode_id,
+          success: false,
+          error: errorMessage,
+        });
+      }
+    }
+
+    const updated = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    console.log(`[Spreaker] AI-generated marking complete: ${updated} updated, ${failed} failed`);
+
+    return c.json({
+      success: true,
+      message: `Marked ${updated} episodes as AI-generated, ${failed} failed`,
+      total: episodes.length,
+      updated,
+      failed,
+      results,
+    });
+
+  } catch (error) {
+    console.error('[Spreaker] Mark AI-generated error:', error);
     return c.json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

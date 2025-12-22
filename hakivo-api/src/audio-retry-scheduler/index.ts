@@ -32,7 +32,7 @@ const NETLIFY_IMAGE_FUNCTION_URL = 'https://hakivo-v2.netlify.app/.netlify/funct
  *    - Generates WSJ-style editorial sketch images using Gemini
  *    - Uploads images to Vultr storage
  *
- * Schedule: Every 5 minutes (cron: */5 * * * *)
+ * Schedule: Every 5 minutes (cron expression: "every 5 min")
  */
 export default class extends Task<Env> {
   async handle(_event: Event): Promise<void> {
