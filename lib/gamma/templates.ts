@@ -119,7 +119,7 @@ export const TEMPLATE_PRESETS: Record<string, TemplatePreset> = {
     icon: "🗳️",
     category: "general",
     defaults: {
-      format: "webpage",
+      format: "document",
       textAmount: "brief",
       audience: "General public",
       tone: "Simple and accessible",
