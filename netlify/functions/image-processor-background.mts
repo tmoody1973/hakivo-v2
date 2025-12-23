@@ -1,9 +1,13 @@
 /**
  * Netlify Background Function for Image Processing
  *
- * Polls database for briefs with missing featured_image
- * and generates WSJ-style editorial sketch images using Gemini,
- * then uploads to Vultr storage.
+ * Generates WSJ-style editorial sketch images for briefs using Gemini 2.0 Flash.
+ * This function:
+ * 1. Finds briefs without images (NULL or empty featured_image)
+ * 2. Finds briefs with EXTERNAL images (not from Vultr) and replaces them with WSJ-style
+ *
+ * All generated images are uploaded to Vultr S3 storage and the brief is updated.
+ * This ensures a consistent, premium editorial look across all briefs.
  *
  * Background functions get 15-minute timeout (vs 10s for regular functions).
  */
@@ -24,11 +28,22 @@ interface Brief {
 }
 
 /**
- * Query database for briefs that need featured images
+ * Query database for briefs that need WSJ-style featured images
+ * This includes:
+ * 1. Briefs with no featured_image (NULL or empty)
+ * 2. Briefs with external images (not from Vultr storage) - to replace with WSJ-style
  */
 async function getBriefsNeedingImages(): Promise<Brief[]> {
-  // Get briefs where featured_image is NULL or empty, limit to 3 per run
-  const query = `SELECT id, title, news_json, featured_image FROM briefs WHERE (featured_image IS NULL OR featured_image = '') AND status IN ('completed', 'script_ready', 'audio_processing') ORDER BY created_at DESC LIMIT 3`;
+  // Vultr storage URL prefix - images from our storage don't need replacement
+  const vultrPrefix = 'https://sjc1.vultrobjects.com';
+
+  // Get briefs where:
+  // - featured_image is NULL/empty, OR
+  // - featured_image exists but is NOT from Vultr (external image to replace)
+  // Limit to 3 per run to avoid timeout
+  const query = `SELECT id, title, news_json, featured_image FROM briefs WHERE status IN ('completed', 'script_ready', 'audio_processing') AND (featured_image IS NULL OR featured_image = '' OR (featured_image IS NOT NULL AND featured_image != '' AND featured_image NOT LIKE '${vultrPrefix}%')) ORDER BY created_at DESC LIMIT 3`;
+
+  console.log(`[IMAGE] Querying for briefs needing WSJ-style images...`);
 
   const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
     method: 'POST',
@@ -42,7 +57,18 @@ async function getBriefsNeedingImages(): Promise<Brief[]> {
   }
 
   const result = await response.json() as { results?: Brief[] };
-  return result.results || [];
+  const briefs = result.results || [];
+
+  // Log what we found
+  briefs.forEach(brief => {
+    if (!brief.featured_image) {
+      console.log(`[IMAGE] Brief ${brief.id}: No image, will generate`);
+    } else {
+      console.log(`[IMAGE] Brief ${brief.id}: Replacing external image with WSJ-style`);
+    }
+  });
+
+  return briefs;
 }
 
 /**
