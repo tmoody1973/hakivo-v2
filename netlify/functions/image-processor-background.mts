@@ -14,11 +14,18 @@
 import type { Context } from "@netlify/functions";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// Gemini image generation endpoint
-const GEMINI_IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
+// Gemini image generation endpoint - using gemini-2.5-flash-image for higher quotas
+// Migrated from gemini-2.0-flash-exp per rate limit recommendation
+const GEMINI_IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
-// Raindrop service URL for database queries
-const DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Get Raindrop service URL from env or use default
+// IMPORTANT: Update RAINDROP_DASHBOARD_URL env var in Netlify when deploying new versions
+const getDashboardUrl = () => {
+  const envUrl = Netlify.env.get('RAINDROP_DASHBOARD_URL');
+  if (envUrl) return envUrl;
+  // Fallback to latest known URL
+  return 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+};
 
 interface Brief {
   id: string;
@@ -45,7 +52,7 @@ async function getBriefsNeedingImages(): Promise<Brief[]> {
 
   console.log(`[IMAGE] Querying for briefs needing WSJ-style images...`);
 
-  const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -78,7 +85,7 @@ async function updateBriefImage(briefId: string, imageUrl: string): Promise<void
   const timestamp = Date.now();
   const query = `UPDATE briefs SET featured_image = '${imageUrl}', updated_at = ${timestamp} WHERE id = '${briefId}'`;
 
-  const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
