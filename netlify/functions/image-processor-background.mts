@@ -20,11 +20,12 @@ const GEMINI_IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/
 
 // Get Raindrop service URL from env or use default
 // IMPORTANT: Update RAINDROP_DASHBOARD_URL env var in Netlify when deploying new versions
+// To find current URL: cd hakivo-api && npx raindrop build find
 const getDashboardUrl = () => {
   const envUrl = Netlify.env.get('RAINDROP_DASHBOARD_URL');
   if (envUrl) return envUrl;
-  // Fallback to latest known URL
-  return 'https://svc-01ka8k5e6tr0kgy0jkzj9m4q1a.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  // Fallback to latest known URL (updated 2025-12-25)
+  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 };
 
 interface Brief {

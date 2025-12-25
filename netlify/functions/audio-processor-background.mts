@@ -29,11 +29,22 @@ const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David
 // Gemini TTS for audio generation
 const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
 
-// Raindrop service URLs (hakivo-prod @01kc6cdq deployment)
-// Admin-dashboard service for database queries (uses /api/database/query)
-const DASHBOARD_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
-// DB-Admin service for Spreaker uploads (uses /spreaker/*)
-const DB_ADMIN_URL = 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzq.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Get Raindrop service URLs from env or use defaults
+// IMPORTANT: Update these env vars in Netlify when deploying new Raindrop versions
+// To find current URL: cd hakivo-api && npx raindrop build find
+const getDashboardUrl = () => {
+  const envUrl = Netlify.env.get('RAINDROP_DASHBOARD_URL');
+  if (envUrl) return envUrl;
+  // Fallback to latest known URL (updated 2025-12-25)
+  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+};
+
+const getDbAdminUrl = () => {
+  const envUrl = Netlify.env.get('RAINDROP_DB_ADMIN_URL');
+  if (envUrl) return envUrl;
+  // Fallback to latest known URL (updated 2025-12-25)
+  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+};
 
 // Content types for audio processing
 type ContentType = 'brief' | 'podcast';
@@ -133,7 +144,7 @@ function convertPodcastToDialoguePrompt(script: string, voiceA: string, voiceB: 
 async function getBriefsReadyForAudio(): Promise<Brief[]> {
   const query = `SELECT id, script, status FROM briefs WHERE status = 'script_ready' ORDER BY created_at ASC LIMIT 1`;
 
-  const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -154,7 +165,7 @@ async function getBriefsReadyForAudio(): Promise<Brief[]> {
 async function getPodcastEpisodesReadyForAudio(): Promise<AudioContent[]> {
   const query = `SELECT id, script, status FROM podcast_episodes WHERE status = 'script_ready' ORDER BY episode_number ASC LIMIT 1`;
 
-  const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -182,7 +193,7 @@ async function updateBriefStatus(
     ? `UPDATE briefs SET status = '${status}', audio_url = '${audioUrl}', updated_at = ${timestamp} WHERE id = '${briefId}'`
     : `UPDATE briefs SET status = '${status}', updated_at = ${timestamp} WHERE id = '${briefId}'`;
 
-  const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -206,7 +217,7 @@ async function updatePodcastStatus(
     ? `UPDATE podcast_episodes SET status = '${status}', audio_url = '${audioUrl}', updated_at = ${timestamp} WHERE id = '${episodeId}'`
     : `UPDATE podcast_episodes SET status = '${status}', updated_at = ${timestamp} WHERE id = '${episodeId}'`;
 
-  const response = await fetch(`${DASHBOARD_URL}/api/database/query`, {
+  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -225,7 +236,7 @@ async function uploadToSpreaker(episodeId: string): Promise<boolean> {
   console.log(`[SPREAKER] Auto-uploading episode ${episodeId} to Spreaker...`);
 
   try {
-    const response = await fetch(`${DB_ADMIN_URL}/spreaker/upload/${episodeId}`, {
+    const response = await fetch(`${getDbAdminUrl()}/spreaker/upload/${episodeId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
