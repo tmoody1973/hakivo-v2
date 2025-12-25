@@ -386,6 +386,7 @@ async function uploadAudio(
 
 /**
  * Process a single brief's audio generation
+ * Uses chunking (like podcasts) to ensure consistent voice quality throughout
  */
 async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
   console.log(`[AUDIO] Processing brief: ${brief.id}`);
@@ -401,7 +402,7 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 
     // Convert script to dialogue format
     const dialoguePrompt = convertToDialoguePrompt(brief.script, voicePair.hostA, voicePair.hostB);
-    console.log(`[AUDIO] Dialogue prompt length: ${dialoguePrompt.length} chars`);
+    console.log(`[AUDIO] Total dialogue length: ${dialoguePrompt.length} chars`);
     console.log(`[AUDIO] Dialogue preview: ${dialoguePrompt.substring(0, 300)}...`);
 
     // Verify we have dialogue lines
@@ -412,78 +413,32 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
       return;
     }
 
-    // Call Gemini Pro TTS API
-    console.log('[AUDIO] Calling Gemini Pro TTS API...');
-    const ttsResponse = await fetch(`${GEMINI_TTS_ENDPOINT}?key=${geminiApiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: dialoguePrompt }]
-        }],
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            multiSpeakerVoiceConfig: {
-              speakerVoiceConfigs: [
-                {
-                  speaker: voicePair.hostA,
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voicePair.hostA }
-                  }
-                },
-                {
-                  speaker: voicePair.hostB,
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voicePair.hostB }
-                  }
-                }
-              ]
-            }
-          }
-        }
-      })
-    });
+    // Chunk the dialogue to ensure consistent voice quality (Gemini TTS degrades on long content)
+    const chunks = chunkDialogue(dialoguePrompt, 4000);
+    console.log(`[AUDIO] Split into ${chunks.length} chunks for consistent quality`);
 
-    if (!ttsResponse.ok) {
-      const errorText = await ttsResponse.text();
-      console.error(`[AUDIO] Gemini TTS error ${ttsResponse.status}: ${errorText}`);
-      await updateBriefStatus(brief.id, 'audio_failed', null);
-      return;
+    // Generate audio for each chunk
+    const pcmBuffers: Buffer[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const pcmBuffer = await generateAudioChunk(chunks[i]!, voicePair, geminiApiKey, i);
+      if (!pcmBuffer) {
+        console.error(`[AUDIO] Failed to generate audio for chunk ${i + 1}`);
+        await updateBriefStatus(brief.id, 'audio_failed', null);
+        return;
+      }
+      pcmBuffers.push(pcmBuffer);
+      console.log(`[AUDIO] Chunk ${i + 1}/${chunks.length} complete: ${pcmBuffer.length} bytes`);
     }
 
-    const ttsResult = await ttsResponse.json() as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{
-            inlineData?: {
-              mimeType: string;
-              data: string;
-            }
-          }>
-        }
-      }>
-    };
+    // Concatenate all PCM buffers
+    const totalPcmLength = pcmBuffers.reduce((sum, buf) => sum + buf.length, 0);
+    console.log(`[AUDIO] Total PCM size: ${totalPcmLength} bytes from ${pcmBuffers.length} chunks`);
 
-    // Extract audio data
-    const audioData = ttsResult.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-    if (!audioData) {
-      console.error('[AUDIO] No audio data in Gemini response');
-      await updateBriefStatus(brief.id, 'audio_failed', null);
-      return;
-    }
+    const combinedPcm = Buffer.concat(pcmBuffers);
 
-    console.log(`[AUDIO] Gemini TTS returned ${audioData.mimeType} audio`);
-
-    // Convert base64 to buffer (raw PCM data - 16-bit signed, 24kHz, mono)
-    const pcmBuffer = Buffer.from(audioData.data, 'base64');
-    console.log(`[AUDIO] Raw PCM size: ${pcmBuffer.length} bytes`);
-
-    // Convert PCM to MP3 using lamejs (pure JavaScript - no native dependencies!)
-    console.log('[AUDIO] Converting PCM to MP3 using lamejs...');
-    const mp3Buffer = encodePcmToMp3(pcmBuffer, 24000, 1);
+    // Convert combined PCM to MP3 using lamejs
+    console.log('[AUDIO] Converting combined PCM to MP3 using lamejs...');
+    const mp3Buffer = encodePcmToMp3(combinedPcm, 24000, 1);
 
     // Upload to Vultr storage directly
     console.log('[AUDIO] Uploading MP3 to Vultr storage...');
