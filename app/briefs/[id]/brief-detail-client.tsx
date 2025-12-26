@@ -98,8 +98,9 @@ function processContent(content: string): string {
 
   // Convert bill references to links where possible
   // Match patterns like "HR 5969", "S. 123", "H.R. 456"
+  // IMPORTANT: Don't match inside URLs (preceded by / or -)
   result = result.replace(
-    /\b(H\.?R\.?|S\.?|H\.?J\.?\s*Res\.?|S\.?J\.?\s*Res\.?)\s*(\d+)\b/gi,
+    /(?<![\/\-a-zA-Z])(H\.?R\.?|S\.?|H\.?J\.?\s*Res\.?|S\.?J\.?\s*Res\.?)\s*(\d+)\b/gi,
     (match, type, number) => {
       const billType = type.replace(/\./g, '').replace(/\s/g, '').toLowerCase();
       return `[${match}](/bills/119-${billType}-${number})`;
