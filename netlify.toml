@@ -35,3 +35,10 @@
   to = "https://svc-01kc6rbecv0s5k4yk6ksdaqyzh.01k66gywmx8x4r0w31fdjjfekf.lmapp.run/bills/semantic-search"
   status = 200
   force = true
+
+# Mixpanel proxy to avoid ad blockers and CORS issues
+[[redirects]]
+  from = "/mp/*"
+  to = "https://api.mixpanel.com/:splat"
+  status = 200
+  force = true

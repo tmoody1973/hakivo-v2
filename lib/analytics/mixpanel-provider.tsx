@@ -16,6 +16,7 @@ if (typeof window !== 'undefined') {
       persistence: 'localStorage',
       autocapture: true,
       record_sessions_percent: 100,
+      api_host: '/mp',  // Use Netlify proxy to avoid ad blockers
     });
     mixpanelInitialized = true;
   } catch (e) {
