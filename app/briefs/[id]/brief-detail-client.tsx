@@ -216,6 +216,18 @@ interface FeaturedBill {
   congressUrl: string;
 }
 
+interface FeaturedStateBill {
+  id: string;
+  state: string;
+  identifier: string;
+  title: string;
+  subjects: string[];
+  chamber: string | null;
+  latestActionDate: string | null;
+  latestActionDescription: string | null;
+  openstatesUrl: string | null;
+}
+
 interface NewsArticle {
   title: string;
   url: string;
@@ -237,6 +249,7 @@ interface Brief {
   content?: string;
   interests?: string[];
   featuredBills?: FeaturedBill[];
+  featuredStateBills?: FeaturedStateBill[];
   newsArticles?: NewsArticle[];
 }
 
@@ -578,6 +591,63 @@ export function BriefDetailClient() {
                             </a>
                           </Button>
                         </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* State Bills Section */}
+          {brief.featuredStateBills && brief.featuredStateBills.length > 0 && (
+            <section className="space-y-4 pt-6 border-t border-border">
+              <h2 className="text-xl font-serif font-bold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+                State Legislation
+              </h2>
+              <div className="grid gap-4">
+                {brief.featuredStateBills.map((bill) => (
+                  <Card key={bill.id} className="hover:bg-accent/50 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col md:flex-row md:items-start gap-4">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-mono text-xs">
+                              {bill.state}
+                            </Badge>
+                            <Badge variant="secondary" className="font-mono text-xs">
+                              {bill.identifier}
+                            </Badge>
+                            {bill.chamber && (
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {bill.chamber === 'upper' ? 'Senate' : bill.chamber === 'lower' ? 'House' : bill.chamber}
+                              </Badge>
+                            )}
+                            {bill.subjects && bill.subjects.length > 0 && (
+                              <Badge variant="outline" className="text-xs">
+                                {bill.subjects[0]}
+                              </Badge>
+                            )}
+                          </div>
+                          <h3 className="font-medium leading-snug">
+                            {bill.title}
+                          </h3>
+                          {bill.latestActionDescription && (
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Latest:</span> {bill.latestActionDescription}
+                            </div>
+                          )}
+                        </div>
+                        {bill.openstatesUrl && (
+                          <div className="flex gap-2 md:flex-col">
+                            <Button variant="outline" size="sm" asChild>
+                              <a href={bill.openstatesUrl} target="_blank" rel="noopener noreferrer">
+                                OpenStates <ExternalLink className="ml-1 h-3 w-3" />
+                              </a>
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

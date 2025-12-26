@@ -459,6 +459,32 @@ app.get('/briefs/:briefId', async (c) => {
       congressUrl: `https://www.congress.gov/bill/${bill.congress}th-congress/${bill.bill_type?.toLowerCase()}/${bill.bill_number}`
     }));
 
+    // Get featured state bills for this brief
+    const stateBillsResult = await db
+      .prepare(`
+        SELECT
+          sb.id, sb.state, sb.identifier, sb.title,
+          sb.subjects, sb.chamber, sb.latest_action_date, sb.latest_action_description,
+          sb.openstates_url, sb.session_identifier
+        FROM brief_state_bills bsb
+        JOIN state_bills sb ON bsb.state_bill_id = sb.id
+        WHERE bsb.brief_id = ?
+      `)
+      .bind(briefId)
+      .all();
+
+    const featuredStateBills = (stateBillsResult.results || []).map((bill: any) => ({
+      id: bill.id,
+      state: bill.state,
+      identifier: bill.identifier,
+      title: bill.title,
+      subjects: bill.subjects ? JSON.parse(bill.subjects) : [],
+      chamber: bill.chamber,
+      latestActionDate: bill.latest_action_date,
+      latestActionDescription: bill.latest_action_description,
+      openstatesUrl: bill.openstates_url || `https://openstates.org/${(bill.state || '').toLowerCase()}/bills/${encodeURIComponent(bill.session_identifier || '')}/${encodeURIComponent(bill.identifier || '')}/`
+    }));
+
     // Parse news from JSON if stored in content metadata
     let newsArticles: any[] = [];
     try {
@@ -489,6 +515,7 @@ app.get('/briefs/:briefId', async (c) => {
       updatedAt: brief.updated_at,
       // Include structured data
       featuredBills,
+      featuredStateBills,
       newsArticles
     };
 

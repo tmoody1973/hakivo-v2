@@ -118,11 +118,12 @@ export default class extends Each<Body, Env> {
     console.log(`[STAGE-1] Complete. Elapsed: ${Date.now() - startTime}ms`);
 
     // ==================== STAGE 2: GET RECENTLY FEATURED BILLS (for deduplication) ====================
+    // Extend window to 30 days to prevent repeating bills within a month
     console.log(`[STAGE-2a] Getting recently featured bills to avoid duplication...`);
     let recentlyFeaturedBillIds: string[] = [];
     try {
-      recentlyFeaturedBillIds = await this.getRecentlyFeaturedBills(userId, 7); // Last 7 days
-      console.log(`[STAGE-2a] Found ${recentlyFeaturedBillIds.length} recently featured bills to exclude`);
+      recentlyFeaturedBillIds = await this.getRecentlyFeaturedBills(userId, 30); // Last 30 days
+      console.log(`[STAGE-2a] Found ${recentlyFeaturedBillIds.length} recently featured bills to exclude (30-day window)`);
     } catch (recentError) {
       console.warn(`[STAGE-2a] Failed to get recent bills (non-fatal):`, recentError);
     }
@@ -140,20 +141,32 @@ export default class extends Each<Body, Env> {
       }
 
       // Second: Get interest-matched bills with variation
+      // Use expanded date range (14 days) to ensure we find content even during quiet periods
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] || '';
       const interestBills = await this.getBillsByInterests(
         policyInterests,
-        startDate,
+        fourteenDaysAgo, // Expanded date range
         endDate,
         [...recentlyFeaturedBillIds, ...repBills.map(b => b.id)],
         userId // Pass userId for seeded variation
       );
-      console.log(`[STAGE-2b] Got ${interestBills.length} interest-matched bills`);
+      console.log(`[STAGE-2b] Got ${interestBills.length} interest-matched bills (looking back 14 days)`);
 
-      // Combine: Rep bills first (max 2), then interest bills
-      const repBillsToInclude = repBills.slice(0, 2);
-      const interestBillsToInclude = interestBills.slice(0, 5 - repBillsToInclude.length);
-      bills = [...repBillsToInclude, ...interestBillsToInclude];
+      // FIXED: Interest bills FIRST (fresher, more relevant to user preferences)
+      // Rep bills are supplementary - include only if recent (within 7 days)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] || '';
+      const recentRepBills = repBills.filter((b: any) =>
+        b.latest_action_date && b.latest_action_date >= sevenDaysAgo
+      );
 
+      // Lead with interest-matched bills (up to 4), then add 1 recent rep bill if available
+      const interestBillsToInclude = interestBills.slice(0, 4);
+      const repBillsToInclude = recentRepBills.slice(0, 1); // Max 1 rep bill as bonus
+
+      // Combine: Interest bills FIRST, then rep bill bonus
+      bills = [...interestBillsToInclude, ...repBillsToInclude];
+
+      console.log(`[STAGE-2b] Fresh content first: ${interestBillsToInclude.length} interest + ${repBillsToInclude.length} rep bills`);
       console.log(`[STAGE-2b] Total ${bills.length} personalized bills. Elapsed: ${Date.now() - startTime}ms`);
     } catch (billError) {
       console.error(`[STAGE-2b] FAILED:`, billError);
@@ -162,11 +175,10 @@ export default class extends Each<Body, Env> {
       return;
     }
 
+    // Note: If no bills found, we'll continue and rely on news articles
+    // This ensures briefs can be generated even during Congressional recess
     if (bills.length === 0) {
-      console.log(`⚠️ [STAGE-2b] No bills found matching interests`);
-      await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
-        .bind('failed', Date.now(), briefId).run();
-      return;
+      console.log(`⚠️ [STAGE-2b] No bills found matching interests - will rely on news articles`);
     }
 
     // Track which are rep bills for script personalization
@@ -368,6 +380,10 @@ export default class extends Each<Body, Env> {
     // Save featured bills for deduplication in future briefs
     const featuredBillIds = billsWithActions.map((b: any) => b.id);
     await this.saveFeaturedBills(briefId, featuredBillIds);
+
+    // Save featured state bills for the "Related State Bills" section
+    const featuredStateBillIds = stateBills.map((b: any) => b.id);
+    await this.saveFeaturedStateBills(briefId, featuredStateBillIds);
 
     // Trigger Netlify audio processor immediately (don't wait for 5-minute scheduler)
     // This ensures new users don't have to wait for their first brief
@@ -787,9 +803,12 @@ export default class extends Each<Body, Env> {
 
   /**
    * Get bill IDs that were featured in user's recent briefs (for deduplication)
-   * This ensures each day's brief has fresh content
+   * This ensures each day's brief has fresh content by excluding bills
+   * that were already featured within the lookback window.
+   *
+   * Default is 30 days to prevent the same bill appearing multiple times in a month.
    */
-  private async getRecentlyFeaturedBills(userId: string, daysBack: number = 7): Promise<string[]> {
+  private async getRecentlyFeaturedBills(userId: string, daysBack: number = 30): Promise<string[]> {
     const db = this.env.APP_DB;
     const cutoffTime = Date.now() - (daysBack * 24 * 60 * 60 * 1000);
 
@@ -830,6 +849,30 @@ export default class extends Each<Body, Env> {
     }
 
     console.log(`✓ Saved ${billIds.length} featured bills for deduplication`);
+  }
+
+  /**
+   * Save which state bills were featured in this brief
+   */
+  private async saveFeaturedStateBills(briefId: string, stateBillIds: string[]): Promise<void> {
+    if (stateBillIds.length === 0) return;
+
+    const db = this.env.APP_DB;
+
+    // Insert each state bill featured in this brief
+    for (const stateBillId of stateBillIds) {
+      try {
+        await db
+          .prepare('INSERT INTO brief_state_bills (brief_id, state_bill_id) VALUES (?, ?)')
+          .bind(briefId, stateBillId)
+          .run();
+      } catch (insertError) {
+        // Ignore duplicate key errors
+        console.warn(`[SAVE-STATE-BILLS] Could not save state bill ${stateBillId}: ${insertError}`);
+      }
+    }
+
+    console.log(`✓ Saved ${stateBillIds.length} featured state bills`);
   }
 
   /**
@@ -929,29 +972,66 @@ export default class extends Each<Body, Env> {
       return dateB.localeCompare(dateA);
     });
 
-    // Add user-specific variation: shuffle within date tiers
-    // This ensures different users with same interests see different bill mixes
-    if (userId && freshBills.length > 5) {
-      // Create a simple hash from userId + today's date for deterministic but varied results
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-      const seed = userId + today;
-      let hash = 0;
-      for (let i = 0; i < seed.length; i++) {
-        hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-        hash = hash & hash; // Convert to 32-bit integer
-      }
+    // INTEREST-BALANCED SELECTION: Ensure we cover 2-3 different user interests
+    // Group bills by which interest they match
+    const billsByInterest = new Map<string, any[]>();
+    const interestToPolicyArea = new Map<string, string[]>();
 
-      // Use hash to pick a starting offset (0-4) for variety
-      const offset = Math.abs(hash) % Math.min(5, freshBills.length);
-
-      // Rotate the array by offset for variety
-      const rotated = [...freshBills.slice(offset), ...freshBills.slice(0, offset)];
-      console.log(`✓ Applied user-specific variation (offset: ${offset}) for ${freshBills.length} bills`);
-      return rotated.slice(0, 5);
+    // Map each interest to its policy areas for matching
+    for (const interest of interests) {
+      const areas = getPolicyAreasForInterests([interest]);
+      interestToPolicyArea.set(interest, areas);
+      billsByInterest.set(interest, []);
     }
 
-    console.log(`✓ Total ${freshBills.length} fresh bills matching user interests`);
-    return freshBills.slice(0, 5);
+    // Categorize each bill by matching interest
+    for (const bill of freshBills) {
+      for (const [interest, areas] of interestToPolicyArea) {
+        if (areas.includes(bill.policy_area)) {
+          billsByInterest.get(interest)?.push(bill);
+          break; // Each bill counted once
+        }
+      }
+    }
+
+    // Select 1-2 bills from each of 2-3 different interests
+    const balancedBills: any[] = [];
+    const coveredInterests: string[] = [];
+    const TARGET_INTERESTS = 3; // Cover up to 3 different interests
+    const BILLS_PER_INTEREST = 2; // 1-2 bills per interest
+
+    // Sort interests by number of available bills (prioritize interests with content)
+    const interestsWithBills = [...billsByInterest.entries()]
+      .filter(([_, bills]) => bills.length > 0)
+      .sort((a, b) => b[1].length - a[1].length);
+
+    for (const [interest, bills] of interestsWithBills) {
+      if (coveredInterests.length >= TARGET_INTERESTS) break;
+      if (balancedBills.length >= 5) break;
+
+      // Add 1-2 bills from this interest
+      const billsToAdd = bills
+        .filter(b => !balancedBills.some(existing => existing.id === b.id))
+        .slice(0, BILLS_PER_INTEREST);
+
+      if (billsToAdd.length > 0) {
+        balancedBills.push(...billsToAdd);
+        coveredInterests.push(interest);
+      }
+    }
+
+    // If we still have room and need more bills, fill from remaining
+    if (balancedBills.length < 4) {
+      for (const bill of freshBills) {
+        if (!balancedBills.some(b => b.id === bill.id)) {
+          balancedBills.push(bill);
+          if (balancedBills.length >= 5) break;
+        }
+      }
+    }
+
+    console.log(`✓ Interest-balanced selection: ${balancedBills.length} bills covering ${coveredInterests.length} interests: ${coveredInterests.join(', ')}`);
+    return balancedBills.slice(0, 5);
   }
 
   /**
@@ -1102,18 +1182,72 @@ export default class extends Each<Body, Env> {
       );
 
       // Map Perplexity response to include imageUrl for backward compatibility
-      return searchResults.map(article => ({
+      if (searchResults.length > 0) {
+        return searchResults.map(article => ({
+          title: article.title,
+          summary: article.summary,
+          url: article.url,
+          publishedAt: article.publishedAt,
+          source: article.source,
+          category: article.category,
+          imageUrl: article.image?.url || null,
+          imageAlt: article.title || null
+        }));
+      }
+    } catch (error) {
+      console.error(`[PERPLEXITY] Failed to fetch news, falling back to pre-synced news:`, error);
+    }
+
+    // Fallback: Use pre-synced news from news_articles table
+    console.log(`[NEWS-FALLBACK] Using pre-synced news from database for ${interests.join(', ')}`);
+    return await this.fetchPreSyncedNews(interests);
+  }
+
+  /**
+   * Fetch pre-synced news from news_articles table as fallback
+   * Uses news that was synced by news-sync-scheduler
+   * Only returns articles from the last 7 days
+   */
+  private async fetchPreSyncedNews(interests: string[]): Promise<any[]> {
+    try {
+      const db = this.env.APP_DB;
+
+      // Map interests to the 'interest' column values in news_articles
+      const placeholders = interests.map(() => '?').join(', ');
+
+      // Get news from last 7 days only
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const result = await db
+        .prepare(`
+          SELECT id, title, summary, url, author, image_url, published_date, source_domain, interest
+          FROM news_articles
+          WHERE interest IN (${placeholders})
+            AND published_date >= ?
+          ORDER BY published_date DESC, score DESC
+          LIMIT 15
+        `)
+        .bind(...interests, sevenDaysAgo)
+        .all();
+
+      if (!result.results || result.results.length === 0) {
+        console.log(`[NEWS-FALLBACK] No pre-synced news found for interests`);
+        return [];
+      }
+
+      console.log(`[NEWS-FALLBACK] Found ${result.results.length} pre-synced articles`);
+      return result.results.map((article: any) => ({
         title: article.title,
         summary: article.summary,
         url: article.url,
-        publishedAt: article.publishedAt,
-        source: article.source,
-        category: article.category,
-        imageUrl: article.image?.url || null, // Map image.url to imageUrl for fallback logic
-        imageAlt: article.title || null // Use title as alt text since Perplexity doesn't provide alt
+        publishedAt: article.published_date,
+        source: article.source_domain,
+        category: article.interest,
+        imageUrl: article.image_url,
+        imageAlt: article.title
       }));
     } catch (error) {
-      console.error(`[PERPLEXITY] Failed to fetch news articles${state ? ` for ${state}` : ''}:`, error);
+      console.error(`[NEWS-FALLBACK] Failed to fetch pre-synced news:`, error);
       return [];
     }
   }
@@ -1169,11 +1303,18 @@ SPONSOR: ${bill.first_name || ''} ${bill.last_name || ''} (${bill.party || '?'}-
 LATEST: ${bill.latest_action_text}`).join('\n');
 
     // Format state legislature bills (if any)
-    // Include full text or PDF URL for AI analysis
+    // Include full text or PDF URL for AI analysis, plus proper links
     const stateBillsText = personalization.stateBills.length > 0
       ? personalization.stateBills.map((bill: any) => {
           const subjects = bill.subjects ? (typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects) : [];
           const subjectStr = Array.isArray(subjects) && subjects.length > 0 ? subjects.slice(0, 3).join(', ') : 'General';
+
+          // Generate proper state legislature link
+          // Use OpenStates URL which redirects to official state legislature
+          const stateCode = (bill.state || '').toLowerCase();
+          const session = encodeURIComponent(bill.session_identifier || '');
+          const identifier = encodeURIComponent(bill.identifier || '');
+          const stateBillUrl = `https://openstates.org/${stateCode}/bills/${session}/${identifier}/`;
 
           // Determine what text content is available
           let textContent = '';
@@ -1192,7 +1333,7 @@ LATEST: ${bill.latest_action_text}`).join('\n');
           if (!bill.full_text && bill.full_text_url) {
             const isPdf = bill.full_text_format?.includes('pdf') || bill.full_text_url?.includes('.pdf');
             if (isPdf) {
-              pdfNote = `\nPDF AVAILABLE: ${bill.full_text_url} (Use web search or fetch this URL to get bill details)`;
+              pdfNote = `\nPDF AVAILABLE: ${bill.full_text_url}`;
             } else {
               pdfNote = `\nTEXT URL: ${bill.full_text_url}`;
             }
@@ -1203,7 +1344,8 @@ STATE BILL: ${bill.identifier} (${bill.state})
 TITLE: ${bill.title}
 CHAMBER: ${bill.chamber || 'Unknown'}
 SUBJECTS: ${subjectStr}
-LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}${textContent}${pdfNote}`;
+LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}
+URL: ${stateBillUrl}${textContent}${pdfNote}`;
         }).join('\n')
       : '';
 
@@ -1234,72 +1376,127 @@ LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_de
     };
     const spokenState = personalization.state ? stateNames[personalization.state] || personalization.state : null;
 
-    // System prompt for the script generation with personalization
-    const systemPrompt = `You are a scriptwriter for "Hakivo Daily" - a PERSONALIZED civic engagement audio briefing inspired by The New York Times' "The Daily" podcast.
+    // System prompt for the script generation with NPR Morning Edition feel
+    const systemPrompt = `You are a scriptwriter for "Hakivo Daily" - a PERSONALIZED civic engagement audio briefing styled after NPR's Morning Edition. Think: warm, informative, human, and conversational.
 
-Your hosts are ${hostA} (female) and ${hostB} (male). They have great chemistry and naturally use each other's names in conversation.
+Your hosts are ${hostA} (female) and ${hostB} (male). They're like seasoned NPR hosts - warm, curious, knowledgeable. They have genuine chemistry and naturally weave conversation together.
 
 === LISTENER PROFILE (PERSONALIZE FOR THIS LISTENER) ===
 Name: ${personalization.userName}
 ${spokenState ? `Location: ${spokenState}${personalization.district ? `, Congressional District ${personalization.district}` : ''}` : 'Location: Not specified'}
 Policy Interests: ${personalization.policyInterests.join(', ')}
 
-IMPORTANT PERSONALIZATION RULES:
-1. Address the listener by name in the opening: "Good morning, ${personalization.userName}..." or "Hey ${personalization.userName}, welcome back..."
-2. ${isTopStoryFromRep && topStoryBill ? `The TOP STORY is from this listener's OWN representative (${topStoryBill.first_name} ${topStoryBill.last_name}). Make it personal: "Your representative, ${topStoryBill.first_name} ${topStoryBill.last_name}, just introduced..."` : 'Connect stories to the listener\'s interests.'}
-3. ${spokenState ? `Reference their state when relevant: "Here in ${spokenState}..." or "For folks in ${spokenState}..."` : 'Keep location references general.'}
-4. This brief is UNIQUE to this listener - make them feel it was created just for them.
+=== NPR MORNING EDITION STYLE ===
+1. STORYTELLING FIRST: Don't just report facts - tell stories. "Let me paint a picture of what's happening..."
+2. HUMAN IMPACT: Always connect policy to real people. "What this means for families in ${spokenState || 'your community'}..."
+3. WARM TRANSITIONS: Smooth handoffs between topics. "Before we go further, ${hostB}, there's something our listeners should know..."
+4. CURIOSITY & DEPTH: Hosts ask each other genuine questions. "${hostB}, help us understand - why does this matter right now?"
+5. COMING UP TEASERS: Build anticipation. "Coming up, we'll look at what's happening in the ${spokenState || 'state'} legislature..."
+6. CONTEXT & HISTORY: Brief background without being boring. "This has been building for months..."
+7. MULTIPLE INTERESTS: Cover 2-3 different policy areas matching the listener's interests: ${personalization.policyInterests.slice(0, 3).join(', ')}
 
-IMPORTANT: Write ONLY natural spoken dialogue. NEVER include section labels, headers, or structural markers in the script. The hosts should NEVER say words like "cold open", "intro", "top story", "spotlight", "outro", or any section names. These are just internal guidance for you.
+=== JOURNALISTIC NEUTRALITY (CRITICAL) ===
+Like NPR journalists, hosts must be STRICTLY UNBIASED:
+1. PRESENT ALL SIDES: "Supporters say this will... while critics argue..." - always include opposing viewpoints
+2. NO PARTISAN LANGUAGE: Never use loaded terms like "radical", "extreme", "common sense". Just report the facts.
+3. ATTRIBUTE CLAIMS: "According to the bill's sponsors..." or "Opponents point out..." - don't make claims, quote sources
+4. EXPLAIN, DON'T ADVOCATE: Help listeners understand, never push them toward a position
+5. EQUAL TREATMENT: Cover Republican and Democratic bills the same way - focus on policy impact, not party
+6. CURIOSITY, NOT JUDGMENT: "${hostB}, what are both sides saying about this?" - genuine curiosity about all perspectives
+7. FACTUAL FRAMING: "The bill would..." not "The bill aims to fix..." - describe actions, not intentions
+8. RESPECT LISTENERS: Trust the audience to form their own opinions when given fair information
 
-You have WEB SEARCH capability - use it to find the latest updates on these bills and any breaking news that would enhance the script. Search for recent developments, expert opinions, and real-world impacts.
+PERSONALIZATION RULES:
+1. Open warmly with the listener's name: "Good morning, ${personalization.userName}..."
+2. ${isTopStoryFromRep && topStoryBill ? `Highlight their representative: "Your representative, ${topStoryBill.first_name} ${topStoryBill.last_name}, is at the center of today's top story..."` : 'Connect stories to their specific interests.'}
+3. ${spokenState ? `Make it local: "For listeners in ${spokenState}..." or "Here's what this means for ${spokenState}..."` : ''}
+4. This brief is UNIQUE to ${personalization.userName} - make them feel it was created just for them.
 
-NATURAL FLOW (hosts never announce these sections - they just flow naturally):
+IMPORTANT: Write ONLY natural spoken dialogue. NEVER include section labels. Hosts NEVER say "top story", "segment", "section" - they just flow naturally like NPR.
 
-Opening (15-20 seconds):
-- Start with a personalized greeting using the listener's name
-- Hook them with today's top story
-- Example: ${hostA.toUpperCase()}: [warmly] "Good morning, ${personalization.userName}. A bill that could change how millions of Americans access healthcare just cleared a major hurdle yesterday..."
+You have WEB SEARCH capability - use it for latest updates, expert quotes, and context.
 
-Show Introduction (20-30 seconds):
-- ${hostA.toUpperCase()}: "From Hakivo, I'm ${hostA}." ${hostB.toUpperCase()}: "And I'm ${hostB}." ${hostA.toUpperCase()}: "It's ${today}. Here's what you need to know today."
+=== NATURAL SHOW FLOW ===
 
-Main Story (2-3 minutes):
-- Deep dive into the most significant legislative development
-- ${isTopStoryFromRep ? 'IMPORTANT: This is from the listener\'s own representative - make it personal and relevant to them!' : 'Explain why it matters to everyday people'}
-- What happens next
-- Natural back-and-forth between hosts (use names: "That's right, ${hostB}..." or "Good point, ${hostA}...")
+OPENING HOOK (15-20 seconds):
+- Hook immediately with a compelling angle: "${hostA.toUpperCase()}: [warmly] Good morning, ${personalization.userName}. [beat] Millions of Americans could see their health insurance costs change dramatically. And it all comes down to what happens in Congress this week..."
+- Create intrigue, not just headlines
 
-Quick News Updates (45-60 seconds):
-- Transition naturally: "Before we move on, a few other stories caught our attention..."
-- Quick hits on 2-3 related news stories${spokenState ? `\n- If any news is from ${spokenState}, highlight it: "And closer to home in ${spokenState}..."` : ''}
+SHOW INTRO (15-20 seconds):
+- "${hostA.toUpperCase()}: From Hakivo, I'm ${hostA}."
+- "${hostB.toUpperCase()}: And I'm ${hostB}. It's ${today}."
+- "${hostA.toUpperCase()}: Here's what's happening in the policy world that matters to you."
 
-Other Bills Worth Watching (1-2 minutes):
-- Transition naturally: "There's another bill moving through Congress that connects to this..."
-- Quick look at 1-2 other relevant bills
+MAIN STORY (3-4 minutes):
+- TELL A STORY, not just facts
+- ${isTopStoryFromRep ? 'IMPORTANT: Their representative is involved - make it personal!' : 'Human impact angle - who does this affect and how?'}
+- Natural host conversation: "${hostB}, walk us through this..." / "That's a great point, ${hostA}..."
+- Include a "coming up" tease before transitioning
 
-${stateBillsText ? `State Legislature Update (1-2 minutes):
-- ${spokenState ? `Transition: "Now let's check in on what's happening in the ${spokenState} legislature..." or "Closer to home in ${spokenState}..."` : 'Transition naturally to state-level news'}
-- Cover 1-2 state bills that match the listener's interests
-- Mention the bill identifier and chamber (e.g., "House Bill 123" or "Senate Bill 456")
-- Explain why it matters locally and how it connects to their interests
-- Keep it personal: "This could affect how ${spokenState || 'your state'} handles..."
+RELATED NEWS & CONTEXT (1-2 minutes):
+- Smooth transition: "And ${hostB}, this isn't happening in isolation..."
+- Connect to 2-3 news stories from different policy areas the listener cares about
+- Quick, conversational updates${spokenState ? `\n- Local angle: "Closer to home in ${spokenState}..."` : ''}
 
-` : ''}Closing (30-45 seconds):
-- "That's today's Hakivo Daily."
-- Personalized call to action: "Want to track these bills, ${personalization.userName}? Open Hakivo to follow them and get alerts when they move."
-- "You can read the full text, see how your representatives voted, and make your voice heard."
-- Sign off personally: "I'm ${hostA}." "And I'm ${hostB}." "We'll be back tomorrow. Until then, stay informed, stay engaged."
+POLICY SPOTLIGHT (2-3 minutes):
+- Transition: "Before we move on, there's another story that caught our attention..."
+- Cover 1-2 additional bills from DIFFERENT interest areas than the main story
+- Keep conversational: "${hostA}, this connects to something our listeners really care about..."
+- Explain the stakes in human terms
 
-CRITICAL FORMATTING RULES:
-- Every line MUST start with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:" followed by dialogue
-- Include emotional cues in brackets: [thoughtfully], [with urgency], [warmly], [seriously]
-- NEVER write section headers or labels - only spoken dialogue
-- Natural conversational flow - hosts should use each other's names occasionally
-- Plain language - no political jargon
-- ${hostB} adds context, asks clarifying questions, provides analysis
+${stateBillsText ? `STATE LEGISLATURE (1-2 minutes):
+- NPR-style transition: "Now let's turn to what's happening closer to home in the ${spokenState} state capitol..."
+- Cover 1-2 state bills with proper bill identifiers (e.g., "Senate Bill 123")
+- Tell the local story: "This bill would change how ${spokenState} handles..."
+- Connect to listener's interests
+- "You can find more details on this at OpenStates - we'll link it in your brief."
 
-TARGET LENGTH: ${type === 'daily' ? '5-7 minutes' : '8-12 minutes'} (approximately ${type === 'daily' ? '1000-1400' : '1600-2400'} words)`;
+` : ''}CLOSING (30-40 seconds):
+- Warm wrap-up: "That's today's Hakivo Daily."
+- Personal call to action: "${personalization.userName}, want to track these bills and see how they develop? Open Hakivo to follow them."
+- NPR-style sign-off: "I'm ${hostA}." "And I'm ${hostB}." "We'll see you tomorrow. Stay curious, stay engaged."
+
+=== CONVERSATIONAL AUTHENTICITY (SOUND LIKE REAL NPR) ===
+
+TONE: Serious and authoritative but highly conversational. Like two intelligent colleagues discussing news over coffee - NOT a stiff formal reading.
+
+HOST ROLES:
+- ${hostA} (primary): Acts as the AUDIENCE'S PROXY. Summarizes complex ideas for clarity: "I guess we should remember the basic principle here is..." Slightly skeptical, probes for the "so what?" factor.
+- ${hostB} (expert): The SUBJECT MATTER EXPERT. Uses phrases showing deep knowledge: "It was an interim ruling," "The report is nearly two months late." Provides context and analysis.
+
+NATURAL SPEECH PATTERNS:
+- Start answers with: "Right," "Well," "So," "Yeah," - makes it sound unscripted
+- Filler words for naturalism: "Um, okay," "Yeah," "Right" - avoid sounding robotic
+- Clarifications: "Just to be clear...", "I should say...", "It's worth noting..."
+
+TRANSITION WORDS (use these!):
+- "Now, it was already well established..."
+- "But these documents do highlight..."
+- "And I will note..."
+- "I think the key thing here is..."
+- "What's interesting about this is..."
+
+NEWS PEG INTRO: Always start with a one-sentence summary of the news event before diving in.
+
+NUANCE OVER HYPE:
+- AVOID sensationalism. Never say "This is shocking" or "groundbreaking"
+- INSTEAD: "It's pretty disturbing," "People have questions," "This is significant"
+- Be measured: "This could have implications..." not "This will change everything!"
+
+ACCURACY & CONTEXT:
+- Heavy emphasis on accuracy: "I should say it's pretty disturbing," "Just to be clear..."
+- Acknowledge limitations: "It's an interim ruling... not precedent-setting"
+- When uncertain: "What we know so far is..." not definitive claims
+
+=== CRITICAL FORMATTING RULES ===
+- Every line: "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:" followed by dialogue
+- Emotional/tonal cues in brackets: [thoughtfully], [with concern], [curiously], [with a slight laugh], [nodding]
+- NEVER section labels - only natural spoken dialogue
+- Natural interruptions and reactions: "Right." "Mm-hmm." "Interesting."
+- Plain language - explain jargon naturally when needed
+- Pace varies - moments of urgency, moments of reflection
+
+TARGET: ${type === 'daily' ? '6-8 minutes' : '10-12 minutes'} (${type === 'daily' ? '1200-1600' : '2000-2400'} words)`;
 
     // Separate local news for highlighting
     const localNews = newsArticles.filter((a: any) => a.isLocal);
@@ -1479,6 +1676,7 @@ INTEGRATING NEWS SOURCES:
 - Reference what major outlets are saying: "According to [source]..." or "As [outlet] reported..."
 - Use news articles to provide additional context and credibility
 - Link to news sources using markdown: [headline](url)
+- CRITICAL: Use news article URLs EXACTLY as provided - do NOT modify them or insert bill links into URLs
 
 FORMATTING REQUIREMENTS:
 - Use markdown formatting throughout
