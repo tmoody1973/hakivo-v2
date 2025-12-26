@@ -5,13 +5,16 @@ import policyInterestMapping from '../../docs/architecture/policy_interest_mappi
 /**
  * News Sync Scheduler
  *
- * Runs 3x daily (8 AM, 2 PM, and 8 PM) to fetch Congressional news from Exa.ai
- * for all 12 policy interests. Stores results in shared news_articles pool
- * for efficient user filtering without per-user API calls.
+ * Runs 3x daily (8 AM, 2 PM, and 8 PM) to fetch Congressional news from
+ * BOTH Exa.ai and Perplexity for all 12 policy interests.
+ *
+ * Dual-Source Strategy:
+ * - Exa.ai: Primary source with built-in images
+ * - Perplexity: Secondary source with LinkPreview for images
+ *
+ * Results stored in shared news_articles pool for efficient user filtering.
  *
  * Schedule: 0 8,14,20 * * * (8 AM, 2 PM, and 8 PM every day)
- *
- * Cost: 12 interests × 3 times/day = 36 Exa.ai API calls/day
  */
 export default class extends Task<Env> {
   async handle(event: Event): Promise<void> {
@@ -53,7 +56,7 @@ export default class extends Task<Env> {
 
       const allArticles: ArticleWithMetadata[] = [];
 
-      console.log('📥 PHASE 1: Fetching articles from all interests...');
+      console.log('📥 PHASE 1: Fetching articles from all interests (Exa.ai + Perplexity)...');
 
       // Iterate through all 12 policy interests
       for (const mapping of policyInterestMapping) {
@@ -63,13 +66,37 @@ export default class extends Task<Env> {
         console.log(`   Keywords: ${keywords.slice(0, 3).join(', ')}...`);
 
         try {
-          // Call Exa.ai search with keywords from mapping
-          const results = await exaClient.searchNews(
+          // ========== SOURCE 1: Exa.ai ==========
+          console.log(`   📰 [EXA] Fetching from Exa.ai...`);
+          const exaResults = await exaClient.searchNews(
             keywords,
             startDate,
             endDate,
-            25 // Fetch 25 articles per interest (3-day window = ~900 total articles)
+            15 // Reduced to 15 per source (was 25)
           );
+
+          // ========== SOURCE 2: Perplexity ==========
+          console.log(`   🔍 [PERPLEXITY] Fetching from Perplexity...`);
+          const perplexityResults = await this.fetchPerplexityNews(interest, keywords);
+          console.log(`   📰 [PERPLEXITY] Got ${perplexityResults.length} articles`);
+
+          // Combine results from both sources
+          const results = [
+            ...exaResults.map(article => ({ ...article, source: 'exa' as const })),
+            ...perplexityResults.map(article => ({
+              title: article.title,
+              summary: article.summary,
+              url: article.url,
+              author: article.author,
+              text: article.text,
+              imageUrl: article.imageUrl,
+              publishedDate: article.publishedDate,
+              score: article.score,
+              source: 'perplexity' as const
+            }))
+          ];
+
+          console.log(`   📊 Combined: ${exaResults.length} Exa + ${perplexityResults.length} Perplexity = ${results.length} total`);
 
           // Filter out landing pages and section pages
           const filteredResults = results.filter(article => {
@@ -516,5 +543,155 @@ export default class extends Task<Env> {
     }
 
     return false;
+  }
+
+  /**
+   * Fetch og:image using LinkPreview API
+   * Used for Perplexity articles which don't have reliable images
+   * @param url - Article URL to fetch image for
+   * @returns Image URL or null if not found
+   */
+  private async fetchImageWithLinkPreview(url: string): Promise<string | null> {
+    try {
+      const apiKey = this.env.LINKPREVIEW_API_KEY;
+      if (!apiKey) {
+        console.warn('[LINKPREVIEW] API key not set, skipping');
+        return null;
+      }
+
+      const response = await fetch('https://api.linkpreview.net', {
+        method: 'POST',
+        headers: {
+          'X-Linkpreview-Api-Key': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ q: url })
+      });
+
+      if (!response.ok) {
+        console.warn(`[LINKPREVIEW] API error for ${url}: ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json() as { image?: string };
+      if (data.image && data.image.startsWith('http')) {
+        return data.image;
+      }
+
+      return null;
+    } catch (error) {
+      console.warn(`[LINKPREVIEW] Failed to fetch image for ${url}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch news from Perplexity for a specific interest
+   * Uses LinkPreview API to get images for articles
+   * Uses AI relevance scoring to rank articles by relevance to the interest
+   * @param interest - Policy interest to search for
+   * @param keywords - Keywords for the interest
+   * @returns Array of articles with images and AI-scored relevance
+   */
+  private async fetchPerplexityNews(
+    interest: string,
+    keywords: string[]
+  ): Promise<Array<{
+    id: string;
+    title: string;
+    summary: string;
+    url: string;
+    author: string | null;
+    text: string;
+    imageUrl: string | null;
+    publishedDate: string;
+    score: number;
+    sourceDomain: string;
+    source: 'perplexity';
+  }>> {
+    try {
+      console.log(`   🔍 [PERPLEXITY] Fetching news for: ${interest}`);
+
+      // Call Perplexity with the interest keywords
+      const results = await this.env.PERPLEXITY_CLIENT.searchNews(
+        [interest],
+        null, // No state filter for general sync
+        15    // Fetch 15 articles per interest
+      );
+
+      console.log(`   📰 [PERPLEXITY] Got ${results.length} articles for ${interest}`);
+
+      // Get Cerebras client for AI relevance scoring
+      const cerebrasClient = this.env.CEREBRAS_CLIENT;
+
+      // Process articles: fetch images and score relevance
+      const articlesWithImages = await Promise.all(
+        results.map(async (article) => {
+          // Extract domain from URL
+          let sourceDomain = 'unknown';
+          try {
+            const url = new URL(article.url);
+            sourceDomain = url.hostname.replace('www.', '');
+          } catch {
+            sourceDomain = 'unknown';
+          }
+
+          // Check if article already has an image from Perplexity
+          let imageUrl = article.image?.url || null;
+
+          // If no image, try LinkPreview
+          if (!imageUrl && article.url) {
+            imageUrl = await this.fetchImageWithLinkPreview(article.url);
+            if (imageUrl) {
+              console.log(`   🖼️  [LINKPREVIEW] Got image for: ${article.title.substring(0, 40)}...`);
+            }
+          }
+
+          // AI Relevance Scoring: Score how relevant this article is to the interest
+          let score = 0.5; // Default fallback score
+          try {
+            const relevanceResult = await cerebrasClient.scoreArticleRelevance(
+              article.title,
+              article.summary,
+              interest
+            );
+            score = relevanceResult.score;
+
+            // Log high and low relevance scores for visibility
+            if (score >= 0.8) {
+              console.log(`   🎯 [RELEVANCE] High (${score.toFixed(2)}): "${article.title.substring(0, 50)}..."`);
+            } else if (score <= 0.3) {
+              console.log(`   📉 [RELEVANCE] Low (${score.toFixed(2)}): "${article.title.substring(0, 50)}..."`);
+            }
+          } catch (error) {
+            console.warn(`   ⚠️ [RELEVANCE] AI scoring failed, using default 0.5:`, error);
+          }
+
+          return {
+            id: crypto.randomUUID(),
+            title: article.title,
+            summary: article.summary,
+            url: article.url,
+            author: null,
+            text: article.summary, // Perplexity provides summary not full text
+            imageUrl,
+            publishedDate: article.publishedAt || new Date().toISOString(),
+            score, // AI-scored relevance (0.0 - 1.0)
+            sourceDomain,
+            source: 'perplexity' as const
+          };
+        })
+      );
+
+      // Sort by relevance score (highest first)
+      articlesWithImages.sort((a, b) => b.score - a.score);
+
+      console.log(`   📊 [PERPLEXITY] Scored ${articlesWithImages.length} articles, top score: ${articlesWithImages[0]?.score.toFixed(2) || 'N/A'}`);
+
+      return articlesWithImages;
+    } catch (error) {
+      console.error(`   ❌ [PERPLEXITY] Failed to fetch for ${interest}:`, error);
+      return [];
+    }
   }
 }

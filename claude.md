@@ -81,6 +81,16 @@ find_tasks(filter_by="project", filter_value="proj-123")
 - `rag_search_knowledge_base(query="...", source_id="...")` - Search docs
 - `rag_search_code_examples(query="...", source_id="...")` - Find code
 
+## Raindrop Service URLs
+
+**IMPORTANT**: Service URLs change on each deployment. Never hardcode or guess URLs.
+
+To find the correct Raindrop service URL:
+```bash
+npx raindrop build find
+```
+No parameters needed. This returns all current service URLs.
+
 ## Important Notes
 
 - Task status flow: `todo` → `doing` → `review` → `done`

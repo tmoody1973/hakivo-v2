@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth/auth-context';
+import { mixpanel } from '@/lib/analytics';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -64,6 +65,22 @@ export default function AuthCallbackClient() {
           workosSessionId: data.workosSessionId,
           user: data.user,
         });
+
+        // Track sign in/signup event in Mixpanel
+        const isNewUser = !data.user.onboardingCompleted;
+        if (isNewUser) {
+          mixpanel.track('Sign Up', {
+            user_id: data.user.id,
+            email: data.user.email,
+            signup_method: 'workos',
+          });
+        } else {
+          mixpanel.track('Sign In', {
+            user_id: data.user.id,
+            login_method: 'workos',
+            success: true,
+          });
+        }
 
         // Redirect based on onboarding status
         if (!data.user.onboardingCompleted) {

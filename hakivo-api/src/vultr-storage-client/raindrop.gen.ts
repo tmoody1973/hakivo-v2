@@ -52,6 +52,7 @@ export interface Env {
   INNGEST_SIGNING_KEY: string;
   JWT_SECRET: string;
   LEGISLATION_SEARCH: SmartBucket;
+  LINKPREVIEW_API_KEY: string;
   logger: Logger;
   mem: KvCache;
   MEMBERS_SERVICE: ServiceStub<import('../members-service/index.js').default>;

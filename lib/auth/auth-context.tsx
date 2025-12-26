@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { refreshAccessToken } from '@/lib/api/backend';
-import { analytics } from '@/lib/analytics';
+import { analytics, mixpanel } from '@/lib/analytics';
 
 // User type matching backend response
 export interface User {
@@ -261,6 +261,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: tokens.user.lastName,
         name: `${tokens.user.firstName} ${tokens.user.lastName}`,
         onboardingCompleted: tokens.user.onboardingCompleted,
+      });
+
+      // Identify user in Mixpanel
+      mixpanel.identify(tokens.user.id);
+      mixpanel.people.set({
+        '$name': `${tokens.user.firstName} ${tokens.user.lastName}`,
+        '$email': tokens.user.email,
+        'firstName': tokens.user.firstName,
+        'lastName': tokens.user.lastName,
+        'onboardingCompleted': tokens.user.onboardingCompleted,
       });
 
       // Schedule proactive token refresh

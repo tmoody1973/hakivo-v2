@@ -1,5 +1,6 @@
 // Client-side analytics only - safe for browser
 export { PostHogProvider, PostHogPageview, posthog } from './posthog-provider';
+export { MixpanelProvider, MixpanelPageview, mixpanel } from './mixpanel-provider';
 export { analytics } from './track';
 
 // NOTE: Server-side LLM tracking (posthog-node) must be imported directly:

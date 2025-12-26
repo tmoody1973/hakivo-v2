@@ -109,6 +109,10 @@ application "hakivo-prod" {
     secret = true
   }
 
+  env "LINKPREVIEW_API_KEY" {
+    secret = true
+  }
+
   env "STRIPE_SECRET_KEY" {
     secret = true
   }

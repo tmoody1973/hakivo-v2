@@ -444,6 +444,92 @@ Return JSON only.`
   }
 
   /**
+   * Score article relevance to a specific policy interest using AI
+   * Returns a relevance score from 0.0 to 1.0
+   *
+   * @param title - Article title
+   * @param summary - Article summary
+   * @param interest - The policy interest to score against (e.g., "Agriculture & Food")
+   * @returns Relevance score (0.0 = not relevant, 1.0 = highly relevant)
+   *
+   * @example
+   * ```ts
+   * const score = await cerebrasClient.scoreArticleRelevance(
+   *   "New farming subsidies announced for rural communities",
+   *   "The USDA announced $50M in subsidies for small farms...",
+   *   "Agriculture & Food"
+   * );
+   * // Returns: { score: 0.95, reasoning: "Directly about farming subsidies" }
+   * ```
+   */
+  async scoreArticleRelevance(
+    title: string,
+    summary: string,
+    interest: string
+  ): Promise<{ score: number; reasoning: string; tokensUsed: number }> {
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `You are an expert at evaluating how relevant a news article is to a specific policy interest.
+
+Score the article's relevance on a scale from 0.0 to 1.0:
+- 1.0 = Directly about this topic (main subject)
+- 0.8 = Strongly related (significant coverage of this topic)
+- 0.6 = Moderately related (mentions this topic meaningfully)
+- 0.4 = Tangentially related (brief mention or indirect connection)
+- 0.2 = Barely related (only loosely connected)
+- 0.0 = Not related at all
+
+Return your response as JSON with this exact structure:
+{
+  "score": 0.0-1.0,
+  "reasoning": "Brief explanation (1 sentence)"
+}`
+      },
+      {
+        role: 'user' as const,
+        content: `Rate relevance to "${interest}":
+
+Title: ${title}
+Summary: ${summary}
+
+Return JSON with score and reasoning.`
+      }
+    ];
+
+    const result = await this.generateCompletion(messages, 0.2, 100);
+
+    try {
+      // Extract JSON from response
+      let jsonText = result.content.trim();
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\n?/, '').replace(/```$/, '').trim();
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\n?/, '').replace(/```$/, '').trim();
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const score = Math.max(0, Math.min(1, parsed.score || 0.5));
+
+      return {
+        score,
+        reasoning: parsed.reasoning || 'No reasoning provided',
+        tokensUsed: result.tokensUsed
+      };
+    } catch (error) {
+      console.error('Failed to parse relevance score JSON:', error);
+      console.error('Raw response:', result.content);
+
+      // Fallback: return middle score
+      return {
+        score: 0.5,
+        reasoning: 'Failed to parse AI response',
+        tokensUsed: result.tokensUsed
+      };
+    }
+  }
+
+  /**
    * Calculate Levenshtein distance between two strings
    * Used for Stage 1 fast string similarity filtering
    * @internal
