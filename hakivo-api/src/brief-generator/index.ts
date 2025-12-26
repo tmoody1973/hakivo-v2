@@ -281,7 +281,7 @@ export default class extends Each<Body, Env> {
     let article: string = '';
     let wordCount: number = 0;
     try {
-      const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsArticles, headline);
+      const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsArticles, headline, stateBills, userState);
       article = articleResult.article;
       wordCount = articleResult.wordCount;
       console.log(`[STAGE-6] Generated article: ${wordCount} words. Elapsed: ${Date.now() - startTime}ms`);
@@ -1609,7 +1609,9 @@ ${hostB.toUpperCase()}: [emotional cue] dialogue...
     type: string,
     bills: any[],
     newsArticles: any[],
-    headline: string
+    headline: string,
+    stateBills: any[] = [],
+    userState: string | null = null
   ): Promise<{ article: string; wordCount: number }> {
     // Build bill links for hyperlinks with actions
     const billLinks = bills.map((bill: any) => {
@@ -1649,12 +1651,44 @@ Source: ${n.source}
 Summary: ${n.summary}`
     ).join('\n\n');
 
+    // Build state bills context with OpenStates URLs
+    const stateBillsContext = stateBills.length > 0 ? stateBills.map((bill: any) => {
+      const stateCode = (bill.state || '').toLowerCase();
+      const session = encodeURIComponent(bill.session_identifier || '');
+      const identifier = encodeURIComponent(bill.identifier || '');
+      const openstatesUrl = `https://openstates.org/${stateCode}/bills/${session}/${identifier}/`;
+      const subjects = bill.subjects ? (typeof bill.subjects === 'string' ? JSON.parse(bill.subjects) : bill.subjects) : [];
+      const subjectStr = Array.isArray(subjects) && subjects.length > 0 ? subjects.slice(0, 3).join(', ') : 'General';
+
+      return `State Bill: ${bill.identifier} (${bill.state})
+Title: ${bill.title}
+Chamber: ${bill.chamber || 'Unknown'}
+Subjects: ${subjectStr}
+Latest Action: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}
+URL: ${openstatesUrl}`;
+    }).join('\n\n') : '';
+
     const today = new Date().toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     });
+
+    // Get state name for personalization
+    const stateNames: Record<string, string> = {
+      'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+      'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+      'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+      'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+      'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+      'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+      'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+      'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+      'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+      'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
+    };
+    const stateName = userState ? stateNames[userState] || userState : null;
 
     // System prompt for article generation
     const systemPrompt = `You are a senior correspondent writing a detailed news article for Hakivo, a civic engagement platform.
@@ -1669,7 +1703,7 @@ ARTICLE STRUCTURE (follow but don't label):
 2. Context: Why this matters to everyday Americans
 3. Body: 2-3 sections with ## subheadings covering key developments
 4. Analysis: What this means going forward
-5. Call to action: End by encouraging civic engagement
+${stateBillsContext ? `5. State Legislature: A section covering relevant state legislation${stateName ? ` in ${stateName}` : ''}\n` : ''}6. Call to action: End by encouraging civic engagement
 
 INTEGRATING NEWS SOURCES:
 - WEAVE news headlines and reporting into your narrative
@@ -1678,11 +1712,17 @@ INTEGRATING NEWS SOURCES:
 - Link to news sources using markdown: [headline](url)
 - CRITICAL: Use news article URLs EXACTLY as provided - do NOT modify them or insert bill links into URLs
 
+${stateBillsContext ? `INTEGRATING STATE LEGISLATION:
+- Include a section about state-level legislation${stateName ? ` happening in ${stateName}` : ''}
+- Link state bills to their OpenStates URLs using markdown: [bill identifier](openstates url)
+- Explain how state legislation connects to or differs from federal action
+- Use ## State Legislature or ## What's Happening in ${stateName || 'Your State'} as the section header
+` : ''}
 FORMATTING REQUIREMENTS:
 - Use markdown formatting throughout
 - Use ## for meaningful section headers (e.g., "## Border Security Measures", "## What This Means For You")
 - Include hyperlinks: [bill name](congress.gov url) and [news headline](news url)
-- Bold **key terms** and **bill names** on first mention
+${stateBillsContext ? '- Include hyperlinks for state bills: [state bill identifier](openstates url)\n' : ''}- Bold **key terms** and **bill names** on first mention
 - Separate paragraphs with blank lines for readability
 - Write 500-700 words for daily, 900-1200 for weekly
 
@@ -1699,16 +1739,19 @@ Type: ${type} briefing
 
 Use web search to find additional context, expert opinions, or recent developments about the key legislation.
 
-=== KEY LEGISLATION ===
+=== KEY FEDERAL LEGISLATION ===
 ${billsContext}
-
+${stateBillsContext ? `
+=== STATE LEGISLATION${stateName ? ` (${stateName})` : ''} ===
+${stateBillsContext}
+` : ''}
 === RELATED NEWS COVERAGE (integrate these into your article) ===
 ${newsContext}
 
 Write the article naturally without any structural labels. Start directly with an engaging opening paragraph.
 Include ## subheadings where they make sense to break up content.
-Link all bills to their congress.gov URLs.
-IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
+Link all federal bills to their congress.gov URLs.
+${stateBillsContext ? `IMPORTANT: Include a section about state legislation${stateName ? ` in ${stateName}` : ''}. Link state bills to their OpenStates URLs.\n` : ''}IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
 End with an empowering note about staying informed.`;
 
     // Use Claude Sonnet 4.5 with web search for enhanced article content
