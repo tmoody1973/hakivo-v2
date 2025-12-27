@@ -42,9 +42,45 @@ export default class extends Task<Env> {
       // Enqueue brief generation for each user
       let enqueuedCount = 0;
       let errorCount = 0;
+      let skippedCount = 0;
+
+      // Free tier limit constant
+      const FREE_TIER_BRIEFS_PER_MONTH = 3;
 
       for (const user of users as any[]) {
         try {
+          // Check subscription tier and monthly brief limit
+          const userRecord = await db
+            .prepare('SELECT subscription_tier FROM users WHERE id = ?')
+            .bind(user.id)
+            .first();
+
+          const isPro = userRecord?.subscription_tier === 'pro' || userRecord?.subscription_tier === 'premium';
+
+          if (!isPro) {
+            // Check monthly brief count for free tier users
+            const currentDate = new Date();
+            const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getTime();
+
+            const briefsThisMonth = await db
+              .prepare(`
+                SELECT COUNT(*) as count FROM briefs
+                WHERE user_id = ?
+                  AND created_at >= ?
+                  AND status IN ('completed', 'script_ready', 'processing', 'audio_processing', 'pending')
+              `)
+              .bind(user.id, monthStart)
+              .first();
+
+            const briefCount = (briefsThisMonth?.count as number) || 0;
+
+            if (briefCount >= FREE_TIER_BRIEFS_PER_MONTH) {
+              console.log(`  ⊘ Skipping ${user.email} - monthly brief limit reached: ${briefCount}/${FREE_TIER_BRIEFS_PER_MONTH}`);
+              skippedCount++;
+              continue; // Skip this user
+            }
+          }
+
           // Calculate date range for daily brief (last 24 hours)
           const endDate = new Date();
           const startDate = new Date();
@@ -99,6 +135,7 @@ export default class extends Task<Env> {
 
       console.log('✅ Daily brief scheduling complete');
       console.log(`   Enqueued: ${enqueuedCount}`);
+      console.log(`   Skipped (limit reached): ${skippedCount}`);
       console.log(`   Errors: ${errorCount}`);
 
       // Log the scheduler execution

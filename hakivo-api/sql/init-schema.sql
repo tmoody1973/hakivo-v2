@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   zip_code TEXT,
   city TEXT,
   congressional_district TEXT,
+  subscription_tier TEXT DEFAULT 'free',
   email_verified INTEGER DEFAULT 0,
   onboarding_completed INTEGER DEFAULT 0,
   created_at INTEGER NOT NULL,
