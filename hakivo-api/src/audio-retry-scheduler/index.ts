@@ -142,48 +142,64 @@ export default class extends Task<Env> {
 
       const totalCount = briefCount + podcastCount;
 
-      if (totalCount === 0) {
-        console.log('ℹ️ [AUDIO-RETRY] No briefs or podcast episodes pending audio generation');
+      // Check if any briefs need image generation (independently of audio)
+      const imageResult = await db
+        .prepare(`
+          SELECT COUNT(*) as count
+          FROM briefs
+          WHERE status IN ('completed', 'script_ready', 'audio_processing')
+            AND (featured_image IS NULL OR featured_image = '')
+        `)
+        .all();
+
+      const imageCount = (imageResult.results?.[0] as { count: number } | undefined)?.count || 0;
+
+      if (totalCount === 0 && imageCount === 0) {
+        console.log('ℹ️ [AUDIO-RETRY] No briefs pending audio or image generation');
         return;
       }
 
-      console.log(`📋 [AUDIO-RETRY] Found ${briefCount} brief(s) and ${podcastCount} podcast episode(s) pending audio. Triggering Netlify background function...`);
+      console.log(`📋 [AUDIO-RETRY] Found ${briefCount} brief(s) and ${podcastCount} podcast episode(s) pending audio, ${imageCount} brief(s) pending images`);
 
       // Update cooldown timestamp before triggering
       await cache.put(RATE_LIMIT_KEY, Date.now().toString(), { expirationTtl: 600 });
 
-      // Trigger Netlify Background Function
-      // Background functions immediately return 202 Accepted and run async
-      const response = await fetch(NETLIFY_AUDIO_FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ trigger: 'raindrop-scheduler' }),
-      });
+      // Trigger audio processor if needed
+      if (totalCount > 0) {
+        console.log(`🎧 [AUDIO-RETRY] Triggering Netlify audio processor...`);
+        const response = await fetch(NETLIFY_AUDIO_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ trigger: 'raindrop-scheduler' }),
+        });
 
-      if (response.ok || response.status === 202) {
-        console.log(`✅ [AUDIO-RETRY] Netlify audio function triggered successfully (${response.status})`);
-      } else {
-        const errorText = await response.text();
-        console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify audio function: ${response.status} - ${errorText}`);
+        if (response.ok || response.status === 202) {
+          console.log(`✅ [AUDIO-RETRY] Netlify audio function triggered successfully (${response.status})`);
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify audio function: ${response.status} - ${errorText}`);
+        }
       }
 
-      // Also trigger image processor for briefs needing featured images
-      console.log(`🖼️ [AUDIO-RETRY] Triggering Netlify image processor...`);
-      const imageResponse = await fetch(NETLIFY_IMAGE_FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ trigger: 'raindrop-scheduler' }),
-      });
+      // Trigger image processor if needed (independently of audio)
+      if (imageCount > 0) {
+        console.log(`🖼️ [AUDIO-RETRY] Triggering Netlify image processor...`);
+        const imageResponse = await fetch(NETLIFY_IMAGE_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ trigger: 'raindrop-scheduler' }),
+        });
 
-      if (imageResponse.ok || imageResponse.status === 202) {
-        console.log(`✅ [AUDIO-RETRY] Netlify image function triggered successfully (${imageResponse.status})`);
-      } else {
-        const errorText = await imageResponse.text();
-        console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify image function: ${imageResponse.status} - ${errorText}`);
+        if (imageResponse.ok || imageResponse.status === 202) {
+          console.log(`✅ [AUDIO-RETRY] Netlify image function triggered successfully (${imageResponse.status})`);
+        } else {
+          const errorText = await imageResponse.text();
+          console.error(`❌ [AUDIO-RETRY] Failed to trigger Netlify image function: ${imageResponse.status} - ${errorText}`);
+        }
       }
 
     } catch (error) {
