@@ -1704,7 +1704,7 @@ ARTICLE STRUCTURE (follow but don't label):
 2. Context: Why this matters to everyday Americans
 3. Body: 2-3 sections with ## subheadings covering key developments
 4. Analysis: What this means going forward
-${stateBillsContext ? `5. State Legislature: A section covering relevant state legislation${stateName ? ` in ${stateName}` : ''}\n` : ''}6. Call to action: End by encouraging civic engagement
+${stateBillsContext ? `5. State Legislature: MANDATORY section covering state legislation${stateName ? ` in ${stateName}` : ''} - you MUST include this\n` : ''}6. Call to action: End by encouraging civic engagement
 
 INTEGRATING NEWS SOURCES:
 - WEAVE news headlines and reporting into your narrative
@@ -1752,7 +1752,7 @@ ${newsContext}
 Write the article naturally without any structural labels. Start directly with an engaging opening paragraph.
 Include ## subheadings where they make sense to break up content.
 Link all federal bills to their congress.gov URLs.
-${stateBillsContext ? `IMPORTANT: Include a section about state legislation${stateName ? ` in ${stateName}` : ''}. Link state bills to their OpenStates URLs.\n` : ''}IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
+${stateBillsContext ? `CRITICAL REQUIREMENT: You MUST include a dedicated ## State Legislature section covering the state bills provided below. Link each state bill to its OpenStates URL. This section is NOT optional - it must appear in every article when state bills are provided.\n` : ''}IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
 End with an empowering note about staying informed.`;
 
     // Use Claude Sonnet 4.5 - NO web search, only provided data
