@@ -1733,6 +1733,7 @@ ${stateBillsContext ? `5. State Legislature: MANDATORY section covering state le
 INTEGRATING NEWS SOURCES (CRITICAL):
 - EVERY factual claim, statistic, or quote MUST be cited with an inline link to the source
 - Use markdown links for ALL citations: "According to [The Texas Tribune](url), Attorney General Paxton..."
+- PERSONAL QUOTES: When quoting individuals, link their quote attribution to the source: "My kid has already lost one parent," [Jiannacopoulos told Wisconsin Public Radio](url), "and I'm going to be around..."
 - When mentioning settlements, enforcement actions, or specific events, IMMEDIATELY link to the source
 - Format citations naturally: "The [Washington Post reported](url) that..." or "A [$1.4B settlement with Meta](url) marked..."
 - Do NOT make claims without linking to the source article
