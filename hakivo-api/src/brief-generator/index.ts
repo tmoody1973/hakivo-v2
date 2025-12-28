@@ -871,16 +871,33 @@ export default class extends Each<Body, Env> {
   private async saveFeaturedStateBills(briefId: string, stateBillIds: string[]): Promise<void> {
     console.log(`[SAVE-STATE-BILLS] saveFeaturedStateBills called with ${stateBillIds.length} IDs for brief ${briefId}`);
 
+    const db = this.env.APP_DB;
+
+    // DIAGNOSTIC: Write to briefs table's news_json to track what we tried to save
+    try {
+      const diagnosticData = {
+        diagnostic_timestamp: new Date().toISOString(),
+        function_called: 'saveFeaturedStateBills',
+        state_bill_count: stateBillIds.length,
+        state_bill_ids: stateBillIds
+      };
+      await db
+        .prepare('UPDATE briefs SET news_json = json_insert(news_json, \'$.state_bills_diagnostic\', ?) WHERE id = ?')
+        .bind(JSON.stringify(diagnosticData), briefId)
+        .run();
+    } catch (diagError) {
+      console.error('[DIAGNOSTIC] Failed to write diagnostic data:', diagError);
+    }
+
     if (stateBillIds.length === 0) {
       console.log(`[SAVE-STATE-BILLS] No state bills to save, returning early`);
       return;
     }
 
-    const db = this.env.APP_DB;
-
     // Insert each state bill featured in this brief
     let successCount = 0;
     let errorCount = 0;
+    const errors: any[] = [];
     for (const stateBillId of stateBillIds) {
       try {
         console.log(`[SAVE-STATE-BILLS] Inserting brief_id=${briefId}, state_bill_id=${stateBillId}`);
@@ -890,11 +907,32 @@ export default class extends Each<Body, Env> {
           .run();
         console.log(`[SAVE-STATE-BILLS] ✅ Insert successful for ${stateBillId}`, result);
         successCount++;
-      } catch (insertError) {
+      } catch (insertError: any) {
         errorCount++;
+        const errorInfo = {
+          state_bill_id: stateBillId,
+          error_message: insertError?.message || String(insertError),
+          error_name: insertError?.name
+        };
+        errors.push(errorInfo);
         console.error(`[SAVE-STATE-BILLS] ❌ Insert FAILED for ${stateBillId}:`, insertError);
         console.error(`[SAVE-STATE-BILLS] Error details:`, JSON.stringify(insertError, null, 2));
       }
+    }
+
+    // DIAGNOSTIC: Update with results
+    try {
+      const resultData = {
+        success_count: successCount,
+        error_count: errorCount,
+        errors: errors
+      };
+      await db
+        .prepare('UPDATE briefs SET news_json = json_insert(news_json, \'$.state_bills_save_result\', ?) WHERE id = ?')
+        .bind(JSON.stringify(resultData), briefId)
+        .run();
+    } catch (diagError) {
+      console.error('[DIAGNOSTIC] Failed to write result diagnostic data:', diagError);
     }
 
     console.log(`[SAVE-STATE-BILLS] ✅ Completed: ${successCount} successful, ${errorCount} errors out of ${stateBillIds.length} total`);
