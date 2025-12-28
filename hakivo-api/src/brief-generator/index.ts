@@ -188,13 +188,22 @@ export default class extends Each<Body, Env> {
     let stateBills: any[] = [];
     if (userState) {
       console.log(`[STAGE-2c] Fetching state legislature bills for ${userState}...`);
+      console.log(`[STAGE-2c] Policy interests:`, policyInterests);
+      console.log(`[STAGE-2c] Recently featured bill IDs:`, recentlyFeaturedBillIds.length);
       try {
         stateBills = await this.getStateBills(userState, policyInterests, recentlyFeaturedBillIds);
-        console.log(`[STAGE-2c] Got ${stateBills.length} state bills. Elapsed: ${Date.now() - startTime}ms`);
+        console.log(`[STAGE-2c] ✅ Got ${stateBills.length} state bills. Elapsed: ${Date.now() - startTime}ms`);
+        if (stateBills.length > 0) {
+          console.log(`[STAGE-2c] State bills:`, stateBills.map(b => ({ id: b.id, identifier: b.identifier, title: b.title.substring(0, 50) })));
+        } else {
+          console.warn(`[STAGE-2c] ⚠️ NO state bills returned for ${userState} - this is unexpected!`);
+        }
       } catch (stateError) {
-        console.warn(`[STAGE-2c] State bills fetch failed (non-fatal):`, stateError);
+        console.error(`[STAGE-2c] ❌ State bills fetch FAILED (non-fatal):`, stateError);
         // Continue without state bills - non-fatal
       }
+    } else {
+      console.log(`[STAGE-2c] No user state set, skipping state bills`);
     }
 
     // ==================== STAGE 3: FETCH BILL ACTIONS ====================
@@ -1069,6 +1078,10 @@ export default class extends Each<Body, Env> {
     }
 
     try {
+      console.log(`[GET-STATE-BILLS] Searching for ${state} bills with ${subjects.length} subject keywords`);
+      console.log(`[GET-STATE-BILLS] Subjects: ${subjects.slice(0, 5).join(', ')}`);
+      console.log(`[GET-STATE-BILLS] Excluding ${excludeBillIds.length} recently featured bills`);
+
       // Build exclusion clause
       const excludeClause = excludeBillIds.length > 0
         ? `AND id NOT IN (${excludeBillIds.map(() => '?').join(', ')})`
@@ -1082,6 +1095,7 @@ export default class extends Each<Body, Env> {
         ).join(' OR ');
         const subjectParams = subjects.flatMap(s => [`%${s.toLowerCase()}%`, `%${s.toLowerCase()}%`]);
 
+        console.log(`[GET-STATE-BILLS] Running subject/title match query for ${state.toUpperCase()}`);
         const result = await db
           .prepare(`
             SELECT
@@ -1098,6 +1112,7 @@ export default class extends Each<Body, Env> {
           .bind(state.toUpperCase(), ...subjectParams, ...excludeBillIds)
           .all();
 
+        console.log(`[GET-STATE-BILLS] Subject match query returned ${result.results?.length || 0} bills`);
         if (result.results && result.results.length > 0) {
           console.log(`✓ Found ${result.results.length} state bills matching interests for ${state}`);
           return result.results as any[];
@@ -1706,12 +1721,15 @@ ARTICLE STRUCTURE (follow but don't label):
 4. Analysis: What this means going forward
 ${stateBillsContext ? `5. State Legislature: MANDATORY section covering state legislation${stateName ? ` in ${stateName}` : ''} - you MUST include this\n` : ''}6. Call to action: End by encouraging civic engagement
 
-INTEGRATING NEWS SOURCES:
-- WEAVE news headlines and reporting into your narrative
-- Reference what major outlets are saying: "According to [source]..." or "As [outlet] reported..."
-- Use news articles to provide additional context and credibility
-- Link to news sources using markdown: [headline](url)
+INTEGRATING NEWS SOURCES (CRITICAL):
+- EVERY factual claim, statistic, or quote MUST be cited with an inline link to the source
+- Use markdown links for ALL citations: "According to [The Texas Tribune](url), Attorney General Paxton..."
+- When mentioning settlements, enforcement actions, or specific events, IMMEDIATELY link to the source
+- Format citations naturally: "The [Washington Post reported](url) that..." or "A [$1.4B settlement with Meta](url) marked..."
+- Do NOT make claims without linking to the source article
+- Reference what major outlets are saying and link to their coverage
 - CRITICAL: Use news article URLs EXACTLY as provided - do NOT modify them or insert bill links into URLs
+- EVERY paragraph should include at least one linked citation to maintain credibility
 
 ${stateBillsContext ? `INTEGRATING STATE LEGISLATION:
 - Include a section about state-level legislation${stateName ? ` happening in ${stateName}` : ''}
@@ -1752,7 +1770,11 @@ ${newsContext}
 Write the article naturally without any structural labels. Start directly with an engaging opening paragraph.
 Include ## subheadings where they make sense to break up content.
 Link all federal bills to their congress.gov URLs.
-${stateBillsContext ? `CRITICAL REQUIREMENT: You MUST include a dedicated ## State Legislature section covering the state bills provided below. Link each state bill to its OpenStates URL. This section is NOT optional - it must appear in every article when state bills are provided.\n` : ''}IMPORTANT: Reference the news articles in your writing - cite what reporters are saying, link to their coverage.
+${stateBillsContext ? `CRITICAL REQUIREMENT: You MUST include a dedicated ## State Legislature section covering the state bills provided below. Link each state bill to its OpenStates URL. This section is NOT optional - it must appear in every article when state bills are provided.\n` : ''}CRITICAL CITATION REQUIREMENT:
+- EVERY claim, statistic, settlement amount, or fact MUST include an inline markdown link to the source article
+- Do NOT write unsourced claims - if you mention a fact, link to the article where you found it
+- Examples: "According to [The Texas Tribune](url)..." or "The [$1.4B Meta settlement](url)..."
+- Aim for at least one cited source link per paragraph
 End with an empowering note about staying informed.`;
 
     // Use Claude Sonnet 4.5 - NO web search, only provided data

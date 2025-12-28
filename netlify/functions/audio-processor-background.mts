@@ -42,8 +42,8 @@ const getDashboardUrl = () => {
 const getDbAdminUrl = () => {
   const envUrl = Netlify.env.get('RAINDROP_DB_ADMIN_URL');
   if (envUrl) return envUrl;
-  // Fallback to latest known URL (updated 2025-12-25)
-  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  // Fallback to latest known URL (updated 2025-12-27)
+  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzq.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 };
 
 // Content types for audio processing
@@ -144,7 +144,7 @@ function convertPodcastToDialoguePrompt(script: string, voiceA: string, voiceB: 
 async function getBriefsReadyForAudio(): Promise<Brief[]> {
   const query = `SELECT id, script, status FROM briefs WHERE status = 'script_ready' ORDER BY created_at ASC LIMIT 1`;
 
-  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -165,7 +165,7 @@ async function getBriefsReadyForAudio(): Promise<Brief[]> {
 async function getPodcastEpisodesReadyForAudio(): Promise<AudioContent[]> {
   const query = `SELECT id, script, status FROM podcast_episodes WHERE status = 'script_ready' ORDER BY episode_number ASC LIMIT 1`;
 
-  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -193,7 +193,7 @@ async function updateBriefStatus(
     ? `UPDATE briefs SET status = '${status}', audio_url = '${audioUrl}', updated_at = ${timestamp} WHERE id = '${briefId}'`
     : `UPDATE briefs SET status = '${status}', updated_at = ${timestamp} WHERE id = '${briefId}'`;
 
-  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -217,7 +217,7 @@ async function updatePodcastStatus(
     ? `UPDATE podcast_episodes SET status = '${status}', audio_url = '${audioUrl}', updated_at = ${timestamp} WHERE id = '${episodeId}'`
     : `UPDATE podcast_episodes SET status = '${status}', updated_at = ${timestamp} WHERE id = '${episodeId}'`;
 
-  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),

@@ -18,14 +18,14 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 // Migrated from gemini-2.0-flash-exp per rate limit recommendation
 const GEMINI_IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
-// Get Raindrop service URL from env or use default
-// IMPORTANT: Update RAINDROP_DASHBOARD_URL env var in Netlify when deploying new versions
-// To find current URL: cd hakivo-api && npx raindrop build find
-const getDashboardUrl = () => {
-  const envUrl = Netlify.env.get('RAINDROP_DASHBOARD_URL');
+// Get Raindrop DB admin service URL from env or use default
+// IMPORTANT: Update RAINDROP_DB_ADMIN_URL env var in Netlify when deploying new versions
+// To find current URL: cd hakivo-api && npx raindrop build find (look for db-admin)
+const getDbAdminUrl = () => {
+  const envUrl = Netlify.env.get('RAINDROP_DB_ADMIN_URL');
   if (envUrl) return envUrl;
-  // Fallback to latest known URL (updated 2025-12-25)
-  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+  // Fallback to latest known URL (updated 2025-12-27)
+  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzq.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 };
 
 interface Brief {
@@ -53,7 +53,7 @@ async function getBriefsNeedingImages(): Promise<Brief[]> {
 
   console.log(`[IMAGE] Querying for briefs needing WSJ-style images...`);
 
-  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -86,7 +86,7 @@ async function updateBriefImage(briefId: string, imageUrl: string): Promise<void
   const timestamp = Date.now();
   const query = `UPDATE briefs SET featured_image = '${imageUrl}', updated_at = ${timestamp} WHERE id = '${briefId}'`;
 
-  const response = await fetch(`${getDashboardUrl()}/api/database/query`, {
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
