@@ -387,17 +387,39 @@ export default class extends Each<Body, Env> {
     `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
     // Save featured bills for deduplication in future briefs
-    const featuredBillIds = billsWithActions.map((b: any) => b.id);
-    await this.saveFeaturedBills(briefId, featuredBillIds);
+    try {
+      const featuredBillIds = billsWithActions.map((b: any) => b.id);
+      console.log(`[SAVE-BILLS] Saving ${featuredBillIds.length} federal bills`);
+      await this.saveFeaturedBills(briefId, featuredBillIds);
+      console.log(`[SAVE-BILLS] ✅ Federal bills saved successfully`);
+    } catch (billSaveError) {
+      console.error(`[SAVE-BILLS] ❌ FAILED to save federal bills:`, billSaveError);
+    }
 
     // Save featured state bills for the "Related State Bills" section
-    const featuredStateBillIds = stateBills.map((b: any) => b.id);
-    console.log(`[SAVE-STATE-BILLS] About to save ${featuredStateBillIds.length} state bills for brief ${briefId}`);
-    if (featuredStateBillIds.length > 0) {
-      console.log(`[SAVE-STATE-BILLS] State bill IDs:`, featuredStateBillIds);
+    try {
+      const featuredStateBillIds = stateBills.map((b: any) => b.id);
+      console.log(`[SAVE-STATE-BILLS] About to save ${featuredStateBillIds.length} state bills for brief ${briefId}`);
+      console.log(`[SAVE-STATE-BILLS] stateBills array:`, stateBills.map(b => ({id: b.id, identifier: b.identifier})));
+
+      // DIAGNOSTIC: Write count to title temporarily so we can verify execution
+      await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
+        .bind(` [DIAG: ${featuredStateBillIds.length} state bills]`, briefId)
+        .run();
+
+      if (featuredStateBillIds.length > 0) {
+        console.log(`[SAVE-STATE-BILLS] State bill IDs to save:`, featuredStateBillIds);
+      }
+      await this.saveFeaturedStateBills(briefId, featuredStateBillIds);
+      console.log(`[SAVE-STATE-BILLS] ✅ Completed saveFeaturedStateBills call`);
+    } catch (stateBillSaveError) {
+      console.error(`[SAVE-STATE-BILLS] ❌ CRITICAL ERROR saving state bills:`, stateBillSaveError);
+      console.error(`[SAVE-STATE-BILLS] Error stack:`, (stateBillSaveError as Error).stack);
+      // Write error to title so we can see it
+      await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
+        .bind(` [ERROR: state bills save failed]`, briefId)
+        .run();
     }
-    await this.saveFeaturedStateBills(briefId, featuredStateBillIds);
-    console.log(`[SAVE-STATE-BILLS] ✅ Completed saveFeaturedStateBills call`);
 
     // Trigger Netlify audio processor immediately (don't wait for 5-minute scheduler)
     // This ensures new users don't have to wait for their first brief
