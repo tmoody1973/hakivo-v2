@@ -380,59 +380,19 @@ export default class extends Each<Body, Env> {
 
     // Save the script and set status to 'script_ready'
     // Netlify scheduled function (audio-processor) polls for this status every 2 minutes
-    // DIAGNOSTIC: Append to headline BEFORE setting it, so it's atomic
-    const diagnosticHeadline = headline + ` [SB:${stateBills.length}]`;
-
     await db.prepare(`
       UPDATE briefs
       SET status = ?, title = ?, script = ?, content = ?, featured_image = ?, news_json = ?, updated_at = ?
       WHERE id = ?
-    `).bind('script_ready', diagnosticHeadline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
-
-    // DIAGNOSTIC: Ultra-simple test with no template literals
-    try {
-      await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
-        .bind(' [DIAG]', briefId)
-        .run();
-      console.log('[DIAGNOSTIC] Successfully appended to title');
-    } catch (diagError) {
-      console.error('[DIAGNOSTIC] Failed to append to title:', diagError);
-    }
+    `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
     // Save featured bills for deduplication in future briefs
-    try {
-      const featuredBillIds = billsWithActions.map((b: any) => b.id);
-      console.log(`[SAVE-BILLS] Saving ${featuredBillIds.length} federal bills`);
-      await this.saveFeaturedBills(briefId, featuredBillIds);
-      console.log(`[SAVE-BILLS] ✅ Federal bills saved successfully`);
-    } catch (billSaveError) {
-      console.error(`[SAVE-BILLS] ❌ FAILED to save federal bills:`, billSaveError);
-    }
+    const featuredBillIds = billsWithActions.map((b: any) => b.id);
+    await this.saveFeaturedBills(briefId, featuredBillIds);
 
-    // Save featured state bills for the "Related State Bills" section
-    try {
-      const featuredStateBillIds = stateBills.map((b: any) => b.id);
-      console.log(`[SAVE-STATE-BILLS] About to save ${featuredStateBillIds.length} state bills for brief ${briefId}`);
-      console.log(`[SAVE-STATE-BILLS] stateBills array:`, stateBills.map(b => ({id: b.id, identifier: b.identifier})));
-
-      // DIAGNOSTIC: Write count to title temporarily so we can verify execution
-      await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
-        .bind(` [DIAG: ${featuredStateBillIds.length} state bills]`, briefId)
-        .run();
-
-      if (featuredStateBillIds.length > 0) {
-        console.log(`[SAVE-STATE-BILLS] State bill IDs to save:`, featuredStateBillIds);
-      }
-      await this.saveFeaturedStateBills(briefId, featuredStateBillIds);
-      console.log(`[SAVE-STATE-BILLS] ✅ Completed saveFeaturedStateBills call`);
-    } catch (stateBillSaveError) {
-      console.error(`[SAVE-STATE-BILLS] ❌ CRITICAL ERROR saving state bills:`, stateBillSaveError);
-      console.error(`[SAVE-STATE-BILLS] Error stack:`, (stateBillSaveError as Error).stack);
-      // Write error to title so we can see it
-      await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
-        .bind(` [ERROR: state bills save failed]`, briefId)
-        .run();
-    }
+    // NOTE: State bills save moved to audio-processor-background.mts as workaround
+    // for Raindrop deployment issue. Audio processor extracts bills from content
+    // and saves them after audio generation completes.
 
     // Trigger Netlify audio processor immediately (don't wait for 5-minute scheduler)
     // This ensures new users don't have to wait for their first brief
@@ -903,74 +863,30 @@ export default class extends Each<Body, Env> {
   /**
    * Save which state bills were featured in this brief
    */
+  /**
+   * DEPRECATED: State bills save moved to audio-processor-background.mts
+   * This function is kept for reference but not currently called.
+   * The workaround extracts bills from article content after generation.
+   */
   private async saveFeaturedStateBills(briefId: string, stateBillIds: string[]): Promise<void> {
-    console.log(`[SAVE-STATE-BILLS] saveFeaturedStateBills called with ${stateBillIds.length} IDs for brief ${briefId}`);
+    if (stateBillIds.length === 0) return;
 
     const db = this.env.APP_DB;
 
-    // DIAGNOSTIC: Write to briefs table's news_json to track what we tried to save
-    try {
-      const diagnosticData = {
-        diagnostic_timestamp: new Date().toISOString(),
-        function_called: 'saveFeaturedStateBills',
-        state_bill_count: stateBillIds.length,
-        state_bill_ids: stateBillIds
-      };
-      await db
-        .prepare('UPDATE briefs SET news_json = json_insert(news_json, \'$.state_bills_diagnostic\', ?) WHERE id = ?')
-        .bind(JSON.stringify(diagnosticData), briefId)
-        .run();
-    } catch (diagError) {
-      console.error('[DIAGNOSTIC] Failed to write diagnostic data:', diagError);
-    }
-
-    if (stateBillIds.length === 0) {
-      console.log(`[SAVE-STATE-BILLS] No state bills to save, returning early`);
-      return;
-    }
-
     // Insert each state bill featured in this brief
-    let successCount = 0;
-    let errorCount = 0;
-    const errors: any[] = [];
     for (const stateBillId of stateBillIds) {
       try {
-        console.log(`[SAVE-STATE-BILLS] Inserting brief_id=${briefId}, state_bill_id=${stateBillId}`);
-        const result = await db
+        await db
           .prepare('INSERT INTO brief_state_bills (brief_id, state_bill_id) VALUES (?, ?)')
           .bind(briefId, stateBillId)
           .run();
-        console.log(`[SAVE-STATE-BILLS] ✅ Insert successful for ${stateBillId}`, result);
-        successCount++;
-      } catch (insertError: any) {
-        errorCount++;
-        const errorInfo = {
-          state_bill_id: stateBillId,
-          error_message: insertError?.message || String(insertError),
-          error_name: insertError?.name
-        };
-        errors.push(errorInfo);
-        console.error(`[SAVE-STATE-BILLS] ❌ Insert FAILED for ${stateBillId}:`, insertError);
-        console.error(`[SAVE-STATE-BILLS] Error details:`, JSON.stringify(insertError, null, 2));
+      } catch (insertError) {
+        // Ignore duplicate key errors
+        console.warn(`[SAVE-STATE-BILLS] Could not save state bill ${stateBillId}: ${insertError}`);
       }
     }
 
-    // DIAGNOSTIC: Update with results
-    try {
-      const resultData = {
-        success_count: successCount,
-        error_count: errorCount,
-        errors: errors
-      };
-      await db
-        .prepare('UPDATE briefs SET news_json = json_insert(news_json, \'$.state_bills_save_result\', ?) WHERE id = ?')
-        .bind(JSON.stringify(resultData), briefId)
-        .run();
-    } catch (diagError) {
-      console.error('[DIAGNOSTIC] Failed to write result diagnostic data:', diagError);
-    }
-
-    console.log(`[SAVE-STATE-BILLS] ✅ Completed: ${successCount} successful, ${errorCount} errors out of ${stateBillIds.length} total`);
+    console.log(`✓ Saved ${stateBillIds.length} featured state bills`);
   }
 
   /**
