@@ -205,6 +205,75 @@ async function updateBriefStatus(
 }
 
 /**
+ * Save state bills mentioned in brief content to junction table
+ * WORKAROUND: Since brief-generator observer isn't deploying properly,
+ * we extract and save state bills here in the audio processor
+ */
+async function saveStateBillsFromContent(briefId: string): Promise<void> {
+  try {
+    // Get brief content
+    const briefQuery = `SELECT content FROM briefs WHERE id = '${briefId}'`;
+    const briefResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: briefQuery }),
+    });
+
+    if (!briefResp.ok) return;
+
+    const briefData = await briefResp.json();
+    const content = briefData.results?.[0]?.content;
+    if (!content) return;
+
+    // Extract state bill mentions (SB 21, Senate Bill 21, AB 17, Assembly Bill 17)
+    const billMatches = content.matchAll(/(Senate Bill|SB|Assembly Bill|AB)\s+(\d+)/gi);
+    const billIdentifiers = new Set<string>();
+
+    for (const match of billMatches) {
+      const type = match[1]!.toUpperCase().startsWith('S') ? 'SB' : 'AB';
+      const num = match[2];
+      billIdentifiers.add(`${type} ${num}`);
+    }
+
+    if (billIdentifiers.size === 0) return;
+
+    console.log(`[STATE-BILLS] Found ${billIdentifiers.size} bill mentions in brief ${briefId}`);
+
+    // For each bill identifier, look it up and save to junction table
+    for (const identifier of billIdentifiers) {
+      // Look up bill in database (assuming Wisconsin for now)
+      const lookupQuery = `SELECT id FROM state_bills WHERE state = 'WI' AND identifier = '${identifier}'`;
+      const lookupResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: lookupQuery }),
+      });
+
+      if (!lookupResp.ok) continue;
+
+      const lookupData = await lookupResp.json();
+      const billId = lookupData.results?.[0]?.id;
+
+      if (billId) {
+        // Insert into junction table (ignore duplicates)
+        const insertQuery = `INSERT OR IGNORE INTO brief_state_bills (brief_id, state_bill_id) VALUES ('${briefId}', '${billId}')`;
+        await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: insertQuery }),
+        });
+
+        console.log(`[STATE-BILLS] ✅ Saved ${identifier} (${billId}) for brief ${briefId}`);
+      } else {
+        console.log(`[STATE-BILLS] ⚠️  Bill ${identifier} not found in database`);
+      }
+    }
+  } catch (error) {
+    console.error(`[STATE-BILLS] Error saving state bills:`, error);
+  }
+}
+
+/**
  * Update podcast episode status in database
  */
 async function updatePodcastStatus(
@@ -448,6 +517,9 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
 
     // Update brief with completed status and audio URL
     await updateBriefStatus(brief.id, 'completed', audioUrl);
+
+    // WORKAROUND: Save state bills from content since brief-generator isn't deploying
+    await saveStateBillsFromContent(brief.id);
 
     console.log(`[AUDIO] Successfully processed brief ${brief.id}`);
 
