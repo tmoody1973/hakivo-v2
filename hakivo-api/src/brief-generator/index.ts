@@ -1571,6 +1571,7 @@ NYT-STYLE HEADLINE RULES:
 3. IMPLY THE "SO WHAT" - why should readers care about this?
 4. CREATE TENSION - show the conflict, stakes, or uncertainty
 5. MAX 12 WORDS - punchy and powerful
+6. PLAIN TEXT ONLY - NO markdown formatting (**bold**, _italic_, etc.) - headlines are displayed as-is
 
 EXAMPLES of what we want:
 - Instead of "Senate Passes Immigration Bill" → "A Nation's Immigration Debate Reaches Its Breaking Point"
@@ -1582,7 +1583,7 @@ EXAMPLES of what we want:
 Think like a NYT editor: What's the STORY here? What's at STAKE? Who WINS and who LOSES?
 
 Format your response EXACTLY as:
-HEADLINE: [Your NYT-style headline here]
+HEADLINE: [Your NYT-style headline here - plain text, no markdown]
 
 SCRIPT:
 ${hostA.toUpperCase()}: [emotional cue] dialogue...
@@ -1606,6 +1607,8 @@ ${hostB.toUpperCase()}: [emotional cue] dialogue...
     const headlineMatch = content.match(/HEADLINE:\s*(.+?)(?:\n|SCRIPT:)/i);
     if (headlineMatch) {
       headline = headlineMatch[1]!.trim();
+      // Strip markdown formatting (**, __, *, _) from headline
+      headline = headline.replace(/(\*\*|__)(.*?)\1/g, '$2').replace(/(\*|_)(.*?)\1/g, '$2');
     }
 
     // Extract script if marked
