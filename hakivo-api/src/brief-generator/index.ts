@@ -386,10 +386,15 @@ export default class extends Each<Body, Env> {
       WHERE id = ?
     `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
-    // DIAGNOSTIC: Test if code reaches here immediately after status update
-    await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
-      .bind(` [TEST: Reached save section, ${stateBills.length} state bills]`, briefId)
-      .run();
+    // DIAGNOSTIC: Ultra-simple test with no template literals
+    try {
+      await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
+        .bind(' [DIAG]', briefId)
+        .run();
+      console.log('[DIAGNOSTIC] Successfully appended to title');
+    } catch (diagError) {
+      console.error('[DIAGNOSTIC] Failed to append to title:', diagError);
+    }
 
     // Save featured bills for deduplication in future briefs
     try {
