@@ -205,6 +205,89 @@ async function updateBriefStatus(
 }
 
 /**
+ * Save federal bills mentioned in brief content to junction table
+ * WORKAROUND: Since brief-generator observer isn't deploying properly,
+ * we extract and save federal bills here in the audio processor
+ */
+async function saveFederalBillsFromContent(briefId: string): Promise<void> {
+  try {
+    // Get brief content
+    const briefQuery = `SELECT content FROM briefs WHERE id = '${briefId}'`;
+    const briefResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: briefQuery }),
+    });
+
+    if (!briefResp.ok) return;
+
+    const briefData = await briefResp.json();
+    const content = briefData.results?.[0]?.content;
+    if (!content) return;
+
+    // Extract federal bill mentions (HR 1234, S 567, H.R. 1234, etc.)
+    // Patterns: HR 1234, H.R. 1234, S 567, S. 567
+    const billMatches = content.matchAll(/\b(HR?\.?\s*(\d+)|S\.?\s*(\d+))\b/gi);
+    const billIdentifiers = new Set<{ type: string; number: string }>();
+
+    for (const match of billMatches) {
+      const fullMatch = match[1]!;
+      let type: string;
+      let num: string;
+
+      if (fullMatch.toUpperCase().includes('H')) {
+        type = 'hr';
+        num = match[2]!;
+      } else {
+        type = 's';
+        num = match[3]!;
+      }
+
+      billIdentifiers.add({ type, number: num });
+    }
+
+    if (billIdentifiers.size === 0) return;
+
+    console.log(`[FEDERAL-BILLS] Found ${billIdentifiers.size} bill mentions in brief ${briefId}`);
+
+    // Get current congress (119th)
+    const currentCongress = 119;
+
+    // For each bill identifier, look it up and save to junction table
+    for (const { type, number } of billIdentifiers) {
+      // Look up bill in database
+      const lookupQuery = `SELECT id FROM bills WHERE congress = ${currentCongress} AND bill_type = '${type}' AND bill_number = ${number}`;
+      const lookupResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: lookupQuery }),
+      });
+
+      if (!lookupResp.ok) continue;
+
+      const lookupData = await lookupResp.json();
+      const billId = lookupData.results?.[0]?.id;
+
+      if (billId) {
+        // Insert into junction table (ignore duplicates)
+        const insertQuery = `INSERT OR IGNORE INTO brief_bills (brief_id, bill_id, section_type) VALUES ('${briefId}', '${billId}', 'featured')`;
+        await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: insertQuery }),
+        });
+
+        console.log(`[FEDERAL-BILLS] ✅ Saved ${type.toUpperCase()} ${number} (${billId}) for brief ${briefId}`);
+      } else {
+        console.log(`[FEDERAL-BILLS] ⚠️  Bill ${type.toUpperCase()} ${number} not found in database`);
+      }
+    }
+  } catch (error) {
+    console.error(`[FEDERAL-BILLS] Error saving federal bills:`, error);
+  }
+}
+
+/**
  * Save state bills mentioned in brief content to junction table
  * WORKAROUND: Since brief-generator observer isn't deploying properly,
  * we extract and save state bills here in the audio processor
@@ -518,7 +601,8 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
     // Update brief with completed status and audio URL
     await updateBriefStatus(brief.id, 'completed', audioUrl);
 
-    // WORKAROUND: Save state bills from content since brief-generator isn't deploying
+    // WORKAROUND: Save bills from content since brief-generator isn't deploying
+    await saveFederalBillsFromContent(brief.id);
     await saveStateBillsFromContent(brief.id);
 
     console.log(`[AUDIO] Successfully processed brief ${brief.id}`);

@@ -386,13 +386,12 @@ export default class extends Each<Body, Env> {
       WHERE id = ?
     `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
-    // Save featured bills for deduplication in future briefs
-    const featuredBillIds = billsWithActions.map((b: any) => b.id);
-    await this.saveFeaturedBills(briefId, featuredBillIds);
-
-    // NOTE: State bills save moved to audio-processor-background.mts as workaround
-    // for Raindrop deployment issue. Audio processor extracts bills from content
-    // and saves them after audio generation completes.
+    // NOTE: Bills save moved to audio-processor-background.mts as workaround for Raindrop deployment issue
+    // The audio processor extracts both federal and state bills from article content and saves them
+    // to brief_bills and brief_state_bills junction tables. This enables:
+    // 1. Featured Legislation section on frontend
+    // 2. Deduplication for future briefs (preventing repeat topics)
+    // See saveFederalBillsFromContent() and saveStateBillsFromContent() in audio-processor-background.mts
 
     // Trigger Netlify audio processor immediately (don't wait for 5-minute scheduler)
     // This ensures new users don't have to wait for their first brief
@@ -837,7 +836,9 @@ export default class extends Each<Body, Env> {
   }
 
   /**
-   * Save which bills were featured in this brief (for future deduplication)
+   * DEPRECATED: Federal bills save moved to audio-processor-background.mts
+   * This function is kept for reference but not currently called.
+   * The workaround extracts bills from article content after generation.
    */
   private async saveFeaturedBills(briefId: string, billIds: string[]): Promise<void> {
     if (billIds.length === 0) return;
