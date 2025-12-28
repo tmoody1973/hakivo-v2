@@ -473,22 +473,22 @@ export default class extends Each<Body, Env> {
     try {
       console.log(`[IMAGE-GEN] Generating feature image for: "${headline}"`);
 
-      // Create a prompt for photo-realistic civic/political imagery
+      // Create a prompt for WSJ-style editorial sketch imagery
       const policyContext = policyAreas.slice(0, 3).join(', ') || 'legislation';
-      const imagePrompt = `Photo-realistic editorial image for a news article about ${policyContext}. The image should convey the essence of: "${headline}". Style: Professional news photography, clean composition, natural lighting, suitable for a civic engagement platform. Include subtle American civic imagery like the Capitol building, congressional setting, or professional political environment. No text overlays, no artificial elements, photojournalistic quality.`;
+      const imagePrompt = `Wall Street Journal inspired sketch editorial image for a news article about ${policyContext}. The image should convey the essence of: "${headline}". Style: Hand-drawn editorial illustration, clean composition, suitable for a civic engagement platform. Include subtle American civic imagery like the Capitol building, congressional setting, or professional political environment. No text in the image.`;
 
       console.log(`[IMAGE-GEN] Prompt: ${imagePrompt.substring(0, 100)}...`);
 
-      // Call Gemini 2.0 Flash (experimental) for image generation
+      // Call Gemini 2.5 Flash Image for generation
       const geminiApiKey = this.env.GEMINI_API_KEY;
       if (!geminiApiKey) {
         console.warn('[IMAGE-GEN] GEMINI_API_KEY not set, skipping image generation');
         return null;
       }
 
-      // Use gemini-2.0-flash-exp which supports image output with responseModalities
+      // Use gemini-2.5-flash-image (migrated from gemini-2.0-flash-exp per rate limit recommendation)
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
         {
           method: 'POST',
           headers: {
