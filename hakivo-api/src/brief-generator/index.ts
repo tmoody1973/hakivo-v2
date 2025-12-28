@@ -386,6 +386,11 @@ export default class extends Each<Body, Env> {
       WHERE id = ?
     `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
+    // DIAGNOSTIC: Test if code reaches here immediately after status update
+    await db.prepare('UPDATE briefs SET title = title || ? WHERE id = ?')
+      .bind(` [TEST: Reached save section, ${stateBills.length} state bills]`, briefId)
+      .run();
+
     // Save featured bills for deduplication in future briefs
     try {
       const featuredBillIds = billsWithActions.map((b: any) => b.id);
