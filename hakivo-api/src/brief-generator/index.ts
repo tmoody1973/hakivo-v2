@@ -392,7 +392,12 @@ export default class extends Each<Body, Env> {
 
     // Save featured state bills for the "Related State Bills" section
     const featuredStateBillIds = stateBills.map((b: any) => b.id);
+    console.log(`[SAVE-STATE-BILLS] About to save ${featuredStateBillIds.length} state bills for brief ${briefId}`);
+    if (featuredStateBillIds.length > 0) {
+      console.log(`[SAVE-STATE-BILLS] State bill IDs:`, featuredStateBillIds);
+    }
     await this.saveFeaturedStateBills(briefId, featuredStateBillIds);
+    console.log(`[SAVE-STATE-BILLS] ✅ Completed saveFeaturedStateBills call`);
 
     // Trigger Netlify audio processor immediately (don't wait for 5-minute scheduler)
     // This ensures new users don't have to wait for their first brief
@@ -864,24 +869,35 @@ export default class extends Each<Body, Env> {
    * Save which state bills were featured in this brief
    */
   private async saveFeaturedStateBills(briefId: string, stateBillIds: string[]): Promise<void> {
-    if (stateBillIds.length === 0) return;
+    console.log(`[SAVE-STATE-BILLS] saveFeaturedStateBills called with ${stateBillIds.length} IDs for brief ${briefId}`);
+
+    if (stateBillIds.length === 0) {
+      console.log(`[SAVE-STATE-BILLS] No state bills to save, returning early`);
+      return;
+    }
 
     const db = this.env.APP_DB;
 
     // Insert each state bill featured in this brief
+    let successCount = 0;
+    let errorCount = 0;
     for (const stateBillId of stateBillIds) {
       try {
-        await db
+        console.log(`[SAVE-STATE-BILLS] Inserting brief_id=${briefId}, state_bill_id=${stateBillId}`);
+        const result = await db
           .prepare('INSERT INTO brief_state_bills (brief_id, state_bill_id) VALUES (?, ?)')
           .bind(briefId, stateBillId)
           .run();
+        console.log(`[SAVE-STATE-BILLS] ✅ Insert successful for ${stateBillId}`, result);
+        successCount++;
       } catch (insertError) {
-        // Ignore duplicate key errors
-        console.warn(`[SAVE-STATE-BILLS] Could not save state bill ${stateBillId}: ${insertError}`);
+        errorCount++;
+        console.error(`[SAVE-STATE-BILLS] ❌ Insert FAILED for ${stateBillId}:`, insertError);
+        console.error(`[SAVE-STATE-BILLS] Error details:`, JSON.stringify(insertError, null, 2));
       }
     }
 
-    console.log(`✓ Saved ${stateBillIds.length} featured state bills`);
+    console.log(`[SAVE-STATE-BILLS] ✅ Completed: ${successCount} successful, ${errorCount} errors out of ${stateBillIds.length} total`);
   }
 
   /**
