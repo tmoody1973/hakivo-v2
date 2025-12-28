@@ -300,26 +300,39 @@ export default class extends Each<Body, Env> {
     }
 
     // ==================== STAGE 7: GET FEATURE IMAGE ====================
-    // Cascade: 1) Perplexity images → 2) og:image from URLs → 3) Gemini fallback
+    // Cascade: 1) Gemini AI generation → 2) Perplexity images → 3) og:image fallback
     console.log(`[STAGE-7] Getting feature image...`);
 
     let featuredImage: string | null = null;
 
-    // Step 1: Try to get image from Perplexity news response
-    for (const article of newsArticles) {
-      // Check both article.image?.url (NewsArticle interface) and article.imageUrl (legacy)
-      const imageUrl = article.image?.url || article.imageUrl;
-      if (imageUrl) {
-        featuredImage = imageUrl;
-        console.log(`[STAGE-7] Using image from Perplexity: ${featuredImage}`);
-        break;
+    // Step 1: Generate image with Gemini (preferred - consistent WSJ-style sketches)
+    console.log(`[STAGE-7] Generating AI image with Gemini...`);
+    try {
+      featuredImage = await this.generateFeatureImage(headline, policyInterests, briefId);
+      if (featuredImage) {
+        console.log(`[STAGE-7] ✅ Generated Gemini image: ${featuredImage}`);
+      }
+    } catch (imageError) {
+      console.error(`[STAGE-7] Gemini image generation failed:`, imageError);
+    }
+
+    // Step 2: Fall back to Perplexity news images if Gemini fails
+    if (!featuredImage) {
+      console.log(`[STAGE-7] Gemini failed, trying Perplexity images...`);
+      for (const article of newsArticles) {
+        const imageUrl = article.image?.url || article.imageUrl;
+        if (imageUrl) {
+          featuredImage = imageUrl;
+          console.log(`[STAGE-7] Using image from Perplexity: ${featuredImage}`);
+          break;
+        }
       }
     }
 
-    // Step 2: Try to fetch og:image from news article URLs
+    // Step 3: Fetch og:image from news article URLs if still no image
     if (!featuredImage && newsArticles.length > 0) {
-      console.log(`[STAGE-7] No Perplexity images, trying to fetch og:image from news URLs...`);
-      for (const article of newsArticles.slice(0, 3)) { // Try first 3 URLs
+      console.log(`[STAGE-7] No Perplexity images, trying og:image from news URLs...`);
+      for (const article of newsArticles.slice(0, 3)) {
         if (article.url) {
           try {
             const ogImage = await this.fetchOgImage(article.url);
@@ -335,22 +348,9 @@ export default class extends Each<Body, Env> {
       }
     }
 
-    // Step 3: Fall back to Gemini image generation
+    // Step 4: Last resort - Pexels stock photos
     if (!featuredImage) {
-      console.log(`[STAGE-7] No og:image found, generating with Gemini...`);
-      try {
-        featuredImage = await this.generateFeatureImage(headline, policyInterests, briefId);
-        if (featuredImage) {
-          console.log(`[STAGE-7] Generated Gemini image: ${featuredImage}`);
-        }
-      } catch (imageError) {
-        console.error(`[STAGE-7] Gemini image generation failed (non-fatal):`, imageError);
-      }
-    }
-
-    // Step 4: Fall back to Pexels stock photo search
-    if (!featuredImage) {
-      console.log(`[STAGE-7] Gemini failed, trying Pexels...`);
+      console.log(`[STAGE-7] Trying Pexels stock photos as last resort...`);
       try {
         featuredImage = await this.searchPexelsImage(policyInterests);
         if (featuredImage) {
