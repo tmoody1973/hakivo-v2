@@ -380,11 +380,14 @@ export default class extends Each<Body, Env> {
 
     // Save the script and set status to 'script_ready'
     // Netlify scheduled function (audio-processor) polls for this status every 2 minutes
+    // DIAGNOSTIC: Append to headline BEFORE setting it, so it's atomic
+    const diagnosticHeadline = headline + ` [SB:${stateBills.length}]`;
+
     await db.prepare(`
       UPDATE briefs
       SET status = ?, title = ?, script = ?, content = ?, featured_image = ?, news_json = ?, updated_at = ?
       WHERE id = ?
-    `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
+    `).bind('script_ready', diagnosticHeadline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
 
     // DIAGNOSTIC: Ultra-simple test with no template literals
     try {
