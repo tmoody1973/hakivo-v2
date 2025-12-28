@@ -1779,8 +1779,19 @@ ${newsContext}
 
 Write the article naturally without any structural labels. Start directly with an engaging opening paragraph.
 Include ## subheadings where they make sense to break up content.
-Link all federal bills to their congress.gov URLs.
-${stateBillsContext ? `CRITICAL REQUIREMENT: You MUST include a dedicated ## State Legislature section covering the state bills provided below. Link each state bill to its OpenStates URL. This section is NOT optional - it must appear in every article when state bills are provided.\n` : ''}CRITICAL CITATION REQUIREMENT:
+
+CRITICAL REQUIREMENT - FEDERAL LEGISLATION:
+- You MUST integrate the federal bills listed in "KEY FEDERAL LEGISLATION" into your article
+- Link each bill to its congress.gov URL using markdown: [bill identifier](congress.gov url)
+- Bills should be woven into the narrative where relevant - NOT listed separately
+- Explain what each bill does and why it matters to readers
+- This is NOT optional - federal legislation MUST appear when bills are provided
+
+${stateBillsContext ? `CRITICAL REQUIREMENT - STATE LEGISLATION:
+- You MUST include a dedicated ## State Legislature section covering the state bills provided
+- Link each state bill to its OpenStates URL using markdown: [bill identifier](openstates url)
+- This section is NOT optional - it must appear in every article when state bills are provided
+` : ''}CRITICAL CITATION REQUIREMENT:
 - EVERY claim, statistic, settlement amount, or fact MUST include an inline markdown link to the source article
 - Do NOT write unsourced claims - if you mention a fact, link to the article where you found it
 - Examples: "According to [The Texas Tribune](url)..." or "The [$1.4B Meta settlement](url)..."
