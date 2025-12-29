@@ -1846,12 +1846,18 @@ End with an empowering note about staying informed.`;
 
       if (federalNewsResult?.results) {
         for (const item of federalNewsResult.results) {
+          // Extract source from URL
+          let source = 'Unknown';
+          try {
+            source = new URL(item.url).hostname.replace('www.', '');
+          } catch {}
+
           newsItems.push({
-            headline: item.title || item.snippet?.substring(0, 100) || 'Untitled',
-            summary: item.snippet || item.title || '',
+            headline: item.headline || 'Untitled',
+            summary: item.summary || '',
             url: item.url || '',
-            source: item.source || 'Unknown',
-            date: new Date().toISOString(),
+            source,
+            date: item.publishedAt || new Date().toISOString(),
             category: 'federal_legislation'
           });
         }
@@ -1867,12 +1873,18 @@ End with an empowering note about staying informed.`;
 
         if (stateNewsResult?.results) {
           for (const item of stateNewsResult.results) {
+            // Extract source from URL
+            let source = 'Unknown';
+            try {
+              source = new URL(item.url).hostname.replace('www.', '');
+            } catch {}
+
             newsItems.push({
-              headline: item.title || item.snippet?.substring(0, 100) || 'Untitled',
-              summary: item.snippet || item.title || '',
+              headline: item.headline || 'Untitled',
+              summary: item.summary || '',
               url: item.url || '',
-              source: item.source || 'Unknown',
-              date: new Date().toISOString(),
+              source,
+              date: item.publishedAt || new Date().toISOString(),
               category: 'state_legislation'
             });
           }
@@ -1890,12 +1902,18 @@ End with an empowering note about staying informed.`;
 
         if (policyNewsResult?.results) {
           for (const item of policyNewsResult.results) {
+            // Extract source from URL
+            let source = 'Unknown';
+            try {
+              source = new URL(item.url).hostname.replace('www.', '');
+            } catch {}
+
             newsItems.push({
-              headline: item.title || item.snippet?.substring(0, 100) || 'Untitled',
-              summary: item.snippet || item.title || '',
+              headline: item.headline || 'Untitled',
+              summary: item.summary || '',
               url: item.url || '',
-              source: item.source || 'Unknown',
-              date: new Date().toISOString(),
+              source,
+              date: item.publishedAt || new Date().toISOString(),
               category: `policy_${interest}`
             });
           }
