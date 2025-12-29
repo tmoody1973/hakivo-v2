@@ -1,6 +1,6 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
-import stateNewspapers from '../docs/uspapers.json';
+import stateNewspapers from '../../docs/uspapers.json';
 
 /**
  * News article response from Perplexity search
@@ -82,7 +82,7 @@ function getStateSources(stateNameOrAbbrev: string): string[] {
   if (!stateNameOrAbbrev) return [];
 
   // Find state by name or common abbreviations
-  const stateData = stateNewspapers.find(s => {
+  const stateData = stateNewspapers.find((s: any) => {
     const stateName = s.state.toLowerCase();
     const searchTerm = stateNameOrAbbrev.toLowerCase();
 
@@ -114,14 +114,14 @@ function getStateSources(stateNameOrAbbrev: string): string[] {
   if (!stateData) return [];
 
   // Extract domains from URLs
-  return stateData.papers.map(paper => {
+  return stateData.papers.map((paper: any) => {
     try {
       const url = new URL(paper.url);
       return url.hostname.replace('www.', '');
     } catch {
       return '';
     }
-  }).filter(domain => domain.length > 0);
+  }).filter((domain: string) => domain.length > 0);
 }
 
 /**
