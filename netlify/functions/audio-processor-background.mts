@@ -88,8 +88,9 @@ function convertToDialoguePrompt(script: string, voiceA: string, voiceB: string)
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Remove emotional cues in brackets like [warmly], [with urgency], etc.
-    const cleanLine = (content: string) => content.replace(/^\[[^\]]*\]\s*/, '').trim();
+    // Remove ALL stage directions in brackets like [warmly], [nodding], [with urgency], etc.
+    // Use global replace to catch stage directions anywhere in the line (start, middle, or end)
+    const cleanLine = (content: string) => content.replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
 
     // Support both old format (HOST A/HOST B) and new format (ARABELLA/MARK)
     if (trimmed.startsWith('HOST A:')) {
@@ -121,14 +122,15 @@ function convertPodcastToDialoguePrompt(script: string, voiceA: string, voiceB: 
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Match SARAH: or DAVID: at the start (with optional brackets for stage directions)
+    // Remove ALL stage directions in brackets like [with dramatic tension], [nodding], etc.
+    // Use global replace to catch stage directions anywhere in the line
+    const cleanLine = (content: string) => content.replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+
+    // Match SARAH: or DAVID: at the start
     if (trimmed.startsWith('SARAH:')) {
-      // Remove stage directions like [with dramatic tension] for cleaner TTS
-      const content = trimmed.substring(6).trim().replace(/^\[[^\]]*\]\s*/, '');
-      convertedLines.push(`${voiceA}: ${content}`);
+      convertedLines.push(`${voiceA}: ${cleanLine(trimmed.substring(6))}`);
     } else if (trimmed.startsWith('DAVID:')) {
-      const content = trimmed.substring(6).trim().replace(/^\[[^\]]*\]\s*/, '');
-      convertedLines.push(`${voiceB}: ${content}`);
+      convertedLines.push(`${voiceB}: ${cleanLine(trimmed.substring(6))}`);
     } else {
       // Skip non-dialogue lines (stage directions, etc.)
       continue;
