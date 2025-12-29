@@ -802,10 +802,10 @@ async function processPodcastEpisode(episode: AudioContent, geminiApiKey: string
 export default async (_req: Request, _context: Context) => {
   console.log('[AUDIO] Background function triggered');
 
-  // Get Gemini API key
-  const geminiApiKey = Netlify.env.get('GEMINI_API_KEY');
+  // Get Gemini TTS API key (separate from content generation quota)
+  const geminiApiKey = Netlify.env.get('GEMINI_TTS_API_KEY');
   if (!geminiApiKey) {
-    console.error('[AUDIO] GEMINI_API_KEY not configured');
+    console.error('[AUDIO] GEMINI_TTS_API_KEY not configured');
     return; // Background functions return empty 202
   }
 
