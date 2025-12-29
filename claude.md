@@ -444,3 +444,23 @@ watch -n 5 "curl -s -X POST 'https://svc-<db-admin-id>.lmapp.run/db-admin/query'
 5. ✅ Image prompt updated - Photo-realistic → WSJ-style sketch
 6. ✅ Federal bills workaround - `/netlify/functions/audio-processor-background.mts:207-397`
 7. ✅ State bills workaround - `/netlify/functions/audio-processor-background.mts:399-607`
+
+---
+
+## Detailed Fix Documentation
+
+### December 29, 2025 - Scheduler and Deduplication System Fixes
+**Comprehensive documentation**: [docs/2025-12-29-scheduler-and-deduplication-fixes.md](./docs/2025-12-29-scheduler-and-deduplication-fixes.md)
+
+**Summary of critical fixes**:
+- Enhanced scheduler with detailed error logging (step-by-step diagnostics with JSON error details)
+- Fixed content deduplication system by backfilling 163 briefs with bill tracking
+- Verified image generation system operational (100% AI-generated images)
+- Manual generation of Dec 29 briefs for all 12 users after scheduler failure
+- Database schema update: Added `error_details` column to `scheduler_logs` table
+
+**Key achievements**:
+- Deduplication coverage: 81% of briefs (163/201) now properly tracked
+- Error logging: Captures email, step, and error for each failure
+- Bill extraction: Automatic via audio processor workaround
+- Image processing: Verified automatic replacement working (5-min cycles)
