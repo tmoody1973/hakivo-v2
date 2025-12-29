@@ -27,6 +27,59 @@ interface PerplexityNewsResponse {
 }
 
 /**
+ * Trusted news and policy sources for domain filtering
+ * Prioritizes high-quality journalism and authoritative policy sources
+ */
+const TRUSTED_SOURCES = [
+  // Investigative Journalism
+  'propublica.org',
+
+  // Major Newspapers
+  'nytimes.com',
+  'washingtonpost.com',
+  'wsj.com',
+
+  // Political News
+  'politico.com',
+  'thehill.com',
+  'rollcall.com',
+  'punchbowl.news',
+  'axios.com',
+
+  // Public/Non-Profit Media
+  'npr.org',
+  'pbs.org',
+
+  // Network News
+  'nbcnews.com',
+  'cbsnews.com',
+  'cnn.com',
+
+  // International
+  'theguardian.com',
+  'reuters.com',
+  'apnews.com',
+
+  // Government/Policy Sources
+  'congress.gov',
+  'whitehouse.gov',
+  'cms.gov',
+  'kff.org',
+  'hklaw.com',
+  'ey.com',
+  'mcdermottplus.com',
+  'healthaffairs.org'
+];
+
+/**
+ * Generate domain filter string for Perplexity queries
+ * Uses site: operators to prioritize trusted sources
+ */
+function buildDomainFilter(): string {
+  return TRUSTED_SOURCES.map(domain => `site:${domain}`).join(' OR ');
+}
+
+/**
  * Interest-to-query mapping for targeted Perplexity searches
  * Maps user-friendly interest names to specific search terms and context
  */
@@ -154,6 +207,9 @@ export default class extends Service<Env> {
       ? `\n\nIMPORTANT: Include news specifically relevant to ${state} and how federal policies affect ${state} residents.`
       : '';
 
+    // Build domain filter for trusted sources
+    const domainFilter = buildDomainFilter();
+
     // Build a targeted search prompt using the templates
     const searchPrompt = `Search for the ${limit} most recent and important news articles from the past 7 days about U.S. policy and legislation.
 
@@ -165,9 +221,13 @@ ${uniqueTopics.map(t => `• ${t}`).join('\n')}
 
 CONTEXT: ${contextStr}${locationContext}
 
+DOMAIN FILTER - Search only these trusted sources:
+${domainFilter}
+
 REQUIREMENTS:
 - Only articles from the past 7 days (today is ${today})
-- Reputable sources only: major newspapers (NYT, WaPo, WSJ), wire services (AP, Reuters), political outlets (Politico, The Hill, Roll Call, Axios), public media (NPR, PBS)
+- ONLY search the domains listed in DOMAIN FILTER above
+- Prioritize: ProPublica, NYT, WaPo, Politico, NPR, Reuters, The Hill, Roll Call, Punchbowl News
 - Focus on legislative action, policy analysis, and political developments
 - Include both federal and state-level developments when relevant
 
@@ -503,6 +563,7 @@ Prioritize articles with clear policy implications and citizen impact.`;
     }
 
     const today = new Date().toISOString().split('T')[0];
+    const domainFilter = buildDomainFilter();
 
     const jsonSchema = {
       type: 'object',
@@ -538,15 +599,18 @@ Prioritize articles with clear policy implications and citizen impact.`;
           messages: [
             {
               role: 'system',
-              content: `You are a news research assistant. Search for recent news and return results in the exact JSON format requested. Today is ${today}. Only include articles from the past 7 days.`
+              content: `You are a news research assistant. Search for recent news from trusted sources and return results in the exact JSON format requested. Today is ${today}. Only include articles from the past 7 days.`
             },
             {
               role: 'user',
               content: `Find ${maxResults} recent news articles matching this search: ${query}
 
+DOMAIN FILTER - Search only these trusted sources:
+${domainFilter}
+
 Return as JSON with an "articles" array. For each article:
 - headline: The article headline
-- url: The full article URL (must be a real, accessible URL)
+- url: The full article URL (must be a real, accessible URL from the trusted sources above)
 - summary: A 1-2 sentence summary
 - publishedAt: Publication date (ISO format YYYY-MM-DD)`
             }

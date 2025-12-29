@@ -1,0 +1,657 @@
+[
+  {
+    "state": "Alabama",
+    "papers": [
+      {
+        "name": "AL.com (Birmingham News, Huntsville Times, Press-Register)",
+        "city": "Birmingham / statewide",
+        "url": "https://www.al.com/"
+      }
+    ]
+  },
+  {
+    "state": "Alaska",
+    "papers": [
+      {
+        "name": "Anchorage Daily News",
+        "city": "Anchorage",
+        "url": "https://www.adn.com/"
+      }
+    ]
+  },
+  {
+    "state": "Arizona",
+    "papers": [
+      {
+        "name": "The Arizona Republic",
+        "city": "Phoenix",
+        "url": "https://www.azcentral.com/"
+      }
+    ]
+  },
+  {
+    "state": "Arkansas",
+    "papers": [
+      {
+        "name": "Arkansas Democrat-Gazette",
+        "city": "Little Rock",
+        "url": "https://www.arkansasonline.com/"
+      }
+    ]
+  },
+  {
+    "state": "California",
+    "papers": [
+      {
+        "name": "Los Angeles Times",
+        "city": "Los Angeles",
+        "url": "https://www.latimes.com/"
+      },
+      {
+        "name": "San Francisco Chronicle",
+        "city": "San Francisco",
+        "url": "https://www.sfchronicle.com/"
+      },
+      {
+        "name": "The Sacramento Bee",
+        "city": "Sacramento",
+        "url": "https://www.sacbee.com/"
+      }
+    ]
+  },
+  {
+    "state": "Colorado",
+    "papers": [
+      {
+        "name": "The Denver Post",
+        "city": "Denver",
+        "url": "https://www.denverpost.com/"
+      }
+    ]
+  },
+  {
+    "state": "Connecticut",
+    "papers": [
+      {
+        "name": "Hartford Courant",
+        "city": "Hartford",
+        "url": "https://www.courant.com/"
+      }
+    ]
+  },
+  {
+    "state": "Delaware",
+    "papers": [
+      {
+        "name": "The News Journal",
+        "city": "Wilmington",
+        "url": "https://www.delawareonline.com/"
+      }
+    ]
+  },
+  {
+    "state": "Florida",
+    "papers": [
+      {
+        "name": "Miami Herald",
+        "city": "Miami",
+        "url": "https://www.miamiherald.com/"
+      },
+      {
+        "name": "Tampa Bay Times",
+        "city": "St. Petersburg",
+        "url": "https://www.tampabay.com/"
+      },
+      {
+        "name": "Orlando Sentinel",
+        "city": "Orlando",
+        "url": "https://www.orlandosentinel.com/"
+      }
+    ]
+  },
+  {
+    "state": "Georgia",
+    "papers": [
+      {
+        "name": "The Atlanta Journal-Constitution",
+        "city": "Atlanta",
+        "url": "https://www.ajc.com/"
+      }
+    ]
+  },
+  {
+    "state": "Hawaii",
+    "papers": [
+      {
+        "name": "Honolulu Star-Advertiser",
+        "city": "Honolulu",
+        "url": "https://www.staradvertiser.com/"
+      }
+    ]
+  },
+  {
+    "state": "Idaho",
+    "papers": [
+      {
+        "name": "Idaho Statesman",
+        "city": "Boise",
+        "url": "https://www.idahostatesman.com/"
+      }
+    ]
+  },
+  {
+    "state": "Illinois",
+    "papers": [
+      {
+        "name": "Chicago Tribune",
+        "city": "Chicago",
+        "url": "https://www.chicagotribune.com/"
+      },
+      {
+        "name": "Chicago Sun-Times",
+        "city": "Chicago",
+        "url": "https://chicago.suntimes.com/"
+      }
+    ]
+  },
+  {
+    "state": "Indiana",
+    "papers": [
+      {
+        "name": "The Indianapolis Star",
+        "city": "Indianapolis",
+        "url": "https://www.indystar.com/"
+      }
+    ]
+  },
+  {
+    "state": "Iowa",
+    "papers": [
+      {
+        "name": "The Des Moines Register",
+        "city": "Des Moines",
+        "url": "https://www.desmoinesregister.com/"
+      }
+    ]
+  },
+  {
+    "state": "Kansas",
+    "papers": [
+      {
+        "name": "The Kansas City Star",
+        "city": "Kansas City",
+        "url": "https://www.kansascity.com/"
+      },
+      {
+        "name": "The Wichita Eagle",
+        "city": "Wichita",
+        "url": "https://www.kansas.com/"
+      }
+    ]
+  },
+  {
+    "state": "Kentucky",
+    "papers": [
+      {
+        "name": "Lexington Herald-Leader",
+        "city": "Lexington",
+        "url": "https://www.kentucky.com/"
+      },
+      {
+        "name": "The Courier-Journal",
+        "city": "Louisville",
+        "url": "https://www.courier-journal.com/"
+      }
+    ]
+  },
+  {
+    "state": "Louisiana",
+    "papers": [
+      {
+        "name": "The Times-Picayune | The Advocate",
+        "city": "New Orleans / Baton Rouge",
+        "url": "https://www.nola.com/"
+      }
+    ]
+  },
+  {
+    "state": "Maine",
+    "papers": [
+      {
+        "name": "Portland Press Herald",
+        "city": "Portland",
+        "url": "https://www.pressherald.com/"
+      }
+    ]
+  },
+  {
+    "state": "Maryland",
+    "papers": [
+      {
+        "name": "The Baltimore Sun",
+        "city": "Baltimore",
+        "url": "https://www.baltimoresun.com/"
+      }
+    ]
+  },
+  {
+    "state": "Massachusetts",
+    "papers": [
+      {
+        "name": "The Boston Globe",
+        "city": "Boston",
+        "url": "https://www.bostonglobe.com/"
+      },
+      {
+        "name": "Boston Herald",
+        "city": "Boston",
+        "url": "https://www.bostonherald.com/"
+      }
+    ]
+  },
+  {
+    "state": "Michigan",
+    "papers": [
+      {
+        "name": "Detroit Free Press",
+        "city": "Detroit",
+        "url": "https://www.freep.com/"
+      },
+      {
+        "name": "The Detroit News",
+        "city": "Detroit",
+        "url": "https://www.detroitnews.com/"
+      }
+    ]
+  },
+  {
+    "state": "Minnesota",
+    "papers": [
+      {
+        "name": "Star Tribune",
+        "city": "Minneapolis",
+        "url": "https://www.startribune.com/"
+      }
+    ]
+  },
+  {
+    "state": "Mississippi",
+    "papers": [
+      {
+        "name": "The Clarion-Ledger",
+        "city": "Jackson",
+        "url": "https://www.clarionledger.com/"
+      }
+    ]
+  },
+  {
+    "state": "Missouri",
+    "papers": [
+      {
+        "name": "St. Louis Post-Dispatch",
+        "city": "St. Louis",
+        "url": "https://www.stltoday.com/"
+      },
+      {
+        "name": "The Kansas City Star",
+        "city": "Kansas City",
+        "url": "https://www.kansascity.com/"
+      }
+    ]
+  },
+  {
+    "state": "Montana",
+    "papers": [
+      {
+        "name": "Billings Gazette",
+        "city": "Billings",
+        "url": "https://billingsgazette.com/"
+      }
+    ]
+  },
+  {
+    "state": "Nebraska",
+    "papers": [
+      {
+        "name": "Omaha World-Herald",
+        "city": "Omaha",
+        "url": "https://omaha.com/"
+      }
+    ]
+  },
+  {
+    "state": "Nevada",
+    "papers": [
+      {
+        "name": "Las Vegas Review-Journal",
+        "city": "Las Vegas",
+        "url": "https://www.reviewjournal.com/"
+      },
+      {
+        "name": "Reno Gazette Journal",
+        "city": "Reno",
+        "url": "https://www.rgj.com/"
+      }
+    ]
+  },
+  {
+    "state": "New Hampshire",
+    "papers": [
+      {
+        "name": "New Hampshire Union Leader",
+        "city": "Manchester",
+        "url": "https://www.unionleader.com/"
+      }
+    ]
+  },
+  {
+    "state": "New Jersey",
+    "papers": [
+      {
+        "name": "The Star-Ledger / NJ.com",
+        "city": "Newark / statewide",
+        "url": "https://www.nj.com/"
+      }
+    ]
+  },
+  {
+    "state": "New Mexico",
+    "papers": [
+      {
+        "name": "Albuquerque Journal",
+        "city": "Albuquerque",
+        "url": "https://www.abqjournal.com/"
+      }
+    ]
+  },
+  {
+    "state": "New York",
+    "papers": [
+      {
+        "name": "The New York Times",
+        "city": "New York City",
+        "url": "https://www.nytimes.com/"
+      },
+      {
+        "name": "New York Post",
+        "city": "New York City",
+        "url": "https://nypost.com/"
+      },
+      {
+        "name": "Daily News",
+        "city": "New York City",
+        "url": "https://www.nydailynews.com/"
+      },
+      {
+        "name": "Newsday",
+        "city": "Long Island",
+        "url": "https://www.newsday.com/"
+      }
+    ]
+  },
+  {
+    "state": "North Carolina",
+    "papers": [
+      {
+        "name": "The News & Observer",
+        "city": "Raleigh",
+        "url": "https://www.newsobserver.com/"
+      },
+      {
+        "name": "The Charlotte Observer",
+        "city": "Charlotte",
+        "url": "https://www.charlotteobserver.com/"
+      }
+    ]
+  },
+  {
+    "state": "North Dakota",
+    "papers": [
+      {
+        "name": "The Forum of Fargo-Moorhead",
+        "city": "Fargo",
+        "url": "https://www.inforum.com/"
+      }
+    ]
+  },
+  {
+    "state": "Ohio",
+    "papers": [
+      {
+        "name": "The Plain Dealer / Cleveland.com",
+        "city": "Cleveland",
+        "url": "https://www.cleveland.com/"
+      },
+      {
+        "name": "The Columbus Dispatch",
+        "city": "Columbus",
+        "url": "https://www.dispatch.com/"
+      }
+    ]
+  },
+  {
+    "state": "Oklahoma",
+    "papers": [
+      {
+        "name": "The Oklahoman",
+        "city": "Oklahoma City",
+        "url": "https://www.oklahoman.com/"
+      },
+      {
+        "name": "Tulsa World",
+        "city": "Tulsa",
+        "url": "https://tulsaworld.com/"
+      }
+    ]
+  },
+  {
+    "state": "Oregon",
+    "papers": [
+      {
+        "name": "The Oregonian / OregonLive",
+        "city": "Portland",
+        "url": "https://www.oregonlive.com/"
+      }
+    ]
+  },
+  {
+    "state": "Pennsylvania",
+    "papers": [
+      {
+        "name": "The Philadelphia Inquirer",
+        "city": "Philadelphia",
+        "url": "https://www.inquirer.com/"
+      },
+      {
+        "name": "Pittsburgh Post-Gazette",
+        "city": "Pittsburgh",
+        "url": "https://www.post-gazette.com/"
+      }
+    ]
+  },
+  {
+    "state": "Rhode Island",
+    "papers": [
+      {
+        "name": "The Providence Journal",
+        "city": "Providence",
+        "url": "https://www.providencejournal.com/"
+      }
+    ]
+  },
+  {
+    "state": "South Carolina",
+    "papers": [
+      {
+        "name": "The Post and Courier",
+        "city": "Charleston",
+        "url": "https://www.postandcourier.com/"
+      },
+      {
+        "name": "The State",
+        "city": "Columbia",
+        "url": "https://www.thestate.com/"
+      }
+    ]
+  },
+  {
+    "state": "South Dakota",
+    "papers": [
+      {
+        "name": "Argus Leader",
+        "city": "Sioux Falls",
+        "url": "https://www.argusleader.com/"
+      }
+    ]
+  },
+  {
+    "state": "Tennessee",
+    "papers": [
+      {
+        "name": "The Tennessean",
+        "city": "Nashville",
+        "url": "https://www.tennessean.com/"
+      },
+      {
+        "name": "Knoxville News Sentinel",
+        "city": "Knoxville",
+        "url": "https://www.knoxnews.com/"
+      }
+    ]
+  },
+  {
+    "state": "Texas",
+    "papers": [
+      {
+        "name": "Houston Chronicle",
+        "city": "Houston",
+        "url": "https://www.houstonchronicle.com/"
+      },
+      {
+        "name": "The Dallas Morning News",
+        "city": "Dallas",
+        "url": "https://www.dallasnews.com/"
+      },
+      {
+        "name": "San Antonio Express-News",
+        "city": "San Antonio",
+        "url": "https://www.expressnews.com/"
+      },
+      {
+        "name": "Austin American-Statesman",
+        "city": "Austin",
+        "url": "https://www.statesman.com/"
+      }
+    ]
+  },
+  {
+    "state": "Utah",
+    "papers": [
+      {
+        "name": "The Salt Lake Tribune",
+        "city": "Salt Lake City",
+        "url": "https://www.sltrib.com/"
+      },
+      {
+        "name": "Deseret News",
+        "city": "Salt Lake City",
+        "url": "https://www.deseret.com/"
+      }
+    ]
+  },
+  {
+    "state": "Vermont",
+    "papers": [
+      {
+        "name": "Burlington Free Press",
+        "city": "Burlington",
+        "url": "https://www.burlingtonfreepress.com/"
+      }
+    ]
+  },
+  {
+    "state": "Virginia",
+    "papers": [
+      {
+        "name": "Richmond Times-Dispatch",
+        "city": "Richmond",
+        "url": "https://richmond.com/"
+      },
+      {
+        "name": "The Virginian-Pilot",
+        "city": "Norfolk",
+        "url": "https://www.pilotonline.com/"
+      }
+    ]
+  },
+  {
+    "state": "Washington",
+    "papers": [
+      {
+        "name": "The Seattle Times",
+        "city": "Seattle",
+        "url": "https://www.seattletimes.com/"
+      }
+    ]
+  },
+  {
+    "state": "West Virginia",
+    "papers": [
+      {
+        "name": "Charleston Gazette-Mail",
+        "city": "Charleston",
+        "url": "https://www.wvgazettemail.com/"
+      }
+    ]
+  },
+  {
+    "state": "Wisconsin",
+    "papers": [
+      {
+        "name": "Milwaukee Journal Sentinel",
+        "city": "Milwaukee",
+        "url": "https://www.jsonline.com/"
+      }
+    ]
+  },
+  {
+    "state": "Wyoming",
+    "papers": [
+      {
+        "name": "Casper Star-Tribune",
+        "city": "Casper",
+        "url": "https://trib.com/"
+      }
+    ]
+  },
+  {
+    "state": "District of Columbia",
+    "papers": [
+      {
+        "name": "The Washington Post",
+        "city": "Washington, D.C.",
+        "url": "https://www.washingtonpost.com/"
+      }
+    ]
+  },
+  {
+    "state": "Puerto Rico",
+    "papers": [
+      {
+        "name": "El Nuevo Día",
+        "city": "San Juan",
+        "url": "https://www.elnuevodia.com/"
+      }
+    ]
+  },
+  {
+    "state": "Guam",
+    "papers": [
+      {
+        "name": "Pacific Daily News",
+        "city": "Hagåtña",
+        "url": "https://www.guampdn.com/"
+      }
+    ]
+  }
+]

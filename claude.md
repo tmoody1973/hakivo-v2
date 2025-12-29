@@ -309,6 +309,39 @@ curl -X POST "https://hakivo-v2.netlify.app/.netlify/functions/image-processor-b
 curl -X POST "https://hakivo-v2.netlify.app/.netlify/functions/audio-processor-background"
 ```
 
+## Build Configuration
+
+### TypeScript Compilation Exclusions
+
+**Problem**: Raindrop builds were failing due to TypeScript errors in unrelated Sanity Studio files:
+```
+studio-hakivo/dist/vendor/styled-components/index-D3vWXbni.mjs(1,1): error TS9005: Declaration emit for this file requires using private name 't'
+studio-hakivo/sanity.config.ts(6,1): error TS4082: Default export of the module has or is using private name 'PluginOptions'
+```
+
+**Solution**: Exclude `studio-hakivo` directory from TypeScript compilation in `/hakivo-api/tsconfig.json`:
+
+```json
+{
+  "exclude": ["test", "scripts", "eslint.config.js", "*.config.js", "studio-hakivo"]
+}
+```
+
+**Why This Works**:
+- Sanity Studio is a separate application with its own build system
+- Sanity Studio files are unrelated to Raindrop backend services
+- Excluding prevents TypeScript from type-checking Sanity's styled-components types
+- Raindrop builds only need to compile backend observer/service code
+
+**When to Use**:
+- After adding new directories that have their own build systems
+- When build fails with TypeScript errors from third-party dependencies
+- Any time unrelated code interferes with Raindrop compilation
+
+**Related Files**:
+- `/hakivo-api/tsconfig.json` - TypeScript configuration for Raindrop builds
+- `/studio-hakivo/` - Sanity CMS studio (excluded from builds)
+
 ## Content Generation Requirements
 
 ### Headlines
