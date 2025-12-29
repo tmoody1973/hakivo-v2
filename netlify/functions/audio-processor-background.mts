@@ -348,7 +348,68 @@ async function saveStateBillsFromContent(briefId: string): Promise<void> {
 
         console.log(`[STATE-BILLS] ✅ Saved ${identifier} (${billId}) for brief ${briefId}`);
       } else {
-        console.log(`[STATE-BILLS] ⚠️  Bill ${identifier} not found in database`);
+        console.log(`[STATE-BILLS] ⚠️  Bill ${identifier} not found in database - fetching from OpenStates...`);
+
+        // Fetch bill from OpenStates API
+        try {
+          const [billType, billNum] = identifier.split(' ');
+          const openStatesUrl = `https://v3.openstates.org/bills?jurisdiction=Wisconsin&session=2025&identifier=${billType}%20${billNum}`;
+
+          const openStatesResp = await fetch(openStatesUrl, {
+            headers: {
+              'X-API-Key': process.env.OPENSTATES_API_KEY || '',
+            },
+          });
+
+          if (openStatesResp.ok) {
+            const openStatesData = await openStatesResp.json();
+            const bill = openStatesData.results?.[0];
+
+            if (bill) {
+              // Create new bill ID and save to state_bills table
+              const newBillId = `WI-${identifier.replace(' ', '-')}`;
+              const now = Date.now();
+
+              const insertBillQuery = `INSERT OR IGNORE INTO state_bills (
+                id, state, session, identifier, title, description, url, created_at, updated_at
+              ) VALUES (
+                '${newBillId}',
+                'WI',
+                '2025',
+                '${identifier}',
+                '${(bill.title || '').replace(/'/g, "''")}',
+                '${(bill.description || bill.title || '').replace(/'/g, "''")}',
+                '${bill.openstates_url || ''}',
+                ${now},
+                ${now}
+              )`;
+
+              await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: insertBillQuery }),
+              });
+
+              console.log(`[STATE-BILLS] ✅ Fetched and saved ${identifier} from OpenStates`);
+
+              // Now save to junction table
+              const junctionQuery = `INSERT OR IGNORE INTO brief_state_bills (brief_id, state_bill_id) VALUES ('${briefId}', '${newBillId}')`;
+              await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: junctionQuery }),
+              });
+
+              console.log(`[STATE-BILLS] ✅ Linked ${identifier} to brief ${briefId}`);
+            } else {
+              console.log(`[STATE-BILLS] ⚠️  Bill ${identifier} not found on OpenStates`);
+            }
+          } else {
+            console.log(`[STATE-BILLS] ⚠️  OpenStates API error: ${openStatesResp.status}`);
+          }
+        } catch (fetchError) {
+          console.error(`[STATE-BILLS] Error fetching from OpenStates:`, fetchError);
+        }
       }
     }
   } catch (error) {
