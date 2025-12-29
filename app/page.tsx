@@ -15,6 +15,7 @@ export default function HomePage() {
     { href: "/podcast", label: "Podcast" },
     { href: "/about", label: "About" },
     { href: "/pricing", label: "Pricing" },
+    { href: "/blog", label: "Blog" },
     { href: "/faq", label: "FAQ" },
   ]
 

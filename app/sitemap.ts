@@ -1,4 +1,6 @@
 import { MetadataRoute } from 'next'
+import { client } from '@/lib/sanity/client'
+import { groq } from 'next-sanity'
 
 /**
  * Dynamic Sitemap for Hakivo
@@ -102,6 +104,23 @@ async function getPodcastEpisodesForSitemap(): Promise<PodcastEpisode[]> {
     return data.episodes || data.podcasts || []
   } catch (error) {
     console.error('[Sitemap] Error fetching podcasts:', error)
+    return []
+  }
+}
+
+/**
+ * Fetch blog posts for sitemap
+ */
+async function getBlogPostsForSitemap(): Promise<Array<{ slug: string; publishedAt: string }>> {
+  try {
+    const query = groq`*[_type == "blogPost"] | order(publishedAt desc) {
+      "slug": slug.current,
+      publishedAt
+    }`
+    const posts = await client.fetch(query)
+    return posts || []
+  } catch (error) {
+    console.error('[Sitemap] Error fetching blog posts:', error)
     return []
   }
 }

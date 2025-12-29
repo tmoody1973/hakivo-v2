@@ -309,23 +309,11 @@ export default class extends Each<Body, Env> {
       console.error(`[STAGE-7] Gemini image generation failed:`, imageError);
     }
 
-    // Step 2: Fall back to Perplexity news images if Gemini fails
-    if (!featuredImage) {
-      console.log(`[STAGE-7] Gemini failed, trying Perplexity images...`);
-      for (const article of newsArticles) {
-        const imageUrl = article.image?.url || article.imageUrl;
-        if (imageUrl) {
-          featuredImage = imageUrl;
-          console.log(`[STAGE-7] Using image from Perplexity: ${featuredImage}`);
-          break;
-        }
-      }
-    }
-
-    // Step 3: Fetch og:image from news article URLs if still no image
-    if (!featuredImage && newsArticles.length > 0) {
-      console.log(`[STAGE-7] No Perplexity images, trying og:image from news URLs...`);
-      for (const article of newsArticles.slice(0, 3)) {
+    // Step 2: Try og:image from news URLs if Gemini fails
+    if (!featuredImage && newsJSON.total_items > 0) {
+      console.log(`[STAGE-7] Gemini failed, trying og:image from news URLs...`);
+      // Try federal legislation news first
+      for (const article of newsJSON.categories.federal_legislation.slice(0, 2)) {
         if (article.url) {
           try {
             const ogImage = await this.fetchOgImage(article.url);
@@ -361,15 +349,8 @@ export default class extends Each<Body, Env> {
     // ==================== STAGE 8: SAVE AND MARK FOR AUDIO PROCESSING ====================
     console.log(`[STAGE-8] Saving script and marking for audio processing...`);
 
-    // Format news articles for storage
-    const newsJson = newsArticles.length > 0 ? JSON.stringify(
-      newsArticles.slice(0, 5).map((article: any) => ({
-        title: article.title,
-        url: article.url,
-        summary: article.summary,
-        source: article.url ? new URL(article.url).hostname.replace('www.', '') : 'Unknown'
-      }))
-    ) : null;
+    // Format news for storage (save full newsJSON structure)
+    const newsJson = newsJSON.total_items > 0 ? JSON.stringify(newsJSON) : null;
 
     // Save the script and set status to 'script_ready'
     // Netlify scheduled function (audio-processor) polls for this status every 2 minutes
@@ -420,7 +401,14 @@ export default class extends Each<Body, Env> {
 
       // Create a structured episodic memory entry with brief details
       const billTitles = billsWithActions.slice(0, 5).map((b: any) => b.title || 'Untitled').join('; ');
-      const newsSummary = newsArticles.slice(0, 3).map((n: any) => n.title || '').filter(Boolean).join('; ');
+
+      // Create news summary from newsJSON
+      const allNews = [
+        ...newsJSON.categories.federal_legislation,
+        ...newsJSON.categories.state_legislation,
+        ...Object.values(newsJSON.categories.policy_news).flat()
+      ];
+      const newsSummary = allNews.slice(0, 3).map(n => n.headline).join('; ');
 
       // Format the episodic content - this becomes searchable history
       const episodeContent = [
@@ -428,7 +416,7 @@ export default class extends Each<Body, Env> {
         `Topic: ${headline}`,
         `Policy Interests: ${policyInterests.join(', ')}`,
         `Featured Bills: ${billTitles}`,
-        newsArticles.length > 0 ? `News: ${newsSummary}` : null,
+        newsJSON.total_items > 0 ? `News: ${newsSummary}` : null,
         stateBills && stateBills.length > 0 ? `State Bills: ${stateBills.length} from ${userState}` : null
       ].filter(Boolean).join('\n');
 
@@ -1517,14 +1505,18 @@ ACCURACY & CONTEXT:
 
 TARGET: ${type === 'daily' ? '6-8 minutes' : '10-12 minutes'} (${type === 'daily' ? '1200-1600' : '2000-2400'} words)`;
 
-    // Separate local news for highlighting
-    const localNews = newsArticles.filter((a: any) => a.isLocal);
-    const nationalNews = newsArticles.filter((a: any) => !a.isLocal);
+    // Extract all news from newsJSON structure
+    const allNews = [
+      ...newsJSON.categories.federal_legislation,
+      ...newsJSON.categories.state_legislation,
+      ...Object.values(newsJSON.categories.policy_news).flat()
+    ];
 
-    // Format news with local/national distinction
+    // Format news by category for script
     const newsSection = [
-      ...(localNews.length > 0 ? [`LOCAL NEWS (from ${spokenState || 'your area'}):\n${localNews.slice(0, 2).map((a: any) => `• ${a.title}`).join('\n')}`] : []),
-      ...(nationalNews.length > 0 ? [`NATIONAL NEWS:\n${nationalNews.slice(0, 3).map((a: any) => `• ${a.title}`).join('\n')}`] : [])
+      ...(newsJSON.categories.federal_legislation.length > 0 ? [`FEDERAL LEGISLATION NEWS:\n${newsJSON.categories.federal_legislation.slice(0, 2).map(n => `• ${n.headline}`).join('\n')}`] : []),
+      ...(newsJSON.categories.state_legislation.length > 0 ? [`STATE LEGISLATION NEWS (${spokenState || 'your area'}):\n${newsJSON.categories.state_legislation.slice(0, 2).map(n => `• ${n.headline}`).join('\n')}`] : []),
+      ...(Object.keys(newsJSON.categories.policy_news).length > 0 ? [`POLICY NEWS:\n${Object.entries(newsJSON.categories.policy_news).flatMap(([interest, items]) => items.slice(0, 1).map(n => `• ${n.headline} (${interest})`)).slice(0, 3).join('\n')}`] : [])
     ].join('\n\n');
 
     // User prompt with personalized content
@@ -1657,8 +1649,15 @@ ${hostB.toUpperCase()}: [emotional cue] dialogue...
       };
     });
 
-    const newsLinks = newsArticles.map((article: any) => ({
-      title: article.title,
+    // Extract all news from newsJSON structure
+    const allNewsItems = [
+      ...newsJSON.categories.federal_legislation,
+      ...newsJSON.categories.state_legislation,
+      ...Object.values(newsJSON.categories.policy_news).flat()
+    ];
+
+    const newsLinks = allNewsItems.map((article: any) => ({
+      title: article.headline,
       url: article.url,
       summary: article.summary,
       source: article.url ? new URL(article.url).hostname.replace('www.', '') : 'Unknown'
@@ -1941,7 +1940,7 @@ End with an empowering note about staying informed.`;
     userId: string,
     newsItems: (NewsItem & { category: string })[]
   ): Promise<(NewsItem & { category: string })[]> {
-    const lookbackDays = 7;
+    const lookbackDays = 25;
     const cutoffTime = Date.now() - (lookbackDays * 24 * 60 * 60 * 1000);
 
     try {

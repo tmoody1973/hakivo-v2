@@ -33,6 +33,12 @@ export function PublicHeader() {
           >
             Pricing
           </Link>
+          <Link
+            href="/blog"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
+          >
+            Blog
+          </Link>
           <Button variant="ghost" asChild>
             <Link href="/auth/signin">Sign In</Link>
           </Button>

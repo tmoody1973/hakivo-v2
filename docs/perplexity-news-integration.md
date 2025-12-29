@@ -135,7 +135,7 @@ CREATE INDEX idx_news_cache_cleanup ON news_cache(included_at);
 async function deduplicateNews(
   userId: string,
   newsItems: NewsItem[],
-  lookbackDays: number = 7
+  lookbackDays: number = 25
 ): Promise<NewsItem[]> {
   const cutoffTime = Date.now() - (lookbackDays * 24 * 60 * 60 * 1000);
 
@@ -405,7 +405,7 @@ async fetchNewsHeadlines(
 async deduplicateNews(
   userId: string,
   newsItems: NewsItem[],
-  lookbackDays: number = 7
+  lookbackDays: number = 25
 ): Promise<NewsItem[]> {
   const cutoffTime = Date.now() - (lookbackDays * 24 * 60 * 60 * 1000);
 
@@ -667,7 +667,7 @@ console.log(`[NEWS] Perplexity API latency: ${latencyMs}ms`);
 
 **Solution:**
 - Reduce `maxResults` per query (3 → 2)
-- Increase `lookbackDays` for deduplication (7 → 10)
+- Increase `lookbackDays` for deduplication (7 → 25)
 - Batch searches to reduce API calls
 
 ### News quality issues
