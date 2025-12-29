@@ -1,5 +1,6 @@
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
+import stateNewspapers from '../docs/uspapers.json';
 
 /**
  * News article response from Perplexity search
@@ -59,6 +60,7 @@ const TRUSTED_SOURCES = [
   'theguardian.com',
   'reuters.com',
   'apnews.com',
+  'ap.com',
 
   // Government/Policy Sources
   'congress.gov',
@@ -72,11 +74,71 @@ const TRUSTED_SOURCES = [
 ];
 
 /**
+ * Get state-specific newspaper domains for local news coverage
+ * @param stateNameOrAbbrev - Full state name (e.g., "Wisconsin") or abbreviation (e.g., "WI")
+ * @returns Array of domains for that state's newspapers
+ */
+function getStateSources(stateNameOrAbbrev: string): string[] {
+  if (!stateNameOrAbbrev) return [];
+
+  // Find state by name or common abbreviations
+  const stateData = stateNewspapers.find(s => {
+    const stateName = s.state.toLowerCase();
+    const searchTerm = stateNameOrAbbrev.toLowerCase();
+
+    // Match full name or common abbreviations
+    if (stateName === searchTerm) return true;
+    if (stateName.startsWith(searchTerm)) return true;
+
+    // Common state abbreviation mapping
+    const abbrevMap: Record<string, string> = {
+      'wi': 'wisconsin', 'ca': 'california', 'ny': 'new york', 'tx': 'texas',
+      'fl': 'florida', 'il': 'illinois', 'pa': 'pennsylvania', 'oh': 'ohio',
+      'ga': 'georgia', 'nc': 'north carolina', 'mi': 'michigan', 'nj': 'new jersey',
+      'va': 'virginia', 'wa': 'washington', 'az': 'arizona', 'ma': 'massachusetts',
+      'tn': 'tennessee', 'in': 'indiana', 'mo': 'missouri', 'md': 'maryland',
+      'co': 'colorado', 'mn': 'minnesota', 'sc': 'south carolina', 'al': 'alabama',
+      'la': 'louisiana', 'ky': 'kentucky', 'or': 'oregon', 'ok': 'oklahoma',
+      'ct': 'connecticut', 'ut': 'utah', 'ia': 'iowa', 'nv': 'nevada',
+      'ar': 'arkansas', 'ms': 'mississippi', 'ks': 'kansas', 'nm': 'new mexico',
+      'ne': 'nebraska', 'id': 'idaho', 'wv': 'west virginia', 'hi': 'hawaii',
+      'nh': 'new hampshire', 'me': 'maine', 'mt': 'montana', 'ri': 'rhode island',
+      'de': 'delaware', 'sd': 'south dakota', 'nd': 'north dakota', 'ak': 'alaska',
+      'dc': 'district of columbia', 'vt': 'vermont', 'wy': 'wyoming'
+    };
+
+    const abbreviation = abbrevMap[searchTerm];
+    return abbreviation && stateName === abbreviation;
+  });
+
+  if (!stateData) return [];
+
+  // Extract domains from URLs
+  return stateData.papers.map(paper => {
+    try {
+      const url = new URL(paper.url);
+      return url.hostname.replace('www.', '');
+    } catch {
+      return '';
+    }
+  }).filter(domain => domain.length > 0);
+}
+
+/**
  * Generate domain filter string for Perplexity queries
  * Uses site: operators to prioritize trusted sources
+ * @param state - Optional state to include state-specific newspapers
  */
-function buildDomainFilter(): string {
-  return TRUSTED_SOURCES.map(domain => `site:${domain}`).join(' OR ');
+function buildDomainFilter(state?: string | null): string {
+  const sources = [...TRUSTED_SOURCES];
+
+  // Add state-specific newspapers if state is provided
+  if (state) {
+    const stateSources = getStateSources(state);
+    sources.push(...stateSources);
+  }
+
+  return sources.map(domain => `site:${domain}`).join(' OR ');
 }
 
 /**
@@ -207,8 +269,12 @@ export default class extends Service<Env> {
       ? `\n\nIMPORTANT: Include news specifically relevant to ${state} and how federal policies affect ${state} residents.`
       : '';
 
-    // Build domain filter for trusted sources
-    const domainFilter = buildDomainFilter();
+    // Build domain filter for trusted sources (includes state-specific newspapers if state provided)
+    const domainFilter = buildDomainFilter(state);
+    const stateSources = state ? getStateSources(state) : [];
+    const stateSourcesNote = stateSources.length > 0
+      ? `\n- State sources (${state}): ${stateSources.join(', ')}`
+      : '';
 
     // Build a targeted search prompt using the templates
     const searchPrompt = `Search for the ${limit} most recent and important news articles from the past 7 days about U.S. policy and legislation.
@@ -227,7 +293,7 @@ ${domainFilter}
 REQUIREMENTS:
 - Only articles from the past 7 days (today is ${today})
 - ONLY search the domains listed in DOMAIN FILTER above
-- Prioritize: ProPublica, NYT, WaPo, Politico, NPR, Reuters, The Hill, Roll Call, Punchbowl News
+- Prioritize: ProPublica, NYT, WaPo, Politico, NPR, Reuters, The Hill, Roll Call, Punchbowl News${stateSourcesNote}
 - Focus on legislative action, policy analysis, and political developments
 - Include both federal and state-level developments when relevant
 
@@ -542,11 +608,13 @@ Prioritize articles with clear policy implications and citizen impact.`;
    * @param params - Search parameters
    * @param params.query - Search query string
    * @param params.maxResults - Maximum number of results to return (default: 5)
+   * @param params.state - Optional state for state-specific newspaper sources
    * @returns Search results with headlines and URLs
    */
   async search(params: {
     query: string;
     maxResults?: number;
+    state?: string | null;
   }): Promise<{
     results: Array<{
       headline: string;
@@ -555,7 +623,7 @@ Prioritize articles with clear policy implications and citizen impact.`;
       publishedAt: string;
     }>;
   }> {
-    const { query, maxResults = 5 } = params;
+    const { query, maxResults = 5, state } = params;
     const apiKey = this.env.PERPLEXITY_API_KEY;
 
     if (!apiKey) {
@@ -563,7 +631,7 @@ Prioritize articles with clear policy implications and citizen impact.`;
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const domainFilter = buildDomainFilter();
+    const domainFilter = buildDomainFilter(state);
 
     const jsonSchema = {
       type: 'object',
