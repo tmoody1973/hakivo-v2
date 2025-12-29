@@ -1543,7 +1543,7 @@ ${newsSection || 'No recent news headlines'}
 === PERSONALIZATION REQUIREMENTS ===
 1. START by greeting ${personalization.userName} by name warmly
 2. ${isTopStoryFromRep ? `The TOP STORY is from ${personalization.userName}'s OWN representative - emphasize this personal connection!` : 'Make the top story feel relevant to their interests'}
-3. ${localNews.length > 0 ? `Include the LOCAL news from ${spokenState} - make it feel personal` : 'Focus on national stories relevant to their interests'}
+3. ${newsJSON.categories.state_legislation.length > 0 ? `Include the STATE LEGISLATION news from ${spokenState} - make it feel personal and relevant` : 'Focus on federal legislation and policy news relevant to their interests'}
 4. ${stateBillsText ? `Include the STATE LEGISLATURE section - transition with "Now let's check in on what's happening in the ${spokenState || 'state'} legislature..." and cover 1-2 state bills` : 'No state bills this time'}
 5. Follow the show structure: Personalized Opening → Intro → Top Story → Headlines → Spotlight${stateBillsText ? ' → State Legislature' : ''} → Personalized Outro
 6. The HAKIVO OUTRO must include ${personalization.userName}'s name in the call to action

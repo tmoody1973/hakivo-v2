@@ -476,6 +476,125 @@ Prioritize articles with clear policy implications and citizen impact.`;
   }
 
   /**
+   * Simple search for headlines with minimal structure
+   * Used for quick news searches without full interest mapping
+   *
+   * @param params - Search parameters
+   * @param params.query - Search query string
+   * @param params.maxResults - Maximum number of results to return (default: 5)
+   * @returns Search results with headlines and URLs
+   */
+  async search(params: {
+    query: string;
+    maxResults?: number;
+  }): Promise<{
+    results: Array<{
+      headline: string;
+      url: string;
+      summary: string;
+      publishedAt: string;
+    }>;
+  }> {
+    const { query, maxResults = 5 } = params;
+    const apiKey = this.env.PERPLEXITY_API_KEY;
+
+    if (!apiKey) {
+      throw new Error('PERPLEXITY_API_KEY environment variable is not set');
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const jsonSchema = {
+      type: 'object',
+      properties: {
+        articles: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              headline: { type: 'string' },
+              url: { type: 'string' },
+              summary: { type: 'string' },
+              publishedAt: { type: 'string' }
+            },
+            required: ['headline', 'url', 'summary', 'publishedAt']
+          }
+        }
+      },
+      required: ['articles']
+    };
+
+    try {
+      console.log(`[PERPLEXITY] Searching: ${query}`);
+
+      const response = await fetch(this.API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: this.MODEL,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a news research assistant. Search for recent news and return results in the exact JSON format requested. Today is ${today}. Only include articles from the past 7 days.`
+            },
+            {
+              role: 'user',
+              content: `Find ${maxResults} recent news articles matching this search: ${query}
+
+Return as JSON with an "articles" array. For each article:
+- headline: The article headline
+- url: The full article URL (must be a real, accessible URL)
+- summary: A 1-2 sentence summary
+- publishedAt: Publication date (ISO format YYYY-MM-DD)`
+            }
+          ],
+          max_tokens: 2048,
+          temperature: 0.1,
+          return_images: false,
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'search_response',
+              schema: jsonSchema,
+              strict: true
+            }
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[PERPLEXITY] Search error: ${response.status} - ${errorText}`);
+        return { results: [] };
+      }
+
+      const result = await response.json() as {
+        choices: Array<{ message: { content: string } }>;
+      };
+
+      const content = result.choices?.[0]?.message?.content;
+      if (!content) {
+        console.warn('[PERPLEXITY] No content in search response');
+        return { results: [] };
+      }
+
+      const parsed = JSON.parse(content) as { articles: Array<{ headline: string; url: string; summary: string; publishedAt: string }> };
+      console.log(`[PERPLEXITY] Found ${parsed.articles?.length || 0} articles`);
+
+      return {
+        results: (parsed.articles || []).filter(a => a.url && a.url.startsWith('http'))
+      };
+
+    } catch (error) {
+      console.error('[PERPLEXITY] Search error:', error);
+      return { results: [] };
+    }
+  }
+
+  /**
    * Search for specific policy topic with deeper analysis
    * Uses sonar-pro's multi-step reasoning for complex queries
    *

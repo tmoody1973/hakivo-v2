@@ -127,10 +127,11 @@ async function getBlogPostsForSitemap(): Promise<Array<{ slug: string; published
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Fetch all dynamic content in parallel
-  const [bills, members, episodes] = await Promise.all([
+  const [bills, members, episodes, blogPosts] = await Promise.all([
     getBillsForSitemap(),
     getMembersForSitemap(),
     getPodcastEpisodesForSitemap(),
+    getBlogPostsForSitemap(),
   ])
 
   const now = new Date().toISOString()
@@ -145,6 +146,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
     {
       url: `${SITE_URL}/podcast`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    {
+      url: `${SITE_URL}/blog`,
       lastModified: now,
       changeFrequency: 'daily',
       priority: 0.9,
@@ -190,10 +197,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }))
 
-  console.log(`[Sitemap] Generated: ${staticPages.length} static, ${billPages.length} bills, ${memberPages.length} members, ${podcastPages.length} podcasts`)
+  // Blog post pages - format: /blog/post-slug
+  const blogPages: MetadataRoute.Sitemap = blogPosts.map((post) => ({
+    url: `${SITE_URL}/blog/${post.slug}`,
+    lastModified: post.publishedAt || now,
+    changeFrequency: 'monthly' as const,
+    priority: 0.8,
+  }))
+
+  console.log(`[Sitemap] Generated: ${staticPages.length} static, ${blogPages.length} blog posts, ${billPages.length} bills, ${memberPages.length} members, ${podcastPages.length} podcasts`)
 
   return [
     ...staticPages,
+    ...blogPages,     // Blog posts high priority
     ...podcastPages,  // Podcasts high priority
     ...billPages,
     ...memberPages,
