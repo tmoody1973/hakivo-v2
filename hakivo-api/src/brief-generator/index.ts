@@ -219,39 +219,31 @@ export default class extends Each<Body, Env> {
       billsWithActions = bills.map(b => ({ ...b, actions: [] }));
     }
 
-    // ==================== STAGE 4: FETCH PERSONALIZED NEWS ====================
-    console.log(`[STAGE-4] Fetching personalized news from Perplexity...`);
-    let newsArticles: any[] = [];
+    // ==================== STAGE 4: FETCH NEWS HEADLINES (Federal + State + Policy) ====================
+    console.log(`[STAGE-4] Fetching news headlines from Perplexity...`);
+    let newsJSON: NewsJSON;
     try {
-      // Fetch both national and state-specific news
-      const nationalNews = await this.fetchNewsByInterests(policyInterests, null);
-      console.log(`[STAGE-4] Got ${nationalNews.length} national news articles`);
-
-      let stateNews: any[] = [];
-      if (userState) {
-        stateNews = await this.fetchNewsByInterests(policyInterests, userState);
-        console.log(`[STAGE-4] Got ${stateNews.length} ${userState} news articles`);
-      }
-
-      // Combine: state news first (more personal), then national
-      // Dedupe by URL
-      const seenUrls = new Set<string>();
-      for (const article of [...stateNews, ...nationalNews]) {
-        if (!seenUrls.has(article.url)) {
-          seenUrls.add(article.url);
-          newsArticles.push({
-            ...article,
-            isLocal: stateNews.includes(article)
-          });
-        }
-      }
-      // Limit to 10 total
-      newsArticles = newsArticles.slice(0, 10);
-
-      console.log(`[STAGE-4] Total ${newsArticles.length} personalized news articles. Elapsed: ${Date.now() - startTime}ms`);
+      newsJSON = await this.fetchNewsHeadlines(userId, userState, policyInterests);
+      console.log(`[STAGE-4] Got ${newsJSON.total_items} news items (${newsJSON.deduplication_stats.duplicates_removed} duplicates removed). Elapsed: ${Date.now() - startTime}ms`);
+      console.log(`[STAGE-4] Federal: ${newsJSON.categories.federal_legislation.length}, State: ${newsJSON.categories.state_legislation.length}, Policy: ${Object.keys(newsJSON.categories.policy_news).length} topics`);
     } catch (newsError) {
       console.error(`[STAGE-4] News fetch failed (non-fatal):`, newsError);
-      // Continue without news - non-fatal
+      // Continue with empty news - non-fatal
+      newsJSON = {
+        date_generated: new Date().toISOString(),
+        user_state: userState || 'United States',
+        categories: {
+          federal_legislation: [],
+          state_legislation: [],
+          policy_news: {}
+        },
+        total_items: 0,
+        deduplication_stats: {
+          total_fetched: 0,
+          duplicates_removed: 0,
+          new_items_included: 0
+        }
+      };
     }
 
     // ==================== CHECKPOINT: SAVE CONTENT GATHERED ====================
@@ -275,7 +267,7 @@ export default class extends Each<Body, Env> {
     };
 
     try {
-      const scriptResult = await this.generateScript(type, billsWithActions, newsArticles, personalization);
+      const scriptResult = await this.generateScript(type, billsWithActions, newsJSON, personalization);
       script = scriptResult.script;
       headline = scriptResult.headline;
       console.log(`[STAGE-5] Generated script: ${script.length} chars, headline: "${headline}". Elapsed: ${Date.now() - startTime}ms`);
@@ -291,7 +283,7 @@ export default class extends Each<Body, Env> {
     let article: string = '';
     let wordCount: number = 0;
     try {
-      const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsArticles, headline, stateBills, userState);
+      const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsJSON, headline, stateBills, userState);
       article = articleResult.article;
       wordCount = articleResult.wordCount;
       console.log(`[STAGE-6] Generated article: ${wordCount} words. Elapsed: ${Date.now() - startTime}ms`);
@@ -386,6 +378,9 @@ export default class extends Each<Body, Env> {
       SET status = ?, title = ?, script = ?, content = ?, featured_image = ?, news_json = ?, updated_at = ?
       WHERE id = ?
     `).bind('script_ready', headline, script, article, featuredImage, newsJson, Date.now(), briefId).run();
+
+    // Save news URLs to cache for deduplication in future briefs
+    await this.saveNewsToCache(userId, briefId, newsJSON);
 
     // NOTE: Bills save moved to audio-processor-background.mts as workaround for Raindrop deployment issue
     // The audio processor extracts both federal and state bills from article content and saves them
@@ -1282,7 +1277,7 @@ export default class extends Each<Body, Env> {
   private async generateScript(
     type: string,
     bills: any[],
-    newsArticles: any[],
+    newsJSON: NewsJSON,
     personalization: {
       userName: string;
       state: string | null;
@@ -1641,7 +1636,7 @@ ${hostB.toUpperCase()}: [emotional cue] dialogue...
   private async generateWrittenArticle(
     type: string,
     bills: any[],
-    newsArticles: any[],
+    newsJSON: NewsJSON,
     headline: string,
     stateBills: any[] = [],
     userState: string | null = null
@@ -1830,6 +1825,258 @@ End with an empowering note about staying informed.`;
     return { article, wordCount };
   }
 
+  /**
+   * Fetch news headlines via Perplexity API
+   * Returns structured news JSON with federal/state legislation news + policy news
+   */
+  private async fetchNewsHeadlines(
+    userId: string,
+    userState: string | null,
+    policyInterests: string[]
+  ): Promise<NewsJSON> {
+    console.log(`[NEWS] Fetching headlines for interests: ${policyInterests.join(', ')}`);
+    const newsItems: (NewsItem & { category: string })[] = [];
+
+    try {
+      // 1. Federal legislation news
+      console.log('[NEWS] Fetching federal legislation news...');
+      const federalNewsResult = await this.env.PERPLEXITY_CLIENT.search({
+        query: 'US Congress latest bills federal legislation news 2025',
+        maxResults: 3
+      });
+
+      if (federalNewsResult?.results) {
+        for (const item of federalNewsResult.results) {
+          newsItems.push({
+            headline: item.title || item.snippet?.substring(0, 100) || 'Untitled',
+            summary: item.snippet || item.title || '',
+            url: item.url || '',
+            source: item.source || 'Unknown',
+            date: new Date().toISOString(),
+            category: 'federal_legislation'
+          });
+        }
+      }
+
+      // 2. State legislation news (if user has state)
+      if (userState) {
+        console.log(`[NEWS] Fetching ${userState} state legislation news...`);
+        const stateNewsResult = await this.env.PERPLEXITY_CLIENT.search({
+          query: `${userState} state legislature latest bills news 2025`,
+          maxResults: 3
+        });
+
+        if (stateNewsResult?.results) {
+          for (const item of stateNewsResult.results) {
+            newsItems.push({
+              headline: item.title || item.snippet?.substring(0, 100) || 'Untitled',
+              summary: item.snippet || item.title || '',
+              url: item.url || '',
+              source: item.source || 'Unknown',
+              date: new Date().toISOString(),
+              category: 'state_legislation'
+            });
+          }
+        }
+      }
+
+      // 3. Policy news by interest (limit to first 3 interests to avoid timeout)
+      const limitedInterests = policyInterests.slice(0, 3);
+      for (const interest of limitedInterests) {
+        console.log(`[NEWS] Fetching ${interest} policy news...`);
+        const policyNewsResult = await this.env.PERPLEXITY_CLIENT.search({
+          query: `latest ${interest} policy news United States 2025`,
+          maxResults: 2
+        });
+
+        if (policyNewsResult?.results) {
+          for (const item of policyNewsResult.results) {
+            newsItems.push({
+              headline: item.title || item.snippet?.substring(0, 100) || 'Untitled',
+              summary: item.snippet || item.title || '',
+              url: item.url || '',
+              source: item.source || 'Unknown',
+              date: new Date().toISOString(),
+              category: `policy_${interest}`
+            });
+          }
+        }
+      }
+
+      console.log(`[NEWS] Fetched ${newsItems.length} total news items`);
+
+      // 4. Deduplicate
+      const totalFetched = newsItems.length;
+      const deduplicatedNews = await this.deduplicateNews(userId, newsItems);
+      console.log(`[NEWS] After deduplication: ${deduplicatedNews.length} items (removed ${totalFetched - deduplicatedNews.length} duplicates)`);
+
+      // 5. Structure as JSON
+      return this.structureNewsJSON(userState || 'United States', deduplicatedNews, totalFetched);
+
+    } catch (error) {
+      console.error(`[NEWS] Error fetching news: ${error}`);
+      // Return empty news JSON on error
+      return {
+        date_generated: new Date().toISOString(),
+        user_state: userState || 'United States',
+        categories: {
+          federal_legislation: [],
+          state_legislation: [],
+          policy_news: {}
+        },
+        total_items: 0,
+        deduplication_stats: {
+          total_fetched: 0,
+          duplicates_removed: 0,
+          new_items_included: 0
+        }
+      };
+    }
+  }
+
+  /**
+   * Deduplicate news against recent briefs (last 7 days)
+   */
+  private async deduplicateNews(
+    userId: string,
+    newsItems: (NewsItem & { category: string })[]
+  ): Promise<(NewsItem & { category: string })[]> {
+    const lookbackDays = 7;
+    const cutoffTime = Date.now() - (lookbackDays * 24 * 60 * 60 * 1000);
+
+    try {
+      const recentUrls = await this.env.APP_DB.prepare(
+        `SELECT news_url FROM news_cache
+         WHERE user_id = ? AND included_at > ?`
+      ).bind(userId, cutoffTime).all();
+
+      const usedUrls = new Set(recentUrls.results.map((r: any) => r.news_url));
+      return newsItems.filter(item => !usedUrls.has(item.url));
+
+    } catch (error) {
+      console.error(`[NEWS] Deduplication error: ${error}`);
+      // On error, return all news (fail open)
+      return newsItems;
+    }
+  }
+
+  /**
+   * Structure news into JSON format for prompts
+   */
+  private structureNewsJSON(
+    userState: string,
+    newsItems: (NewsItem & { category: string })[],
+    totalFetched: number
+  ): NewsJSON {
+    const structured: NewsJSON = {
+      date_generated: new Date().toISOString(),
+      user_state: userState,
+      categories: {
+        federal_legislation: [],
+        state_legislation: [],
+        policy_news: {}
+      },
+      total_items: newsItems.length,
+      deduplication_stats: {
+        total_fetched: totalFetched,
+        duplicates_removed: totalFetched - newsItems.length,
+        new_items_included: newsItems.length
+      }
+    };
+
+    for (const item of newsItems) {
+      const { category, ...newsItem } = item;
+
+      if (category === 'federal_legislation') {
+        structured.categories.federal_legislation.push(newsItem);
+      } else if (category === 'state_legislation') {
+        structured.categories.state_legislation.push(newsItem);
+      } else if (category.startsWith('policy_')) {
+        const topic = category.replace('policy_', '');
+        if (!structured.categories.policy_news[topic]) {
+          structured.categories.policy_news[topic] = [];
+        }
+        structured.categories.policy_news[topic].push(newsItem);
+      }
+    }
+
+    return structured;
+  }
+
+  /**
+   * Save news URLs to cache after brief generation
+   */
+  private async saveNewsToCache(
+    userId: string,
+    briefId: string,
+    newsJSON: NewsJSON
+  ): Promise<void> {
+    const now = Date.now();
+
+    try {
+      // Save federal legislation news
+      for (const item of newsJSON.categories.federal_legislation) {
+        await this.env.APP_DB.prepare(
+          `INSERT OR IGNORE INTO news_cache
+           (user_id, news_url, headline, category, included_at, brief_id)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(userId, item.url, item.headline, 'federal_legislation', now, briefId).run();
+      }
+
+      // Save state legislation news
+      for (const item of newsJSON.categories.state_legislation) {
+        await this.env.APP_DB.prepare(
+          `INSERT OR IGNORE INTO news_cache
+           (user_id, news_url, headline, category, included_at, brief_id)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(userId, item.url, item.headline, 'state_legislation', now, briefId).run();
+      }
+
+      // Save policy news
+      for (const [topic, items] of Object.entries(newsJSON.categories.policy_news)) {
+        for (const item of items) {
+          await this.env.APP_DB.prepare(
+            `INSERT OR IGNORE INTO news_cache
+             (user_id, news_url, headline, category, included_at, brief_id)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          ).bind(userId, item.url, item.headline, `policy_${topic}`, now, briefId).run();
+        }
+      }
+
+      console.log(`[NEWS] Saved ${newsJSON.total_items} news items to cache`);
+    } catch (error) {
+      console.error(`[NEWS] Error saving to cache: ${error}`);
+      // Don't fail the brief generation if cache save fails
+    }
+  }
+
+}
+
+// ==================== NEWS TYPES ====================
+
+interface NewsItem {
+  headline: string;
+  summary: string;
+  url: string;
+  source?: string;
+  date: string;
+  category?: string;
+}
+
+interface NewsJSON {
+  date_generated: string;
+  user_state: string;
+  categories: {
+    federal_legislation: NewsItem[];
+    state_legislation: NewsItem[];
+    policy_news: Record<string, NewsItem[]>;
+  };
+  total_items: number;
+  deduplication_stats: {
+    total_fetched: number;
+    duplicates_removed: number;
+    new_items_included: number;
+  };
 }
 
 export interface Body {
