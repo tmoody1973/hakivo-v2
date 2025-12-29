@@ -1440,10 +1440,12 @@ MAIN STORY (3-4 minutes):
 - Natural host conversation: "${hostB}, walk us through this..." / "That's a great point, ${hostA}..."
 - Include a "coming up" tease before transitioning
 
-RELATED NEWS & CONTEXT (1-2 minutes):
+RELATED NEWS & CONTEXT (2-3 minutes):
 - Smooth transition: "And ${hostB}, this isn't happening in isolation..."
-- Connect to 2-3 news stories from different policy areas the listener cares about
-- Quick, conversational updates${spokenState ? `\n- Local angle: "Closer to home in ${spokenState}..."` : ''}
+- DISCUSS 3-6 news headlines from the listener's interest areas with their summaries
+- Use conversational language: "${hostB}, I saw this morning that [outlet] reported..." then explain the summary
+- Cover different policy areas: healthcare, education, immigration, etc. - match their interests
+- Quick but substantive updates - give listeners enough detail to understand what's happening${spokenState ? `\n- Local angle: "Closer to home in ${spokenState}..."` : ''}
 
 POLICY SPOTLIGHT (2-3 minutes):
 - Transition: "Before we move on, there's another story that caught our attention..."
@@ -1512,11 +1514,11 @@ TARGET: ${type === 'daily' ? '6-8 minutes' : '10-12 minutes'} (${type === 'daily
       ...Object.values(newsJSON.categories.policy_news).flat()
     ];
 
-    // Format news by category for script
+    // Format news by category for script WITH full summaries and URLs
     const newsSection = [
-      ...(newsJSON.categories.federal_legislation.length > 0 ? [`FEDERAL LEGISLATION NEWS:\n${newsJSON.categories.federal_legislation.slice(0, 2).map(n => `• ${n.headline}`).join('\n')}`] : []),
-      ...(newsJSON.categories.state_legislation.length > 0 ? [`STATE LEGISLATION NEWS (${spokenState || 'your area'}):\n${newsJSON.categories.state_legislation.slice(0, 2).map(n => `• ${n.headline}`).join('\n')}`] : []),
-      ...(Object.keys(newsJSON.categories.policy_news).length > 0 ? [`POLICY NEWS:\n${Object.entries(newsJSON.categories.policy_news).flatMap(([interest, items]) => items.slice(0, 1).map(n => `• ${n.headline} (${interest})`)).slice(0, 3).join('\n')}`] : [])
+      ...(newsJSON.categories.federal_legislation.length > 0 ? [`FEDERAL LEGISLATION NEWS:\n${newsJSON.categories.federal_legislation.slice(0, 2).map(n => `• HEADLINE: ${n.headline}\n  SOURCE: ${n.source}\n  SUMMARY: ${n.summary}\n  URL: ${n.url}`).join('\n\n')}`] : []),
+      ...(newsJSON.categories.state_legislation.length > 0 ? [`STATE LEGISLATION NEWS (${spokenState || 'your area'}):\n${newsJSON.categories.state_legislation.slice(0, 2).map(n => `• HEADLINE: ${n.headline}\n  SOURCE: ${n.source}\n  SUMMARY: ${n.summary}\n  URL: ${n.url}`).join('\n\n')}`] : []),
+      ...(Object.keys(newsJSON.categories.policy_news).length > 0 ? [`POLICY NEWS (by interest area):\n${Object.entries(newsJSON.categories.policy_news).flatMap(([interest, items]) => items.slice(0, 2).map(n => `• INTEREST: ${interest}\n  HEADLINE: ${n.headline}\n  SOURCE: ${n.source}\n  SUMMARY: ${n.summary}\n  URL: ${n.url}`)).slice(0, 6).join('\n\n')}`] : [])
     ].join('\n\n');
 
     // User prompt with personalized content
