@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS scheduler_logs (
     executed_at INTEGER NOT NULL,
     users_processed INTEGER DEFAULT 0,
     jobs_enqueued INTEGER DEFAULT 0,
-    errors INTEGER DEFAULT 0
+    errors INTEGER DEFAULT 0,
+    error_details TEXT -- JSON array of {email, step, error} objects for debugging failures
 );
 
 CREATE INDEX IF NOT EXISTS idx_scheduler_logs_type ON scheduler_logs(scheduler_type);
