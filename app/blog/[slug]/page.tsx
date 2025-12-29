@@ -12,9 +12,9 @@ import { Button } from '@/components/ui/button'
 export const revalidate = 60 // Revalidate every 60 seconds
 
 interface BlogPostPageProps {
-  params: {
+  params: Promise<{
     slug: string
-  }
+  }>
 }
 
 async function getBlogPost(slug: string): Promise<BlogPost | null> {
@@ -24,7 +24,8 @@ async function getBlogPost(slug: string): Promise<BlogPost | null> {
 export async function generateMetadata({
   params,
 }: BlogPostPageProps): Promise<Metadata> {
-  const post = await getBlogPost(params.slug)
+  const { slug } = await params
+  const post = await getBlogPost(slug)
 
   if (!post) {
     return {
@@ -54,7 +55,8 @@ export async function generateMetadata({
 }
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
-  const post = await getBlogPost(params.slug)
+  const { slug } = await params
+  const post = await getBlogPost(slug)
 
   if (!post) {
     notFound()
