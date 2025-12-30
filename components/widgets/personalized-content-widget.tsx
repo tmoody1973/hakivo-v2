@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { ExternalLink, Newspaper, FileText, Filter, Bookmark, BookmarkCheck, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react"
+import { ExternalLink, Newspaper, FileText, Filter, Bookmark, BookmarkCheck, Loader2, RefreshCw, ChevronLeft, ChevronRight, Scale } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -91,6 +91,18 @@ interface Bill {
   } | null
 }
 
+interface PublicLaw {
+  id: string
+  congress: number
+  billType: string
+  billNumber: number
+  title: string
+  policyArea: string | null
+  lawNumber: string | null
+  latestActionDate: string | null
+  originChamber: string | null
+}
+
 interface PersonalizedContentWidgetProps {
   userInterests?: string[]
 }
@@ -115,6 +127,14 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
   const [activeTab, setActiveTab] = useState<string>("news")
   const [newsCurrentPage, setNewsCurrentPage] = useState(1)
   const [billsCurrentPage, setBillsCurrentPage] = useState(1)
+
+  // Public Laws state
+  const [publicLaws, setPublicLaws] = useState<PublicLaw[]>([])
+  const [publicLawsLoading, setPublicLawsLoading] = useState(false)
+  const [publicLawsError, setPublicLawsError] = useState<string | null>(null)
+  const [publicLawsFetched, setPublicLawsFetched] = useState(false)
+  const [showAllLaws, setShowAllLaws] = useState(false)
+  const [lawsCurrentPage, setLawsCurrentPage] = useState(1)
 
   const { accessToken, refreshToken, updateAccessToken } = useAuth()
 
@@ -236,6 +256,52 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
     fetchBills()
   }, [accessToken, refreshToken, updateAccessToken, activeTab, bills.length])
 
+  // Fetch public laws when laws tab is activated
+  useEffect(() => {
+    const fetchPublicLaws = async () => {
+      if (activeTab !== 'laws' || publicLawsFetched) {
+        return
+      }
+
+      try {
+        setPublicLawsLoading(true)
+        setPublicLawsError(null)
+
+        // Build interests param from userInterests if not showing all
+        const params = new URLSearchParams()
+        if (!showAllLaws && userInterests.length > 0) {
+          params.set('interests', userInterests.join(','))
+        } else if (showAllLaws) {
+          params.set('all', 'true')
+        }
+
+        const response = await fetch(`/api/congress/public-laws?${params.toString()}`)
+        const data = await response.json()
+
+        if (response.ok && data.laws) {
+          setPublicLaws(data.laws)
+          setPublicLawsFetched(true)
+        } else {
+          setPublicLawsError(data.message || 'Failed to load public laws')
+        }
+      } catch (err) {
+        console.error('[PersonalizedContentWidget] Error fetching public laws:', err)
+        setPublicLawsError('Failed to load public laws')
+      } finally {
+        setPublicLawsLoading(false)
+      }
+    }
+
+    fetchPublicLaws()
+  }, [activeTab, publicLawsFetched, showAllLaws, userInterests])
+
+  // Refetch public laws when "Show All" toggle changes
+  useEffect(() => {
+    if (activeTab === 'laws' && publicLawsFetched) {
+      setPublicLawsFetched(false) // Trigger refetch
+    }
+  }, [showAllLaws])
+
   // Filter news based on selected category
   const getFilteredNews = () => {
     if (selectedCategory === "all") {
@@ -262,13 +328,33 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
     )
   }
 
+  // Filter public laws based on selected category
+  const getFilteredLaws = () => {
+    if (selectedCategory === "all" || showAllLaws) {
+      return publicLaws
+    }
+
+    // Map user-friendly interest to Congress.gov policy_area values
+    const mapping = policyInterestMapping.find(m => m.interest === selectedCategory)
+    if (!mapping) {
+      return publicLaws // If no mapping found, return all laws
+    }
+
+    // Filter laws whose policyArea matches any of the mapped policy_areas
+    return publicLaws.filter(law =>
+      law.policyArea && mapping.policy_areas.includes(law.policyArea)
+    )
+  }
+
   const filteredNews = getFilteredNews()
   const filteredBills = getFilteredBills()
+  const filteredLaws = getFilteredLaws()
 
   // Reset page when filter changes
   useEffect(() => {
     setNewsCurrentPage(1)
     setBillsCurrentPage(1)
+    setLawsCurrentPage(1)
   }, [selectedCategory])
 
   // Pagination for News
@@ -282,6 +368,12 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
   const billsStartIndex = (billsCurrentPage - 1) * ITEMS_PER_PAGE
   const billsEndIndex = billsStartIndex + ITEMS_PER_PAGE
   const paginatedBills = filteredBills.slice(billsStartIndex, billsEndIndex)
+
+  // Pagination for Laws
+  const lawsTotalPages = Math.ceil(filteredLaws.length / ITEMS_PER_PAGE)
+  const lawsStartIndex = (lawsCurrentPage - 1) * ITEMS_PER_PAGE
+  const lawsEndIndex = lawsStartIndex + ITEMS_PER_PAGE
+  const paginatedLaws = filteredLaws.slice(lawsStartIndex, lawsEndIndex)
 
   // Generate page numbers helper
   const getPageNumbers = (currentPage: number, totalPages: number) => {
@@ -437,7 +529,7 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
 
       <CardContent>
         <Tabs defaultValue="news" className="w-full" onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="news" className="flex items-center gap-2">
               <Newspaper className="h-4 w-4" />
               News
@@ -445,6 +537,10 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
             <TabsTrigger value="legislation" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Legislation
+            </TabsTrigger>
+            <TabsTrigger value="laws" className="flex items-center gap-2">
+              <Scale className="h-4 w-4" />
+              Laws
             </TabsTrigger>
           </TabsList>
 
@@ -611,6 +707,137 @@ export function PersonalizedContentWidget({ userInterests = [] }: PersonalizedCo
                   {selectedCategory !== "all"
                     ? "Try selecting a different category"
                     : "Check back soon for new legislation"}
+                </p>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Laws Tab */}
+          <TabsContent value="laws" className="mt-4">
+            {/* Show All Toggle */}
+            <div className="flex items-center justify-between mb-4 pb-2 border-b">
+              <span className="text-sm text-muted-foreground">
+                {showAllLaws
+                  ? `Showing all 119th Congress public laws`
+                  : `Filtered by your interests`}
+              </span>
+              <Button
+                variant={showAllLaws ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowAllLaws(!showAllLaws)}
+              >
+                {showAllLaws ? "Show My Interests" : "Show All Laws"}
+              </Button>
+            </div>
+
+            {publicLawsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : publicLawsError ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Scale className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm font-medium">{publicLawsError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setPublicLawsFetched(false)
+                    setPublicLawsError(null)
+                  }}
+                >
+                  Try Again
+                </Button>
+              </div>
+            ) : filteredLaws.length > 0 ? (
+              <>
+                <div className="space-y-4">
+                  {paginatedLaws.map((law) => (
+                    <div
+                      key={law.id}
+                      className="p-4 border rounded-lg hover:bg-accent/50 cursor-pointer transition-colors"
+                      onClick={() => window.location.href = `/bills/${law.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                              P.L. {law.lawNumber || '119-?'}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {law.billType.toUpperCase()} {law.billNumber}
+                            </span>
+                          </div>
+                          <h4 className="font-medium text-sm line-clamp-2">{law.title}</h4>
+                          <div className="flex items-center gap-2 mt-2">
+                            {law.policyArea && (
+                              <Badge variant="outline" className="text-xs">
+                                {law.policyArea}
+                              </Badge>
+                            )}
+                            {law.latestActionDate && (
+                              <span className="text-xs text-muted-foreground">
+                                Enacted {formatRelativeTime(law.latestActionDate)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Laws Pagination */}
+                {lawsTotalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLawsCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={lawsCurrentPage === 1}
+                      className="h-8"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+
+                    {getPageNumbers(lawsCurrentPage, lawsTotalPages).map((page, index) => (
+                      page === '...' ? (
+                        <span key={`laws-ellipsis-${index}`} className="px-2 text-muted-foreground">...</span>
+                      ) : (
+                        <Button
+                          key={`laws-${page}`}
+                          variant={lawsCurrentPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setLawsCurrentPage(page as number)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {page}
+                        </Button>
+                      )
+                    ))}
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLawsCurrentPage(p => Math.min(lawsTotalPages, p + 1))}
+                      disabled={lawsCurrentPage === lawsTotalPages}
+                      className="h-8"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Scale className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No public laws found</p>
+                <p className="text-xs mt-1">
+                  {!showAllLaws
+                    ? "Try clicking 'Show All Laws' to see all 119th Congress public laws"
+                    : "Check back soon for new public laws"}
                 </p>
               </div>
             )}
