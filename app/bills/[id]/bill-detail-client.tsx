@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { ShareButtons } from "@/components/share-buttons"
+import { TextComparison } from "@/components/bills/text-comparison"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useSubscription } from "@/lib/subscription/subscription-context"
 import { getBillById } from "@/lib/api/backend"
@@ -959,6 +960,13 @@ export function BillDetailClient() {
             </CardContent>
           </Card>
         )}
+
+        {/* Text Version Comparison */}
+        <TextComparison
+          congress={bill.congress}
+          billType={bill.type}
+          billNumber={bill.number}
+        />
       </div>
 
       {/* Upgrade Modal */}
