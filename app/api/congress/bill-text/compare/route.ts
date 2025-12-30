@@ -172,10 +172,17 @@ async function fetchBillText(
 
     // Find the requested version
     const targetVersion = textVersions.find((v: { type?: string; formats?: Array<{ url?: string }> }) => {
-      // Extract version code from URL
       if (v.formats && v.formats.length > 0) {
         const url = v.formats[0].url || '';
-        const match = url.match(/BILLS-\d+\w+\d+(\w+)\./i);
+
+        // Handle Public Law URLs: PLAW-119publ21.htm -> pl
+        if (version.toLowerCase() === 'pl' && url.includes('/plaws/')) {
+          return true;
+        }
+
+        // Match BILLS pattern: BILLS-{congress}{type}{number}{version}.ext
+        // e.g., BILLS-119hr1enr.htm -> version = enr
+        const match = url.match(/BILLS-\d+[a-z]+\d+([a-z]+)\./i);
         if (match && match[1].toLowerCase() === version.toLowerCase()) {
           return true;
         }
