@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, Loader2, GitCompareArrows, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, GitCompareArrows, AlertCircle, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
 
 interface TextVersion {
   code: string;
@@ -287,15 +288,83 @@ export function TextComparison({ congress, billType, billNumber }: TextCompariso
                 <div className="space-y-4 mt-4">
                   {/* AI Analysis */}
                   {compareResult.aiAnalysis && (
-                    <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <span className="text-blue-600 dark:text-blue-400">✨</span>
+                    <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border-blue-200 dark:border-blue-800 shadow-sm">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-lg flex items-center gap-2 text-blue-900 dark:text-blue-100">
+                          <Sparkles className="h-5 w-5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
                           AI Analysis of Changes
                         </CardTitle>
+                        <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                          {compareResult.versions.version1.name} → {compareResult.versions.version2.name}
+                        </p>
                       </CardHeader>
-                      <CardContent className="text-sm">
-                        <div className="whitespace-pre-wrap">{compareResult.aiAnalysis}</div>
+                      <CardContent>
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none
+                            prose-headings:text-blue-900 dark:prose-headings:text-blue-100
+                            prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
+                            prose-h1:text-lg prose-h2:text-base prose-h3:text-sm
+                            prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-p:leading-relaxed prose-p:my-2
+                            prose-strong:text-blue-900 dark:prose-strong:text-blue-100 prose-strong:font-semibold
+                            prose-ul:my-2 prose-ul:space-y-1
+                            prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-li:marker:text-blue-600 dark:prose-li:marker:text-blue-400
+                            [&>*:first-child]:mt-0"
+                          role="region"
+                          aria-label="AI analysis of legislative changes"
+                        >
+                          <ReactMarkdown
+                            components={{
+                              // Custom heading styles with proper hierarchy
+                              h1: ({ children }) => (
+                                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mt-4 mb-2 first:mt-0">
+                                  {children}
+                                </h3>
+                              ),
+                              h2: ({ children }) => (
+                                <h4 className="text-base font-semibold text-blue-900 dark:text-blue-100 mt-4 mb-2 first:mt-0">
+                                  {children}
+                                </h4>
+                              ),
+                              h3: ({ children }) => (
+                                <h5 className="text-sm font-semibold text-blue-800 dark:text-blue-200 mt-3 mb-1">
+                                  {children}
+                                </h5>
+                              ),
+                              // Properly styled paragraphs
+                              p: ({ children }) => (
+                                <p className="text-gray-800 dark:text-gray-200 leading-relaxed my-2">
+                                  {children}
+                                </p>
+                              ),
+                              // Accessible list styling
+                              ul: ({ children }) => (
+                                <ul className="space-y-2 my-3 ml-1" role="list">
+                                  {children}
+                                </ul>
+                              ),
+                              li: ({ children }) => (
+                                <li className="flex gap-2 text-gray-800 dark:text-gray-200">
+                                  <span className="text-blue-600 dark:text-blue-400 mt-1 flex-shrink-0" aria-hidden="true">•</span>
+                                  <span className="flex-1">{children}</span>
+                                </li>
+                              ),
+                              // Bold text with high contrast
+                              strong: ({ children }) => (
+                                <strong className="font-semibold text-blue-900 dark:text-blue-100">
+                                  {children}
+                                </strong>
+                              ),
+                              // Emphasis styling
+                              em: ({ children }) => (
+                                <em className="italic text-gray-700 dark:text-gray-300">
+                                  {children}
+                                </em>
+                              ),
+                            }}
+                          >
+                            {compareResult.aiAnalysis}
+                          </ReactMarkdown>
+                        </div>
                       </CardContent>
                     </Card>
                   )}
