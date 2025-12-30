@@ -2660,11 +2660,11 @@ app.post('/briefs/generate', async (c) => {
     // Check subscription tier and monthly brief limit
     const FREE_TIER_BRIEFS_PER_MONTH = 3;
     const user = await db
-      .prepare('SELECT subscription_tier FROM users WHERE id = ?')
+      .prepare('SELECT subscription_status FROM users WHERE id = ?')
       .bind(auth.userId)
       .first();
 
-    const isPro = user?.subscription_tier === 'pro' || user?.subscription_tier === 'premium';
+    const isPro = user?.subscription_status === 'active';
 
     if (!isPro) {
       // Check monthly brief count for free tier users

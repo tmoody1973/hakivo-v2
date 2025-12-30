@@ -147,6 +147,86 @@ app.post('/briefs/test-generate', async (c) => {
 });
 
 /**
+ * POST /briefs/scheduled-generate
+ * Internal endpoint for scheduled brief generation (Netlify scheduler)
+ * Creates and enqueues briefs for scheduled (cron) generation
+ */
+app.post('/briefs/scheduled-generate', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { userId, type = 'daily' } = body;
+
+    if (!userId) {
+      return c.json({ error: 'userId is required' }, 400);
+    }
+
+    const db = c.env.APP_DB;
+
+    // Calculate date range
+    const briefEndDate = new Date();
+    const briefStartDate = new Date();
+    if (type === 'daily') {
+      briefStartDate.setDate(briefStartDate.getDate() - 1);
+    } else {
+      briefStartDate.setDate(briefStartDate.getDate() - 7);
+    }
+
+    // Generate proper title for scheduled briefs
+    const title = type === 'daily'
+      ? `Daily Brief - ${briefEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : `Weekly Brief - Week of ${briefStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+    // Create brief record
+    const briefId = crypto.randomUUID();
+    const now = Date.now();
+
+    await db
+      .prepare(`
+        INSERT INTO briefs (
+          id, user_id, type, title, start_date, end_date, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        briefId, userId, type, title,
+        briefStartDate.toISOString().split('T')[0],
+        briefEndDate.toISOString().split('T')[0],
+        'pending', now, now
+      )
+      .run();
+
+    // Enqueue brief generation
+    await c.env.BRIEF_QUEUE.send({
+      briefId,
+      userId,
+      type,
+      startDate: briefStartDate.toISOString(),
+      endDate: briefEndDate.toISOString(),
+      requestedAt: now
+    });
+
+    console.log(`✓ Scheduled brief created: ${briefId} for user ${userId} (${type})`);
+
+    return c.json({
+      success: true,
+      message: 'Brief generation scheduled',
+      briefId,
+      type,
+      title,
+      dateRange: {
+        start: briefStartDate.toISOString(),
+        end: briefEndDate.toISOString()
+      }
+    }, 201);
+  } catch (error) {
+    console.error('Scheduled generate error:', error);
+    return c.json({
+      error: 'Failed to schedule brief generation',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * POST /briefs/generate-daily
  * Generate today's daily brief on-demand (requires auth)
  * - Checks if user already has a daily brief for today
@@ -266,11 +346,11 @@ app.post('/briefs/request', async (c) => {
     // Check subscription tier and monthly brief limit
     const FREE_TIER_BRIEFS_PER_MONTH = 3;
     const user = await db
-      .prepare('SELECT subscription_tier FROM users WHERE id = ?')
+      .prepare('SELECT subscription_status FROM users WHERE id = ?')
       .bind(auth.userId)
       .first();
 
-    const isPro = user?.subscription_tier === 'pro' || user?.subscription_tier === 'premium';
+    const isPro = user?.subscription_status === 'active';
 
     if (!isPro) {
       // Check monthly brief count for free tier users

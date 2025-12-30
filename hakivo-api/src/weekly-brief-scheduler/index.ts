@@ -49,13 +49,13 @@ export default class extends Task<Env> {
 
       for (const user of users as any[]) {
         try {
-          // Check subscription tier and monthly brief limit
+          // Check subscription status and monthly brief limit
           const userRecord = await db
-            .prepare('SELECT subscription_tier FROM users WHERE id = ?')
+            .prepare('SELECT subscription_status FROM users WHERE id = ?')
             .bind(user.id)
             .first();
 
-          const isPro = userRecord?.subscription_tier === 'pro' || userRecord?.subscription_tier === 'premium';
+          const isPro = userRecord?.subscription_status === 'active';
 
           if (!isPro) {
             // Check monthly brief count for free tier users
