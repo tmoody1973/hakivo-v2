@@ -29,16 +29,15 @@ const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David
 // Gemini Flash TTS for audio generation (faster, more quota)
 const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
 
-// Get Raindrop service URLs from env or use defaults
-// IMPORTANT: Update these env vars in Netlify when deploying new Raindrop versions
-// To find current URL: cd hakivo-api && npx raindrop build find
-const getDashboardUrl = () => {
-  const envUrl = Netlify.env.get('RAINDROP_DASHBOARD_URL');
-  if (envUrl) return envUrl;
-  // Fallback to latest known URL (updated 2025-12-25)
-  return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzp.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
-};
+// Gemini image generation endpoint - using gemini-2.5-flash-image for higher quotas
+const GEMINI_IMAGE_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
+// Vultr storage URL prefix - images from our storage don't need replacement
+const VULTR_PREFIX = 'https://sjc1.vultrobjects.com';
+
+// Get Raindrop DB admin service URL from env or use default
+// IMPORTANT: Update RAINDROP_DB_ADMIN_URL env var in Netlify when deploying new Raindrop versions
+// To find current URL: cd hakivo-api && npx raindrop build find (look for db-admin)
 const getDbAdminUrl = () => {
   const envUrl = Netlify.env.get('RAINDROP_DB_ADMIN_URL');
   if (envUrl) return envUrl;
@@ -359,6 +358,246 @@ async function saveStateBillsFromContent(briefId: string): Promise<void> {
 }
 
 /**
+ * Generate date-based file key for images
+ * Format: images/YYYY/MM/DD/brief-{briefId}-{timestamp}.png
+ */
+function generateImageFileKey(briefId: string): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const ts = date.getTime();
+
+  return `images/${year}/${month}/${day}/brief-${briefId}-${ts}.png`;
+}
+
+/**
+ * Upload image to Vultr S3-compatible storage
+ */
+async function uploadImage(briefId: string, imageBuffer: Uint8Array, mimeType: string): Promise<string> {
+  const endpoint = Netlify.env.get('VULTR_ENDPOINT') || 'sjc1.vultrobjects.com';
+  const accessKeyId = Netlify.env.get('VULTR_ACCESS_KEY');
+  const secretAccessKey = Netlify.env.get('VULTR_SECRET_KEY');
+  const bucketName = Netlify.env.get('VULTR_BUCKET_NAME') || 'hakivo';
+
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error('Missing Vultr S3 credentials');
+  }
+
+  const s3Client = new S3Client({
+    endpoint: `https://${endpoint}`,
+    region: 'us-east-1',
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+
+  const key = generateImageFileKey(briefId);
+
+  console.log(`[IMAGE] Uploading to Vultr: bucket=${bucketName}, key=${key}, size=${imageBuffer.length} bytes`);
+
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: imageBuffer,
+    ContentType: mimeType,
+    CacheControl: 'public, max-age=31536000',
+    Metadata: {
+      briefId: briefId,
+      generatedAt: new Date().toISOString(),
+    },
+  }));
+
+  const url = `https://${endpoint}/${bucketName}/${key}`;
+  console.log(`[IMAGE] Upload successful: ${url}`);
+
+  return url;
+}
+
+/**
+ * Update brief with featured image URL
+ */
+async function updateBriefImage(briefId: string, imageUrl: string): Promise<void> {
+  const timestamp = Date.now();
+  const query = `UPDATE briefs SET featured_image = '${imageUrl}', updated_at = ${timestamp} WHERE id = '${briefId}'`;
+
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) {
+    console.error(`[IMAGE] Failed to update brief image: ${response.status}`);
+  }
+}
+
+/**
+ * Check if brief needs image generation
+ * Returns true if brief has no image or has an external (non-Vultr) image
+ */
+async function briefNeedsImage(briefId: string): Promise<{ needsImage: boolean; title: string; newsJson: string | null }> {
+  const query = `SELECT title, featured_image, news_json FROM briefs WHERE id = '${briefId}'`;
+  const response = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) {
+    return { needsImage: false, title: '', newsJson: null };
+  }
+
+  const result = await response.json() as { results?: Array<{ title: string; featured_image: string | null; news_json: string | null }> };
+  const brief = result.results?.[0];
+
+  if (!brief) {
+    return { needsImage: false, title: '', newsJson: null };
+  }
+
+  // Check if image is missing or is external (not from Vultr)
+  const featuredImage = brief.featured_image;
+  const needsImage = !featuredImage || !featuredImage.startsWith(VULTR_PREFIX);
+
+  return { needsImage, title: brief.title, newsJson: brief.news_json };
+}
+
+/**
+ * Generate WSJ-style editorial sketch image using Gemini
+ */
+async function generateImageForBrief(briefId: string): Promise<string | null> {
+  // Check if we need to generate image
+  const { needsImage, title, newsJson } = await briefNeedsImage(briefId);
+
+  if (!needsImage) {
+    console.log(`[IMAGE] Brief ${briefId} already has Vultr image, skipping`);
+    return null;
+  }
+
+  console.log(`[IMAGE] Generating image for brief: ${briefId}`);
+  console.log(`[IMAGE] Title: ${title}`);
+
+  const geminiApiKey = Netlify.env.get('GEMINI_API_KEY');
+  if (!geminiApiKey) {
+    console.error('[IMAGE] GEMINI_API_KEY not configured');
+    return null;
+  }
+
+  try {
+    // Extract policy topics from news_json if available
+    let policyContext = 'legislation';
+    if (newsJson) {
+      try {
+        const newsData = JSON.parse(newsJson);
+        // Extract topics from categories if available
+        if (newsData.categories) {
+          const topics: string[] = [];
+          if (newsData.categories.federal_legislation) {
+            topics.push('federal legislation');
+          }
+          if (newsData.categories.state_legislation && newsData.categories.state_legislation.length > 0) {
+            topics.push('state legislation');
+          }
+          if (newsData.categories.policy_news) {
+            topics.push(...Object.keys(newsData.categories.policy_news).slice(0, 2));
+          }
+          if (topics.length > 0) {
+            policyContext = topics.join(', ');
+          }
+        }
+      } catch {
+        // Ignore JSON parse errors
+      }
+    }
+
+    // WSJ-inspired editorial sketch prompt
+    const imagePrompt = `Wall Street Journal inspired sketch editorial image for a news article about ${policyContext}. The image should convey the essence of: "${title}". Style: Hand-drawn editorial illustration, clean composition, suitable for a civic engagement platform. Include subtle American civic imagery like the Capitol building, congressional setting, or professional political environment. No text in the image.`;
+
+    console.log(`[IMAGE] Prompt: ${imagePrompt.substring(0, 150)}...`);
+
+    const response = await fetch(`${GEMINI_IMAGE_ENDPOINT}?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: imagePrompt }]
+        }],
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE']
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[IMAGE] Gemini API error: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const result = await response.json() as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            inlineData?: {
+              mimeType: string;
+              data: string;
+            }
+          }>
+        }
+      }>
+    };
+
+    // Extract image data from response
+    const candidates = result.candidates;
+    if (!candidates || candidates.length === 0) {
+      console.warn('[IMAGE] No candidates in Gemini response');
+      return null;
+    }
+
+    const parts = candidates[0]?.content?.parts;
+    if (!parts || parts.length === 0) {
+      console.warn('[IMAGE] No parts in Gemini response');
+      return null;
+    }
+
+    // Find the image part
+    const imagePart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imagePart?.inlineData) {
+      console.warn('[IMAGE] No image data in Gemini response');
+      return null;
+    }
+
+    const { mimeType, data: base64Data } = imagePart.inlineData;
+    console.log(`[IMAGE] Received image: ${mimeType}, ${base64Data.length} base64 chars`);
+
+    // Convert base64 to Uint8Array
+    const binaryString = atob(base64Data);
+    const imageBuffer = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      imageBuffer[i] = binaryString.charCodeAt(i);
+    }
+
+    // Upload to Vultr storage
+    console.log('[IMAGE] Uploading image to Vultr storage...');
+    const imageUrl = await uploadImage(briefId, imageBuffer, mimeType);
+
+    // Update brief with image URL
+    await updateBriefImage(briefId, imageUrl);
+
+    console.log(`[IMAGE] Successfully generated image for brief ${briefId}`);
+    return imageUrl;
+
+  } catch (error) {
+    console.error('[IMAGE] Image generation error:', error);
+    return null;
+  }
+}
+
+/**
  * Update podcast episode status in database
  */
 async function updatePodcastStatus(
@@ -606,6 +845,15 @@ async function processBrief(brief: Brief, geminiApiKey: string): Promise<void> {
     // WORKAROUND: Save bills from content since brief-generator isn't deploying
     await saveFederalBillsFromContent(brief.id);
     await saveStateBillsFromContent(brief.id);
+
+    // Generate WSJ-style image for the brief (respects rate limits by processing sequentially)
+    console.log(`[AUDIO] Starting image generation for brief ${brief.id}...`);
+    const imageUrl = await generateImageForBrief(brief.id);
+    if (imageUrl) {
+      console.log(`[AUDIO] ✅ Image generated: ${imageUrl}`);
+    } else {
+      console.log(`[AUDIO] ⚠️ Image generation skipped or failed (brief may already have image)`);
+    }
 
     console.log(`[AUDIO] Successfully processed brief ${brief.id}`);
 

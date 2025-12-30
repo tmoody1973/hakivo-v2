@@ -1,13 +1,14 @@
 /**
- * Netlify Scheduled Function for Daily Brief Generation
+ * Netlify Background Function for Daily Brief Generation
  *
- * Runs every day at 7 AM UTC to generate daily briefings for users.
+ * Generates daily briefings for all eligible users.
  * Queries users with daily briefing preferences enabled and triggers
  * brief generation via Raindrop briefs-service.
  *
- * Schedule: 0 7 * * * (7 AM UTC every day)
+ * Background functions get 15-minute timeout (vs 10s for regular functions).
+ * Trigger manually via POST or schedule externally.
  */
-import type { Context, Config } from "@netlify/functions";
+import type { Context } from "@netlify/functions";
 
 // Get Raindrop service URLs from env
 // Use process.env for compatibility (Netlify.env.get may not be available in scheduled functions)

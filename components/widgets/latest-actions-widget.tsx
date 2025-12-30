@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, TrendingUp, List, Bookmark, BookmarkX, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2, Landmark, FileText } from 'lucide-react';
+import { AlertCircle, TrendingUp, List, Bookmark, BookmarkX, Clock, ChevronLeft, ChevronRight, ExternalLink, Loader2, Landmark, FileText, Gavel } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { getStateBills, StateBill } from '@/lib/api/backend';
 import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
@@ -39,6 +39,27 @@ interface LatestActionsResponse {
   lastUpdated: number | null;
   message?: string;
   error?: string;
+}
+
+interface FloorBill {
+  id: string;
+  billType: string;
+  billNumber: number;
+  title: string;
+  congress: number;
+  pdfUrl?: string;
+  xmlUrl?: string;
+  inDatabase: boolean;
+  dbBillId?: string | null;
+  weekOf?: string;
+}
+
+interface FloorBillsResponse {
+  bills: FloorBill[];
+  count: number;
+  lastUpdated: number;
+  error?: string;
+  message?: string;
 }
 
 const ITEMS_PER_PAGE = 5;
@@ -76,6 +97,13 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
   const [stateBillsError, setStateBillsError] = useState<string | null>(null);
   const [stateBillsPage, setStateBillsPage] = useState(1);
   const [stateBillsFetched, setStateBillsFetched] = useState(false);
+
+  // Floor bills state
+  const [floorBills, setFloorBills] = useState<FloorBill[]>([]);
+  const [floorBillsLoading, setFloorBillsLoading] = useState(false);
+  const [floorBillsError, setFloorBillsError] = useState<string | null>(null);
+  const [floorBillsPage, setFloorBillsPage] = useState(1);
+  const [floorBillsFetched, setFloorBillsFetched] = useState(false);
 
   // Tracked bills state (using the useTracking hook)
   const {
@@ -144,10 +172,43 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
     }
   };
 
-  // Handle tab change to trigger lazy loading of state bills
+  // Fetch floor bills (lazy load on tab click)
+  const fetchFloorBills = async () => {
+    if (floorBillsFetched) return;
+
+    setFloorBillsLoading(true);
+    setFloorBillsError(null);
+
+    try {
+      const response = await fetch('/api/congress/floor-bills');
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch floor bills: ${response.statusText}`);
+      }
+
+      const data: FloorBillsResponse = await response.json();
+
+      if (data.error) {
+        setFloorBillsError(data.message || data.error);
+      } else {
+        setFloorBills(data.bills);
+        setFloorBillsFetched(true);
+      }
+    } catch (err) {
+      console.error('Error fetching floor bills:', err);
+      setFloorBillsError(err instanceof Error ? err.message : 'Failed to load floor bills');
+    } finally {
+      setFloorBillsLoading(false);
+    }
+  };
+
+  // Handle tab change to trigger lazy loading of state/floor bills
   const handleTabChange = (value: string) => {
     if (value === 'state' && !stateBillsFetched && userState) {
       fetchStateBills();
+    }
+    if (value === 'floor' && !floorBillsFetched) {
+      fetchFloorBills();
     }
   };
 
@@ -192,6 +253,12 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
   const stateBillsStartIndex = (stateBillsPage - 1) * ITEMS_PER_PAGE;
   const stateBillsEndIndex = stateBillsStartIndex + ITEMS_PER_PAGE;
   const currentStateBills = stateBills.slice(stateBillsStartIndex, stateBillsEndIndex);
+
+  // Calculate pagination for floor bills
+  const floorBillsTotalPages = Math.ceil(floorBills.length / ITEMS_PER_PAGE);
+  const floorBillsStartIndex = (floorBillsPage - 1) * ITEMS_PER_PAGE;
+  const floorBillsEndIndex = floorBillsStartIndex + ITEMS_PER_PAGE;
+  const currentFloorBills = floorBills.slice(floorBillsStartIndex, floorBillsEndIndex);
 
   // Generate page numbers to display (reusable for both federal and state bills)
   const getPageNumbers = (total: number, current: number) => {
@@ -277,6 +344,11 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
     router.push(`/bills/${billId}`);
   };
 
+  // Handle clicking on a floor bill - navigate to bill detail page
+  const handleFloorBillClick = (bill: FloorBill) => {
+    router.push(`/bills/${bill.id}`);
+  };
+
   if (loading) {
     return (
       <Card>
@@ -332,15 +404,20 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="latest" className="w-full" onValueChange={handleTabChange}>
-          <TabsList className="grid w-full grid-cols-3 mb-4">
+          <TabsList className="grid w-full grid-cols-4 mb-4">
             <TabsTrigger value="latest" className="flex items-center gap-1.5">
               <List className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Latest</span>
               <span className="sm:hidden">Latest</span>
             </TabsTrigger>
+            <TabsTrigger value="floor" className="flex items-center gap-1.5">
+              <Gavel className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Floor</span>
+              <span className="sm:hidden">Floor</span>
+            </TabsTrigger>
             <TabsTrigger value="state" className="flex items-center gap-1.5">
               <Landmark className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">State Bills</span>
+              <span className="hidden sm:inline">State</span>
               <span className="sm:hidden">State</span>
             </TabsTrigger>
             <TabsTrigger value="tracked" className="flex items-center gap-1.5">
@@ -439,6 +516,120 @@ export function LatestActionsWidget({ userState, token }: LatestActionsWidgetPro
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="floor" className="mt-0">
+            {floorBillsLoading ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : floorBillsError ? (
+              <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-4 rounded-lg">
+                <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                <p className="text-sm">{floorBillsError}</p>
+              </div>
+            ) : floorBills.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Gavel className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No bills scheduled for House floor this week.</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  {currentFloorBills.map((bill) => (
+                    <div
+                      key={bill.id}
+                      onClick={() => handleFloorBillClick(bill)}
+                      className="block p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer group"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFloorBillClick(bill)}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-mono text-primary group-hover:underline">
+                              {formatBillNumber(bill.billType, bill.billNumber)}
+                            </span>
+                            <Badge variant="outline" className="text-xs">
+                              House Floor
+                            </Badge>
+                            {bill.inDatabase && (
+                              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-200">
+                                In Database
+                              </Badge>
+                            )}
+                          </div>
+                          <h4 className="font-medium text-sm line-clamp-2 group-hover:text-primary transition-colors">
+                            {bill.title}
+                          </h4>
+                        </div>
+                      </div>
+                      {bill.weekOf && (
+                        <p className="text-xs text-muted-foreground mb-1 line-clamp-1">
+                          Week of {bill.weekOf}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Gavel className="h-3 w-3" />
+                          Floor Consideration
+                        </div>
+                        <span className="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                          View details →
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Floor Bills Pagination Controls */}
+                {floorBillsTotalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFloorBillsPage(p => Math.max(1, p - 1))}
+                      disabled={floorBillsPage === 1}
+                      className="h-8"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+
+                    {getPageNumbers(floorBillsTotalPages, floorBillsPage).map((page, index) => (
+                      page === '...' ? (
+                        <span key={`floor-ellipsis-${index}`} className="px-2 text-muted-foreground">...</span>
+                      ) : (
+                        <Button
+                          key={`floor-${page}`}
+                          variant={floorBillsPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setFloorBillsPage(page as number)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {page}
+                        </Button>
+                      )
+                    ))}
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFloorBillsPage(p => Math.min(floorBillsTotalPages, p + 1))}
+                      disabled={floorBillsPage === floorBillsTotalPages}
+                      className="h-8"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </TabsContent>
 

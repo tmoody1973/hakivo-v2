@@ -570,10 +570,51 @@ app.get('/briefs/:briefId', async (c) => {
     try {
       // Check if there's news JSON stored
       if (brief.news_json) {
-        newsArticles = JSON.parse(brief.news_json as string);
+        const newsData = JSON.parse(brief.news_json as string);
+
+        // Handle nested categories structure (new format)
+        if (newsData.categories) {
+          // Extract from federal_legislation
+          if (newsData.categories.federal_legislation && Array.isArray(newsData.categories.federal_legislation)) {
+            newsArticles.push(...newsData.categories.federal_legislation.map((item: any) => ({
+              title: item.headline || item.title,
+              url: item.url,
+              summary: item.summary,
+              source: item.source || 'congress.gov'
+            })));
+          }
+
+          // Extract from state_legislation
+          if (newsData.categories.state_legislation && Array.isArray(newsData.categories.state_legislation)) {
+            newsArticles.push(...newsData.categories.state_legislation.map((item: any) => ({
+              title: item.headline || item.title,
+              url: item.url,
+              summary: item.summary,
+              source: item.source || 'openstates.org'
+            })));
+          }
+
+          // Extract from policy_news (nested by topic)
+          if (newsData.categories.policy_news && typeof newsData.categories.policy_news === 'object') {
+            for (const topic of Object.keys(newsData.categories.policy_news)) {
+              const articles = newsData.categories.policy_news[topic];
+              if (Array.isArray(articles)) {
+                newsArticles.push(...articles.map((item: any) => ({
+                  title: item.headline || item.title,
+                  url: item.url,
+                  summary: item.summary,
+                  source: item.source || topic
+                })));
+              }
+            }
+          }
+        } else if (Array.isArray(newsData)) {
+          // Handle old format (direct array)
+          newsArticles = newsData;
+        }
       }
     } catch (e) {
-      // Ignore parse errors
+      console.error('Error parsing news_json:', e);
     }
 
     // Format response (mapped to actual database schema)
