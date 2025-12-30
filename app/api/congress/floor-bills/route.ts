@@ -100,39 +100,54 @@ function extractBillsFromHtml(htmlContent: string, weekOf?: string): FloorBill[]
 
 /**
  * Check if bills exist in our database
+ * Uses batching to avoid overwhelming the backend
  */
 async function checkBillsInDatabase(bills: FloorBill[]): Promise<FloorBill[]> {
-  // Check each bill against our backend
-  const checkedBills = await Promise.all(
-    bills.map(async (bill) => {
-      try {
-        const response = await fetch(
-          `${BILLS_API_URL}/bills/${bill.congress}/${bill.billType}/${bill.billNumber}`,
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
+  const BATCH_SIZE = 5; // Check 5 bills at a time
+  const checkedBills: FloorBill[] = [];
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.bill) {
-            return {
-              ...bill,
-              inDatabase: true,
-              dbBillId: data.bill.id,
-              // Use database title if available (usually more complete)
-              title: data.bill.title || bill.title,
-            };
+  for (let i = 0; i < bills.length; i += BATCH_SIZE) {
+    const batch = bills.slice(i, i + BATCH_SIZE);
+
+    const batchResults = await Promise.all(
+      batch.map(async (bill) => {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout per request
+
+          const response = await fetch(
+            `${BILLS_API_URL}/bills/${bill.congress}/${bill.billType}/${bill.billNumber}`,
+            {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+            }
+          );
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.bill) {
+              return {
+                ...bill,
+                inDatabase: true,
+                dbBillId: data.bill.id,
+                // Use database title if available (usually more complete)
+                title: data.bill.title || bill.title,
+              };
+            }
           }
+        } catch (error) {
+          // Silently handle errors - bill just won't show as "in database"
         }
-      } catch (error) {
-        console.log(`[floor-bills] Error checking bill ${bill.id}:`, error);
-      }
 
-      return bill;
-    })
-  );
+        return bill;
+      })
+    );
+
+    checkedBills.push(...batchResults);
+  }
 
   return checkedBills;
 }
@@ -154,18 +169,37 @@ export async function GET() {
 
     const xmlText = await response.text();
 
-    // Extract all bills from all entries in the feed
+    // Extract bills from RECENT entries only (last 2 weeks)
     const allBills: FloorBill[] = [];
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
     // Parse entries from the Atom feed
     // Pattern: <entry>...<content...>HTML_CONTENT</content>...</entry>
     const entryPattern = /<entry>([\s\S]*?)<\/entry>/gi;
     const titlePattern = /<title[^>]*>([^<]+)<\/title>/i;
+    const publishedPattern = /<published>([^<]+)<\/published>/i;
     const contentPattern = /<content[^>]*>([\s\S]*?)<\/content>/i;
 
     let entryMatch;
+    let processedEntries = 0;
+    let skippedEntries = 0;
+
     while ((entryMatch = entryPattern.exec(xmlText)) !== null) {
       const entryContent = entryMatch[1];
+
+      // Get the published date
+      const publishedMatch = entryContent.match(publishedPattern);
+      if (publishedMatch) {
+        const publishedDate = new Date(publishedMatch[1]);
+        // Skip entries older than 2 weeks
+        if (publishedDate < twoWeeksAgo) {
+          skippedEntries++;
+          continue;
+        }
+      }
+
+      processedEntries++;
 
       // Get the week title from entry title
       const titleMatch = entryContent.match(titlePattern);
@@ -186,14 +220,16 @@ export async function GET() {
       }
     }
 
+    console.log(`[floor-bills] Processed ${processedEntries} recent entries, skipped ${skippedEntries} old entries`);
+
     // Deduplicate bills (same bill might appear in multiple week entries)
     const uniqueBills = Array.from(
       new Map(allBills.map(b => [b.id, b])).values()
     );
 
-    console.log(`[floor-bills] Extracted ${uniqueBills.length} unique bills from RSS feed`);
+    console.log(`[floor-bills] Extracted ${uniqueBills.length} unique bills from recent RSS entries`);
 
-    // Check which bills exist in our database
+    // Check which bills exist in our database (limit concurrent requests)
     const checkedBills = await checkBillsInDatabase(uniqueBills);
 
     const inDbCount = checkedBills.filter(b => b.inDatabase).length;
