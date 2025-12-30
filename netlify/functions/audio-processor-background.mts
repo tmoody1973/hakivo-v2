@@ -26,8 +26,8 @@ const VOICE_PAIRS = [
 // Fixed voice pair for podcast episodes (consistent branding)
 const PODCAST_VOICE_PAIR = { hostA: 'Kore', hostB: 'Puck', names: 'Sarah & David' };
 
-// Gemini Pro TTS for audio generation (Tier 1 quota)
-const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent';
+// Gemini Flash TTS for audio generation (faster, more quota)
+const GEMINI_TTS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-tts:generateContent';
 
 // Get Raindrop service URLs from env or use defaults
 // IMPORTANT: Update these env vars in Netlify when deploying new Raindrop versions
