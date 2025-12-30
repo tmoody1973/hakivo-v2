@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const CONGRESS_API_KEY = process.env.CONGRESS_API_KEY;
+const BASE_URL = 'https://api.congress.gov/v3';
 
 // Version names for display
 const VERSION_NAMES: Record<string, string> = {
@@ -139,7 +141,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Fetch bill text for a specific version
+ * Fetch bill text for a specific version directly from Congress.gov
  */
 async function fetchBillText(
   congress: number,
@@ -148,25 +150,104 @@ async function fetchBillText(
   version: string
 ): Promise<string | null> {
   try {
-    // Fetch from our bill-text API
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    const response = await fetch(
-      `${baseUrl}/api/congress/bill-text?congress=${congress}&type=${type}&number=${number}&version=${version}`,
-      { next: { revalidate: 3600 } }
-    );
-
-    if (!response.ok) {
-      console.error(`Failed to fetch ${version} version: ${response.status}`);
+    if (!CONGRESS_API_KEY) {
+      console.error('[bill-text/compare] CONGRESS_API_KEY not configured');
       return null;
     }
 
-    const data = await response.json();
-    return data.content || null;
+    // First get the text versions to find the URL for this version
+    const versionsUrl = `${BASE_URL}/bill/${congress}/${type.toLowerCase()}/${number}/text?format=json&api_key=${CONGRESS_API_KEY}`;
+    const versionsResponse = await fetch(versionsUrl, {
+      headers: { 'Accept': 'application/json' },
+      next: { revalidate: 3600 }
+    });
+
+    if (!versionsResponse.ok) {
+      console.error(`Failed to fetch versions: ${versionsResponse.status}`);
+      return null;
+    }
+
+    const versionsData = await versionsResponse.json();
+    const textVersions = versionsData.textVersions || [];
+
+    // Find the requested version
+    const targetVersion = textVersions.find((v: { type?: string; formats?: Array<{ url?: string }> }) => {
+      // Extract version code from URL
+      if (v.formats && v.formats.length > 0) {
+        const url = v.formats[0].url || '';
+        const match = url.match(/BILLS-\d+\w+\d+(\w+)\./i);
+        if (match && match[1].toLowerCase() === version.toLowerCase()) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (!targetVersion) {
+      console.error(`Version ${version} not found`);
+      return null;
+    }
+
+    // Find the best format (prefer .htm)
+    const formats = targetVersion.formats || [];
+    const preferredFormat = formats.find((f: { url?: string; type?: string }) =>
+      f.url?.includes('.htm') || f.type?.toLowerCase() === 'formatted text'
+    ) || formats[0];
+
+    if (!preferredFormat?.url) {
+      console.error(`No text format available for ${version}`);
+      return null;
+    }
+
+    // Fetch the actual text
+    const textUrl = preferredFormat.url.includes('api_key')
+      ? preferredFormat.url
+      : `${preferredFormat.url}?api_key=${CONGRESS_API_KEY}`;
+
+    const textResponse = await fetch(textUrl, {
+      headers: { 'Accept': 'text/html, text/plain' },
+      next: { revalidate: 86400 }
+    });
+
+    if (!textResponse.ok) {
+      console.error(`Failed to fetch text content: ${textResponse.status}`);
+      return null;
+    }
+
+    let text = await textResponse.text();
+
+    // Strip HTML if needed
+    if (preferredFormat.url.includes('.htm') || text.includes('<html')) {
+      text = stripHtmlToText(text);
+    }
+
+    return text;
 
   } catch (error) {
     console.error(`Error fetching ${version} version:`, error);
     return null;
   }
+}
+
+/**
+ * Strip HTML tags and extract text content
+ */
+function stripHtmlToText(html: string): string {
+  let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+  text = text.replace(/<\/(p|div|h[1-6]|li|tr|br)>/gi, '\n');
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<[^>]+>/g, '');
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#39;/g, "'");
+  text = text.replace(/&mdash;/g, '—');
+  text = text.replace(/&ndash;/g, '–');
+  text = text.replace(/\n\s*\n\s*\n/g, '\n\n');
+  return text.trim();
 }
 
 /**
