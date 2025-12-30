@@ -10,14 +10,15 @@
 import type { Context, Config } from "@netlify/functions";
 
 // Get Raindrop service URLs from env
+// Use process.env for compatibility (Netlify.env.get may not be available in scheduled functions)
 const getDbAdminUrl = () => {
-  const envUrl = Netlify.env.get('RAINDROP_DB_ADMIN_URL');
+  const envUrl = process.env.RAINDROP_DB_ADMIN_URL;
   if (envUrl) return envUrl;
   return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzq.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 };
 
 const getBriefsServiceUrl = () => {
-  const envUrl = Netlify.env.get('RAINDROP_BRIEFS_SERVICE_URL');
+  const envUrl = process.env.RAINDROP_BRIEFS_SERVICE_URL;
   if (envUrl) return envUrl;
   return 'https://svc-01kc6rbecv0s5k4yk6ksdaqyzj.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 };
