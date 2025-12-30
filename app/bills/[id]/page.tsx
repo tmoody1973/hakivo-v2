@@ -24,14 +24,27 @@ interface BillMetadata {
 
 async function getBillData(billId: string): Promise<BillMetadata | null> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/bills/${billId}`, {
+    // Parse bill ID format: "119-s-2767" -> congress/type/number
+    const parts = billId.split('-');
+    if (parts.length !== 3) {
+      console.error('[getBillData] Invalid bill ID format:', billId);
+      return null;
+    }
+    const [congress, billType, billNumber] = parts;
+
+    // Backend expects: /bills/:congress/:type/:number
+    const response = await fetch(`${BACKEND_URL}/bills/${congress}/${billType}/${billNumber}`, {
       headers: { "Content-Type": "application/json" },
       next: { revalidate: 3600 }, // Cache for 1 hour
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error('[getBillData] Backend returned:', response.status);
+      return null;
+    }
     const data = await response.json();
     return data?.bill || null;
-  } catch {
+  } catch (error) {
+    console.error('[getBillData] Error fetching bill:', error);
     return null;
   }
 }
