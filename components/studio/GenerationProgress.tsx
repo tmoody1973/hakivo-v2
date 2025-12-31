@@ -20,6 +20,29 @@ import {
 } from 'lucide-react';
 import type { GenerationState, GenerationResult } from '@/hooks/useReportGenerator';
 
+/**
+ * Convert Gamma docs URL to embed URL for iframe preview
+ * Example input: https://gamma.app/docs/Texas-Redefines-Privacy-s57ul9u5xrcwq68?mode=doc
+ * Example output: https://gamma.app/embed/s57ul9u5xrcwq68
+ */
+function getEmbedUrl(gammaUrl: string | undefined): string | null {
+  if (!gammaUrl) return null;
+
+  try {
+    const url = new URL(gammaUrl);
+    const pathParts = url.pathname.split('/');
+    // Path is like /docs/Title-Here-docId
+    const docPath = pathParts[pathParts.length - 1];
+    // Extract doc ID - it's after the last hyphen
+    const lastHyphenIndex = docPath.lastIndexOf('-');
+    if (lastHyphenIndex === -1) return null;
+    const docId = docPath.substring(lastHyphenIndex + 1);
+    return `https://gamma.app/embed/${docId}`;
+  } catch {
+    return null;
+  }
+}
+
 interface GenerationProgressProps {
   state: GenerationState;
   result?: GenerationResult;
@@ -230,6 +253,18 @@ export function GenerationProgress({
         {/* Completed state */}
         {state.phase === 'completed' && result && (
           <div className="space-y-4">
+            {/* Iframe Preview */}
+            {getEmbedUrl(result.url) && (
+              <div className="rounded-lg overflow-hidden border bg-muted/30">
+                <iframe
+                  src={getEmbedUrl(result.url)!}
+                  className="w-full aspect-[16/10]"
+                  allow="fullscreen"
+                  title={result.title || 'Document Preview'}
+                />
+              </div>
+            )}
+
             {/* Document info */}
             <div className="flex items-center gap-4 p-3 rounded-lg bg-green-50 dark:bg-green-900/20">
               {result.thumbnailUrl ? (
