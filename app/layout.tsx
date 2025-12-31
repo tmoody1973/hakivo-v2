@@ -133,8 +133,8 @@ export default function RootLayout({
                   <AudioPlayerProvider>
                     <PostHogPageview />
                     <MixpanelPageview />
+                    <BetaBanner />
                     <div className="flex h-screen flex-col">
-                      <BetaBanner />
                       <ConditionalNav />
 
                       <main className="flex-1 overflow-auto pb-24">
