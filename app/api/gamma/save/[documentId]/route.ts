@@ -3,86 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
- * Helper to fetch generation status with retry for exports
- *
- * IMPORTANT: Gamma export URLs can take 30-120 seconds to become available
- * even after generation status shows "completed". This is a known Gamma API behavior.
- * See: https://community.gamma.app/x/api/nvt6keghs18u/is-it-possible-to-download-the-pptx-file-through-t
- */
-async function fetchWithRetry(
-  generationId: string,
-  apiKey: string,
-  maxRetries: number = 20,
-  initialDelayMs: number = 3000
-): Promise<{ status: string; exports?: { pdf?: string; pptx?: string }; url?: string; [key: string]: unknown }> {
-  let delayMs = initialDelayMs;
-  const maxDelayMs = 10000; // Cap at 10 seconds between retries
-  const backoffMultiplier = 1.2;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
-      method: 'GET',
-      headers: {
-        'X-API-KEY': apiKey,
-        'Accept': 'application/json',
-      },
-    });
-
-    // Check content type before parsing
-    const contentType = response.headers.get('content-type') || '';
-
-    if (!response.ok) {
-      // Try to get error details
-      const errorText = await response.text();
-      console.error(`[API] Gamma API error ${response.status}:`, errorText.substring(0, 200));
-      throw new Error(`Gamma API error: ${response.status} - ${response.statusText}`);
-    }
-
-    // Handle HTML responses (error pages)
-    if (!contentType.includes('application/json')) {
-      const responseText = await response.text();
-      console.error(`[API] Gamma returned non-JSON (${contentType}):`, responseText.substring(0, 200));
-      throw new Error(`Gamma API returned invalid response type: ${contentType}. The generation ID may be invalid.`);
-    }
-
-    const result = await response.json();
-    const elapsedTime = attempt * initialDelayMs; // Approximate
-    console.log(`[API] Attempt ${attempt + 1}/${maxRetries} (~${Math.round(elapsedTime/1000)}s): status=${result.status}, exports=${JSON.stringify(result.exports)}, url=${result.url}`);
-
-    // Log full response on first attempt for debugging
-    if (attempt === 0) {
-      console.log('[API] Full Gamma response:', JSON.stringify(result));
-    }
-
-    // If we have exports, return immediately
-    if (result.exports && (result.exports.pdf || result.exports.pptx)) {
-      console.log(`[API] Exports found after ${attempt + 1} attempts`);
-      return result;
-    }
-
-    // If status is completed but no exports, keep polling (exports lag behind status)
-    // If status is still processing, also keep polling
-    if ((result.status === 'completed' || result.status === 'processing') && attempt < maxRetries - 1) {
-      console.log(`[API] Status: ${result.status}, no exports yet. Waiting ${delayMs}ms before retry...`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-      // Exponential backoff with cap
-      delayMs = Math.min(Math.round(delayMs * backoffMultiplier), maxDelayMs);
-    } else if (result.status === 'failed') {
-      console.error('[API] Generation failed:', result.error || 'Unknown error');
-      return result;
-    } else {
-      // Unknown status or max retries reached
-      return result;
-    }
-  }
-
-  console.warn(`[API] Max retries (${maxRetries}) exceeded without finding exports`);
-  throw new Error('Export URLs not available after extended polling. Try again later or open in Gamma.');
-}
-
-/**
  * POST /api/gamma/save/[documentId]
- * Get export URLs directly from Gamma API with retry logic
+ * Get export URLs directly from Gamma API
+ *
+ * IMPORTANT: This route returns quickly to avoid timeout.
+ * It makes a single check to Gamma API. If exports aren't ready yet,
+ * it returns a message telling the user to try again in a minute.
+ *
+ * Gamma exports can take 30-120 seconds to become available after generation completes.
+ * See: https://community.gamma.app/x/api/nvt6keghs18u/is-it-possible-to-download-the-pptx-file-through-t
  */
 export async function POST(
   request: NextRequest,
@@ -100,55 +29,127 @@ export async function POST(
       return NextResponse.json({ error: 'Gamma API not configured' }, { status: 500 });
     }
 
-    const { documentId } = await params;
+    const { documentId: generationId } = await params;
     const body = await request.json();
     const requestedFormats = body.exportFormats || ['pdf'];
 
-    console.log(`[API] Getting exports for generation: ${documentId}, formats: ${requestedFormats.join(', ')}`);
+    console.log(`[API] Getting exports for generation: ${generationId}, formats: ${requestedFormats.join(', ')}`);
 
-    // Fetch with retry logic for exports (up to ~2 minutes with exponential backoff)
-    const result = await fetchWithRetry(documentId, gammaApiKey, 20, 3000);
+    // Make a single quick check to Gamma API
+    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': gammaApiKey,
+        'Accept': 'application/json',
+      },
+    });
 
+    // Check content type before parsing
+    const contentType = response.headers.get('content-type') || '';
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[API] Gamma API error ${response.status}:`, errorText.substring(0, 200));
+      return NextResponse.json(
+        {
+          error: 'Gamma API error',
+          details: `${response.status} - ${response.statusText}`,
+          hint: 'The generation ID may be invalid or the document may have been deleted.'
+        },
+        { status: response.status === 404 ? 404 : 500 }
+      );
+    }
+
+    // Handle HTML responses (error pages)
+    if (!contentType.includes('application/json')) {
+      const responseText = await response.text();
+      console.error(`[API] Gamma returned non-JSON (${contentType}):`, responseText.substring(0, 200));
+      return NextResponse.json(
+        {
+          error: 'Invalid response from Gamma',
+          details: 'Gamma returned an HTML error page instead of JSON.',
+          hint: 'The generation ID may be invalid.'
+        },
+        { status: 500 }
+      );
+    }
+
+    const result = await response.json();
+    console.log(`[API] Gamma response: status=${result.status}, exports=${JSON.stringify(result.exports)}, url=${result.url}`);
+
+    // If generation is still in progress
     if (result.status !== 'completed') {
       return NextResponse.json({
-        success: true,
-        documentId,
+        success: false,
+        generationId,
         exports: {},
         status: result.status,
-        message: 'Generation not yet completed',
+        message: 'Document is still being generated. Please wait a moment and try again.',
+        retryAfter: 10, // seconds
       });
     }
 
-    // Return export URLs directly from Gamma
+    // If generation failed
+    if (result.status === 'failed') {
+      return NextResponse.json({
+        success: false,
+        generationId,
+        exports: {},
+        status: 'failed',
+        error: result.error || 'Generation failed',
+      });
+    }
+
+    // Check if exports are available
     const exports: { pdf?: string; pptx?: string } = {};
     const missingFormats: string[] = [];
+    let hasAnyExport = false;
 
     for (const format of requestedFormats) {
       const exportUrl = result.exports?.[format as keyof typeof result.exports];
       if (exportUrl) {
         exports[format as 'pdf' | 'pptx'] = exportUrl as string;
+        hasAnyExport = true;
       } else {
         missingFormats.push(format);
       }
     }
 
-    console.log('[API] Final exports:', JSON.stringify(exports));
+    // If we have exports, return them
+    if (hasAnyExport) {
+      console.log('[API] Exports available:', JSON.stringify(exports));
+      return NextResponse.json({
+        success: true,
+        generationId,
+        exports,
+        gammaUrl: result.url,
+        ...(missingFormats.length > 0 && {
+          partialMessage: `Some formats not available: ${missingFormats.join(', ')}`,
+        }),
+      });
+    }
 
+    // No exports yet - this is normal, they take 30-120 seconds after generation
+    console.log('[API] No exports available yet, document URL:', result.url);
     return NextResponse.json({
-      success: true,
-      documentId,
-      exports,
+      success: false,
+      generationId,
+      exports: {},
+      status: 'exports_pending',
       gammaUrl: result.url,
-      ...(missingFormats.length > 0 && {
-        message: `Export format(s) not available: ${missingFormats.join(', ')}. This can happen if the generation didn't include exportAs parameter, or if it's a webpage format which doesn't support PDF export.`,
-        missingFormats,
-        hint: 'You can open the document in Gamma to export manually.',
-      }),
+      message: 'Exports are still being prepared by Gamma. This usually takes 1-2 minutes after document creation.',
+      hint: 'Please try again in a minute, or open the document in Gamma to download manually.',
+      retryAfter: 30, // seconds
     });
+
   } catch (error) {
     console.error('[API] Gamma save error:', error);
     return NextResponse.json(
-      { error: 'Failed to get exports', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Failed to get exports',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        hint: 'Please try again in a moment or open in Gamma to download manually.'
+      },
       { status: 500 }
     );
   }

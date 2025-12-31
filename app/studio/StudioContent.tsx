@@ -182,7 +182,7 @@ export default function StudioContent() {
     let url = format === 'pdf' ? exports?.pdf : exports?.pptx;
     const title = generationState.generationResult?.title || 'document';
     const filename = `${title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
-    const gammaUrl = generationState.generationResult?.url;
+    let gammaUrl = generationState.generationResult?.url;
 
     // If URL is available, download it
     if (url) {
@@ -194,12 +194,42 @@ export default function StudioContent() {
     // IMPORTANT: The save API expects the Gamma generation ID, not Hakivo's document ID
     const generationId = generationState.generationResult?.generationId;
     if (generationId) {
-      console.log(`[Studio] No ${format} URL available, attempting to save exports with generationId: ${generationId}`);
-      const savedExports = await saveExports(generationId, [format]);
-      url = format === 'pdf' ? savedExports?.pdf : savedExports?.pptx;
-      if (url) {
-        await forceDownload(url, filename);
-        return;
+      console.log(`[Studio] No ${format} URL available, checking exports with generationId: ${generationId}`);
+      const result = await saveExports(generationId, [format]);
+
+      if (result) {
+        // Update gammaUrl if we got one from the API
+        if (result.gammaUrl) {
+          gammaUrl = result.gammaUrl;
+        }
+
+        // Check if we got the export
+        url = format === 'pdf' ? result.exports?.pdf : result.exports?.pptx;
+        if (url) {
+          await forceDownload(url, filename);
+          return;
+        }
+
+        // Handle exports_pending status
+        if (result.status === 'exports_pending') {
+          const retryMinutes = result.retryAfter ? Math.ceil(result.retryAfter / 60) : 1;
+          const openGamma = window.confirm(
+            `${format.toUpperCase()} export is still being prepared by Gamma.\n\n` +
+            `This usually takes 1-2 minutes after document creation.\n\n` +
+            `You can:\n` +
+            `• Click OK to open in Gamma and export manually\n` +
+            `• Click Cancel and try again in ${retryMinutes} minute(s)`
+          );
+          if (openGamma && gammaUrl) {
+            window.open(gammaUrl, '_blank');
+          }
+          return;
+        }
+
+        // Handle other non-success cases with message
+        if (!result.success && result.message) {
+          console.log(`[Studio] Export not ready: ${result.message}`);
+        }
       }
     }
 
@@ -207,7 +237,8 @@ export default function StudioContent() {
     console.log(`[Studio] ${format.toUpperCase()} export not available, offering Gamma fallback`);
     if (gammaUrl) {
       const openGamma = window.confirm(
-        `PDF export is not available for this document.\n\nWould you like to open it in Gamma where you can export manually?`
+        `${format.toUpperCase()} export is not available yet.\n\n` +
+        `Would you like to open it in Gamma where you can export manually?`
       );
       if (openGamma) {
         window.open(gammaUrl, '_blank');

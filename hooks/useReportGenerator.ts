@@ -538,18 +538,32 @@ export function useReportGenerator() {
   );
 
   /**
+   * Export save result with full response data
+   */
+  interface SaveExportResult {
+    success: boolean;
+    exports: { pdf?: string; pptx?: string };
+    status?: string;
+    gammaUrl?: string;
+    message?: string;
+    hint?: string;
+    retryAfter?: number;
+  }
+
+  /**
    * Save exports (PDF/PPTX) to storage
    * @param generationId - The Gamma generation ID (NOT Hakivo's document ID)
    * @param formats - Array of export formats to request
+   * @returns Full response including success status, exports, and hints
    */
   const saveExports = useCallback(
-    async (generationId: string, formats: ('pdf' | 'pptx')[]): Promise<{ pdf?: string; pptx?: string } | null> => {
+    async (generationId: string, formats: ('pdf' | 'pptx')[]): Promise<SaveExportResult | null> => {
       if (!accessToken) return null;
 
       updateState({
         phase: 'saving',
         progress: 90,
-        message: 'Saving export files...',
+        message: 'Checking export availability...',
       });
 
       try {
@@ -564,26 +578,40 @@ export function useReportGenerator() {
 
         const data = await response.json();
 
-        if (!response.ok) {
-          console.error('[useReportGenerator] Save exports API error:', data);
-          // Don't throw if we got partial exports back
-          if (data.exports && (data.exports.pdf || data.exports.pptx)) {
-            console.log('[useReportGenerator] Got partial exports despite error:', data.exports);
-          } else {
-            throw new Error(data.error || data.details || 'Failed to save exports');
-          }
+        // Check if exports are available
+        const hasExports = data.exports && (data.exports.pdf || data.exports.pptx);
+
+        if (hasExports) {
+          updateState({
+            phase: 'completed',
+            progress: 100,
+            message: 'Exports ready!',
+          });
+        } else {
+          // Exports not ready yet - this is expected for recent documents
+          updateState({
+            phase: 'completed',
+            progress: 100,
+            message: data.message || 'Export check complete',
+          });
         }
 
+        return {
+          success: data.success ?? hasExports,
+          exports: data.exports || {},
+          status: data.status,
+          gammaUrl: data.gammaUrl,
+          message: data.message,
+          hint: data.hint,
+          retryAfter: data.retryAfter,
+        };
+      } catch (error) {
+        console.error('[useReportGenerator] Save exports error:', error);
         updateState({
           phase: 'completed',
           progress: 100,
-          message: 'Exports saved!',
+          message: 'Export check failed',
         });
-
-        return data.exports;
-      } catch (error) {
-        console.error('[useReportGenerator] Save exports error:', error);
-        // Don't fail the whole generation, just log the error
         return null;
       }
     },
