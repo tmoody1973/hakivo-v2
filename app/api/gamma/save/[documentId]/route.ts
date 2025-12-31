@@ -4,13 +4,21 @@ const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
 /**
  * Helper to fetch generation status with retry for exports
+ *
+ * IMPORTANT: Gamma export URLs can take 30-120 seconds to become available
+ * even after generation status shows "completed". This is a known Gamma API behavior.
+ * See: https://community.gamma.app/x/api/nvt6keghs18u/is-it-possible-to-download-the-pptx-file-through-t
  */
 async function fetchWithRetry(
   generationId: string,
   apiKey: string,
-  maxRetries: number = 3,
-  delayMs: number = 2000
+  maxRetries: number = 20,
+  initialDelayMs: number = 3000
 ): Promise<{ status: string; exports?: { pdf?: string; pptx?: string }; url?: string; [key: string]: unknown }> {
+  let delayMs = initialDelayMs;
+  const maxDelayMs = 10000; // Cap at 10 seconds between retries
+  const backoffMultiplier = 1.2;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       method: 'GET',
@@ -22,7 +30,8 @@ async function fetchWithRetry(
     }
 
     const result = await response.json();
-    console.log(`[API] Attempt ${attempt + 1}: status=${result.status}, exports=${JSON.stringify(result.exports)}, url=${result.url}`);
+    const elapsedTime = attempt * initialDelayMs; // Approximate
+    console.log(`[API] Attempt ${attempt + 1}/${maxRetries} (~${Math.round(elapsedTime/1000)}s): status=${result.status}, exports=${JSON.stringify(result.exports)}, url=${result.url}`);
 
     // Log full response on first attempt for debugging
     if (attempt === 0) {
@@ -31,19 +40,28 @@ async function fetchWithRetry(
 
     // If we have exports, return immediately
     if (result.exports && (result.exports.pdf || result.exports.pptx)) {
+      console.log(`[API] Exports found after ${attempt + 1} attempts`);
       return result;
     }
 
-    // If status is completed but no exports, wait and retry
-    if (result.status === 'completed' && attempt < maxRetries - 1) {
-      console.log(`[API] No exports yet, waiting ${delayMs}ms before retry...`);
+    // If status is completed but no exports, keep polling (exports lag behind status)
+    // If status is still processing, also keep polling
+    if ((result.status === 'completed' || result.status === 'processing') && attempt < maxRetries - 1) {
+      console.log(`[API] Status: ${result.status}, no exports yet. Waiting ${delayMs}ms before retry...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
+      // Exponential backoff with cap
+      delayMs = Math.min(Math.round(delayMs * backoffMultiplier), maxDelayMs);
+    } else if (result.status === 'failed') {
+      console.error('[API] Generation failed:', result.error || 'Unknown error');
+      return result;
     } else {
+      // Unknown status or max retries reached
       return result;
     }
   }
 
-  throw new Error('Max retries exceeded');
+  console.warn(`[API] Max retries (${maxRetries}) exceeded without finding exports`);
+  throw new Error('Export URLs not available after extended polling. Try again later or open in Gamma.');
 }
 
 /**
@@ -72,8 +90,8 @@ export async function POST(
 
     console.log(`[API] Getting exports for generation: ${documentId}, formats: ${requestedFormats.join(', ')}`);
 
-    // Fetch with retry logic for exports
-    const result = await fetchWithRetry(documentId, gammaApiKey, 3, 3000);
+    // Fetch with retry logic for exports (up to ~2 minutes with exponential backoff)
+    const result = await fetchWithRetry(documentId, gammaApiKey, 20, 3000);
 
     if (result.status !== 'completed') {
       return NextResponse.json({
@@ -106,8 +124,9 @@ export async function POST(
       exports,
       gammaUrl: result.url,
       ...(missingFormats.length > 0 && {
-        message: `Export format(s) not available: ${missingFormats.join(', ')}. The generation may not have included exportAs parameter.`,
+        message: `Export format(s) not available: ${missingFormats.join(', ')}. This can happen if the generation didn't include exportAs parameter, or if it's a webpage format which doesn't support PDF export.`,
         missingFormats,
+        hint: 'You can open the document in Gamma to export manually.',
       }),
     });
   } catch (error) {
