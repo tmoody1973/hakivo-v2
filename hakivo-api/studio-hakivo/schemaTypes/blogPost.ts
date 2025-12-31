@@ -122,7 +122,8 @@ export default defineType({
               description: 'Enter the full YouTube URL (e.g., https://www.youtube.com/watch?v=...)',
               validation: (rule) => rule.required().custom((url) => {
                 if (!url) return true
-                const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
+                const urlString = String(url)
+                const isYouTube = urlString.includes('youtube.com') || urlString.includes('youtu.be')
                 return isYouTube || 'Please enter a valid YouTube URL'
               }),
             },
