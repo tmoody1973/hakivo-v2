@@ -148,6 +148,26 @@ export default function StudioContent() {
     }
   }, [generationState.generationResult]);
 
+  // Switch to create mode
+  const handleCreateNew = useCallback(() => {
+    setView('create');
+    setCurrentStep('template');
+    setSelectedTemplate(null);
+    setSelectedDataSource(null);
+    setShowPreview(false);
+    reset();
+  }, [reset]);
+
+  // Switch back to library
+  const handleBackToLibrary = useCallback(() => {
+    setView('library');
+    setCurrentStep('template');
+    setSelectedTemplate(null);
+    setSelectedDataSource(null);
+    setShowPreview(false);
+    reset();
+  }, [reset]);
+
   // Force download a file from URL
   const forceDownload = useCallback(async (url: string, filename: string) => {
     console.log('[Studio] Starting download:', { url, filename });
@@ -309,26 +329,6 @@ export default function StudioContent() {
       setEnrichmentOptions(getDefaultEnrichmentOptions(detected));
     }
   };
-
-  // Switch to create mode
-  const handleCreateNew = useCallback(() => {
-    setView('create');
-    setCurrentStep('template');
-    setSelectedTemplate(null);
-    setSelectedDataSource(null);
-    setShowPreview(false);
-    reset();
-  }, [reset]);
-
-  // Switch back to library
-  const handleBackToLibrary = useCallback(() => {
-    setView('library');
-    setCurrentStep('template');
-    setSelectedTemplate(null);
-    setSelectedDataSource(null);
-    setShowPreview(false);
-    reset();
-  }, [reset]);
 
   const handleNext = () => {
     if (currentStep === 'template' && selectedTemplate) {
