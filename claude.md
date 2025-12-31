@@ -7,6 +7,28 @@
 
   VIOLATION CHECK: If you used TodoWrite, you violated this rule. Stop and restart with Archon.
 
+# THINKING MODES: Know When to Ultrathink vs Engineer
+
+## Mode Selection (CRITICAL)
+Before ANY task, identify which mode:
+
+### 🎨 ULTRATHINK MODE - Use for:
+- Designing new user experiences
+- Solving "how might we..." questions
+- Creating features users will remember
+- Making complexity feel simple
+- See `/CLAUDE-federal.md` for Federal Register examples
+
+### 🔧 ENGINEERING MODE - Use for:
+- API implementations
+- Database operations
+- Background jobs
+- Performance optimizations
+- Bug fixes
+- Infrastructure code
+
+**Rule**: If user says "ultrathink", switch to that mode for the DESIGN phase, then switch back to engineering for IMPLEMENTATION.
+
 # Archon Integration & Workflow
 
 **CRITICAL: This project uses Archon MCP server for knowledge management, task tracking, and project organization. ALWAYS start with Archon MCP server task management.**
