@@ -109,6 +109,7 @@ export interface GammaOptions {
   };
   imageOptions?: {
     source?: string;
+    model?: string;
     style?: string;
   };
   exportAs?: 'pdf' | 'pptx';

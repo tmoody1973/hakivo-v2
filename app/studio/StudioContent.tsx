@@ -118,7 +118,9 @@ export default function StudioContent() {
         audience: template.defaults.audience,
       },
       imageOptions: {
-        source: selectedImageSource,
+        // Use pictographic source with Gemini model for best results
+        source: 'pictographic',
+        model: 'gemini-2.5-flash-image',
       },
       // Request PDF export by default
       exportAs: 'pdf',
