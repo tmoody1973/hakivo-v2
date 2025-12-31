@@ -162,7 +162,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                       </div>
                     )
                   },
-                  // YouTube embed component
+                  // YouTube embed component for structured YouTube blocks
                   youtube: ({ value }) => {
                     if (!value?.url) return null
 
@@ -220,6 +220,79 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                       {children}
                     </blockquote>
                   ),
+                  // Custom normal paragraph renderer to detect YouTube URLs
+                  normal: ({ children }) => {
+                    // Helper function to extract YouTube video ID
+                    const getYouTubeId = (url: string) => {
+                      const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
+                      const match = url.match(regex)
+                      return match ? match[1] : null
+                    }
+
+                    // YouTube URL detection regex - matches common YouTube URL patterns
+                    const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/|v\/)|youtu\.be\/)[\w-]+(?:\?[\w=&-]*)?/g
+
+                    // Process children to find and replace YouTube URLs
+                    const processChildren = (child: any): any => {
+                      // If it's a string, check for YouTube URLs
+                      if (typeof child === 'string') {
+                        const parts = []
+                        let lastIndex = 0
+                        let match
+
+                        // Find all YouTube URLs in the text
+                        while ((match = youtubeRegex.exec(child)) !== null) {
+                          // Add text before the URL
+                          if (match.index > lastIndex) {
+                            parts.push(child.substring(lastIndex, match.index))
+                          }
+
+                          // Extract video ID and create embed
+                          const videoId = getYouTubeId(match[0])
+                          if (videoId) {
+                            parts.push(
+                              <div key={`youtube-${videoId}-${match.index}`} className="relative aspect-[16/9] rounded-lg overflow-hidden my-8">
+                                <iframe
+                                  src={`https://www.youtube.com/embed/${videoId}`}
+                                  title="YouTube video"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                  allowFullScreen
+                                  className="absolute top-0 left-0 w-full h-full"
+                                />
+                              </div>
+                            )
+                          } else {
+                            // If we can't extract video ID, just show the URL as text
+                            parts.push(match[0])
+                          }
+
+                          lastIndex = match.index + match[0].length
+                        }
+
+                        // Add remaining text after last URL
+                        if (lastIndex < child.length) {
+                          parts.push(child.substring(lastIndex))
+                        }
+
+                        // Return parts if URLs were found, otherwise return original
+                        return parts.length > 0 ? parts : child
+                      }
+
+                      // If it's an array, process each item
+                      if (Array.isArray(child)) {
+                        return child.map(processChildren)
+                      }
+
+                      // For other types (React elements, etc.), return as-is
+                      return child
+                    }
+
+                    const processedChildren = Array.isArray(children)
+                      ? children.map(processChildren).flat()
+                      : processChildren(children)
+
+                    return <p className="mb-4">{processedChildren}</p>
+                  },
                 },
               }}
             />
