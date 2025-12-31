@@ -22,8 +22,10 @@ import type { GenerationState, GenerationResult } from '@/hooks/useReportGenerat
 
 /**
  * Convert Gamma docs URL to embed URL for iframe preview
- * Example input: https://gamma.app/docs/Texas-Redefines-Privacy-s57ul9u5xrcwq68?mode=doc
- * Example output: https://gamma.app/embed/s57ul9u5xrcwq68
+ * Handles two URL formats:
+ * 1. With title: https://gamma.app/docs/Texas-Redefines-Privacy-s57ul9u5xrcwq68?mode=doc
+ * 2. Without title: https://gamma.app/docs/l5nvus9p46bj53e
+ * Output: https://gamma.app/embed/{docId}
  */
 function getEmbedUrl(gammaUrl: string | undefined): string | null {
   if (!gammaUrl) return null;
@@ -31,12 +33,24 @@ function getEmbedUrl(gammaUrl: string | undefined): string | null {
   try {
     const url = new URL(gammaUrl);
     const pathParts = url.pathname.split('/');
-    // Path is like /docs/Title-Here-docId
+    // Path is like /docs/Title-Here-docId or /docs/docId
     const docPath = pathParts[pathParts.length - 1];
-    // Extract doc ID - it's after the last hyphen
+
+    // Check if URL has title (contains hyphen)
     const lastHyphenIndex = docPath.lastIndexOf('-');
-    if (lastHyphenIndex === -1) return null;
-    const docId = docPath.substring(lastHyphenIndex + 1);
+
+    let docId: string;
+    if (lastHyphenIndex === -1) {
+      // No hyphen - the entire path is the doc ID
+      // e.g., /docs/l5nvus9p46bj53e
+      docId = docPath;
+    } else {
+      // Has hyphen - doc ID is after the last hyphen
+      // e.g., /docs/Title-Here-s57ul9u5xrcwq68
+      docId = docPath.substring(lastHyphenIndex + 1);
+    }
+
+    if (!docId) return null;
     return `https://gamma.app/embed/${docId}`;
   } catch {
     return null;
