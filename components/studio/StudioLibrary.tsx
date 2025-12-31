@@ -64,26 +64,19 @@ const STATUS_COLORS = {
 };
 
 /**
- * Convert Gamma docs URL to embed URL for iframe preview
+ * Extract presentation ID from Gamma URL for embed
+ * Note: Gamma uses Iframely for embedding. Direct embed URLs don't work.
+ * We'll use the share/present mode instead.
  */
-function getEmbedUrl(gammaUrl: string | null): string | null {
+function getPresentUrl(gammaUrl: string | null): string | null {
   if (!gammaUrl) return null;
 
   try {
+    // Gamma URLs look like: https://gamma.app/docs/Title-abc123xyz
+    // Present mode URL: https://gamma.app/docs/Title-abc123xyz?mode=present
     const url = new URL(gammaUrl);
-    const pathParts = url.pathname.split('/');
-    const docPath = pathParts[pathParts.length - 1];
-    const lastHyphenIndex = docPath.lastIndexOf('-');
-
-    let docId: string;
-    if (lastHyphenIndex === -1) {
-      docId = docPath;
-    } else {
-      docId = docPath.substring(lastHyphenIndex + 1);
-    }
-
-    if (!docId) return null;
-    return `https://gamma.app/embed/${docId}`;
+    url.searchParams.set('mode', 'present');
+    return url.toString();
   } catch {
     return null;
   }
@@ -116,7 +109,6 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
   const [documents, setDocuments] = useState<GammaDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     if (!accessToken) return;
@@ -163,7 +155,13 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
   };
 
   const handlePreview = (doc: GammaDocument) => {
-    setSelectedDocId(selectedDocId === doc.id ? null : doc.id);
+    // Open in Gamma's present mode for a fullscreen preview
+    const presentUrl = getPresentUrl(doc.gamma_url);
+    if (presentUrl) {
+      window.open(presentUrl, '_blank');
+    } else if (doc.gamma_url) {
+      window.open(doc.gamma_url, '_blank');
+    }
     if (onSelectDocument) {
       onSelectDocument(doc);
     }
@@ -238,30 +236,18 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {documents.map((doc) => {
           const FormatIcon = FORMAT_ICONS[doc.format] || FileText;
-          const isSelected = selectedDocId === doc.id;
-          const embedUrl = getEmbedUrl(doc.gamma_url);
 
           return (
             <Card
               key={doc.id}
-              className={cn(
-                'overflow-hidden transition-all hover:shadow-md cursor-pointer',
-                isSelected && 'ring-2 ring-primary'
-              )}
+              className="overflow-hidden transition-all hover:shadow-md cursor-pointer"
             >
               {/* Thumbnail / Preview */}
               <div
                 className="relative aspect-video bg-muted"
                 onClick={() => handlePreview(doc)}
               >
-                {isSelected && embedUrl ? (
-                  <iframe
-                    src={embedUrl}
-                    className="w-full h-full"
-                    allow="fullscreen"
-                    title={doc.title}
-                  />
-                ) : doc.gamma_thumbnail_url ? (
+                {doc.gamma_thumbnail_url ? (
                   <img
                     src={doc.gamma_thumbnail_url}
                     alt={doc.title}
@@ -273,15 +259,13 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
                   </div>
                 )}
 
-                {/* Preview overlay */}
-                {!isSelected && (
-                  <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                    <Button variant="secondary" size="sm" className="gap-2">
-                      <Eye className="h-4 w-4" />
-                      Preview
-                    </Button>
-                  </div>
-                )}
+                {/* Preview overlay - opens in Gamma's present mode */}
+                <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                  <Button variant="secondary" size="sm" className="gap-2">
+                    <Eye className="h-4 w-4" />
+                    Preview
+                  </Button>
+                </div>
 
                 {/* Status badge */}
                 {doc.status !== 'completed' && (
