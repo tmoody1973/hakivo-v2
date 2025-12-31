@@ -22,7 +22,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation - Craft-style centered layout */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-xl">
+      <nav className="sticky top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between px-4 md:px-6 lg:px-8 max-w-7xl mx-auto">
           {/* Logo */}
           <Link href="/" className="flex items-center shrink-0">

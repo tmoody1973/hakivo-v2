@@ -46,7 +46,7 @@ export function BetaBanner() {
   if (!isVisible) return null
 
   return (
-    <div className="relative isolate flex items-center gap-x-6 overflow-hidden bg-gray-50 dark:bg-gray-900 px-6 py-2.5 sm:px-3.5">
+    <div className="relative flex items-center gap-x-6 overflow-hidden bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-gray-900 dark:to-gray-900 px-6 py-2.5 sm:px-3.5 border-b border-purple-200 dark:border-gray-700">
       <div
         className="absolute left-[max(-7rem,calc(50%-52rem))] top-1/2 -z-10 -translate-y-1/2 transform-gpu blur-2xl"
         aria-hidden="true"
