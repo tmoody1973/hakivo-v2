@@ -211,7 +211,8 @@ export default async (req: Request, context: Context) => {
 };
 
 // Netlify scheduled function configuration
-// Runs at 7 AM UTC every day
-export const config: Config = {
-  schedule: "0 7 * * *"
-};
+// DISABLED: Raindrop scheduler is working. This was a backup.
+// To re-enable, uncomment the schedule below.
+// export const config: Config = {
+//   schedule: "0 7 * * *"
+// };
