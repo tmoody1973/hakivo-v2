@@ -109,6 +109,44 @@ export default defineType({
             },
           ],
         },
+        {
+          type: 'object',
+          name: 'youtube',
+          title: 'YouTube Video',
+          icon: () => '🎥',
+          fields: [
+            {
+              name: 'url',
+              type: 'url',
+              title: 'YouTube URL',
+              description: 'Enter the full YouTube URL (e.g., https://www.youtube.com/watch?v=...)',
+              validation: (rule) => rule.required().custom((url) => {
+                if (!url) return true
+                const isYouTube = url.includes('youtube.com') || url.includes('youtu.be')
+                return isYouTube || 'Please enter a valid YouTube URL'
+              }),
+            },
+            {
+              name: 'title',
+              type: 'string',
+              title: 'Video Title',
+              description: 'Optional title for the video',
+            },
+          ],
+          preview: {
+            select: {
+              url: 'url',
+              title: 'title',
+            },
+            prepare(selection) {
+              const { url, title } = selection
+              return {
+                title: title || 'YouTube Video',
+                subtitle: url,
+              }
+            },
+          },
+        },
       ],
       validation: (rule) => rule.required(),
     }),

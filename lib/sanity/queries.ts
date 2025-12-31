@@ -28,7 +28,14 @@ export const blogPostBySlugQuery = groq`
     author,
     publishedAt,
     excerpt,
-    content,
+    content[]{
+      ...,
+      _type == "image" => {
+        ...,
+        "url": asset->url,
+        "dimensions": asset->metadata.dimensions
+      }
+    },
     "featuredImage": featuredImage.asset->url,
     "featuredImageAlt": featuredImage.alt,
     tags,

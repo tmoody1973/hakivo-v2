@@ -139,21 +139,55 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
               value={post.content}
               components={{
                 types: {
-                  image: ({ value }) => (
-                    <div className="relative aspect-[16/9] rounded-lg overflow-hidden my-8">
-                      <Image
-                        src={value.asset?.url || ''}
-                        alt={value.alt || ''}
-                        fill
-                        className="object-cover"
-                      />
-                      {value.caption && (
-                        <p className="text-sm text-center text-muted-foreground mt-2">
-                          {value.caption}
-                        </p>
-                      )}
-                    </div>
-                  ),
+                  image: ({ value }) => {
+                    // Use the resolved URL from the query
+                    const imageUrl = value.url || value.asset?.url || ''
+                    if (!imageUrl) return null
+
+                    return (
+                      <div className="relative my-8">
+                        <div className="relative aspect-[16/9] rounded-lg overflow-hidden">
+                          <Image
+                            src={imageUrl}
+                            alt={value.alt || ''}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                        {value.caption && (
+                          <p className="text-sm text-center text-muted-foreground mt-2">
+                            {value.caption}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  },
+                  // YouTube embed component
+                  youtube: ({ value }) => {
+                    if (!value?.url) return null
+
+                    // Extract YouTube video ID from various URL formats
+                    const getYouTubeId = (url: string) => {
+                      const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
+                      const match = url.match(regex)
+                      return match ? match[1] : null
+                    }
+
+                    const videoId = getYouTubeId(value.url)
+                    if (!videoId) return null
+
+                    return (
+                      <div className="relative aspect-[16/9] rounded-lg overflow-hidden my-8">
+                        <iframe
+                          src={`https://www.youtube.com/embed/${videoId}`}
+                          title={value.title || 'YouTube video'}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          className="absolute top-0 left-0 w-full h-full"
+                        />
+                      </div>
+                    )
+                  },
                 },
                 marks: {
                   link: ({ children, value }) => {
