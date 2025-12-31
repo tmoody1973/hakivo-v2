@@ -437,66 +437,81 @@ export function useReportGenerator() {
    * Save exports (PDF/PPTX) to storage
    * @param generationId - The Gamma generation ID (NOT Hakivo's document ID)
    * @param formats - Array of export formats to request
+   * @param maxRetries - Maximum number of retry attempts (default: 6 = 30 seconds)
    * @returns Full response including success status, exports, and hints
    */
   const saveExports = useCallback(
-    async (generationId: string, formats: ('pdf' | 'pptx')[]): Promise<SaveExportResult | null> => {
+    async (
+      generationId: string,
+      formats: ('pdf' | 'pptx')[],
+      maxRetries: number = 6
+    ): Promise<SaveExportResult | null> => {
       if (!accessToken) return null;
 
+      let lastResult: SaveExportResult | null = null;
+
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        updateState({
+          phase: 'saving',
+          progress: 90 + Math.floor((attempt / maxRetries) * 10),
+          message: attempt === 0
+            ? 'Checking export availability...'
+            : `Waiting for exports... (${attempt * 5}s)`,
+        });
+
+        try {
+          const response = await fetch(`/api/gamma/save/${generationId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ exportFormats: formats }),
+          });
+
+          const data = await response.json();
+
+          // Check if exports are available
+          const hasExports = data.exports && (data.exports.pdf || data.exports.pptx);
+
+          lastResult = {
+            success: data.success ?? hasExports,
+            exports: data.exports || {},
+            status: data.status,
+            gammaUrl: data.gammaUrl,
+            message: data.message,
+            hint: data.hint,
+            retryAfter: data.retryAfter,
+          };
+
+          if (hasExports) {
+            updateState({
+              phase: 'completed',
+              progress: 100,
+              message: 'Exports ready!',
+            });
+            return lastResult;
+          }
+
+          // If this is the last attempt, don't wait
+          if (attempt < maxRetries - 1) {
+            // Wait 5 seconds before retrying
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          }
+        } catch (error) {
+          console.error('[useReportGenerator] Save exports error:', error);
+          // Continue trying on error
+        }
+      }
+
+      // Exports still not ready after all retries
       updateState({
-        phase: 'saving',
-        progress: 90,
-        message: 'Checking export availability...',
+        phase: 'completed',
+        progress: 100,
+        message: lastResult?.message || 'Exports not ready yet',
       });
 
-      try {
-        const response = await fetch(`/api/gamma/save/${generationId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ exportFormats: formats }),
-        });
-
-        const data = await response.json();
-
-        // Check if exports are available
-        const hasExports = data.exports && (data.exports.pdf || data.exports.pptx);
-
-        if (hasExports) {
-          updateState({
-            phase: 'completed',
-            progress: 100,
-            message: 'Exports ready!',
-          });
-        } else {
-          // Exports not ready yet - this is expected for recent documents
-          updateState({
-            phase: 'completed',
-            progress: 100,
-            message: data.message || 'Export check complete',
-          });
-        }
-
-        return {
-          success: data.success ?? hasExports,
-          exports: data.exports || {},
-          status: data.status,
-          gammaUrl: data.gammaUrl,
-          message: data.message,
-          hint: data.hint,
-          retryAfter: data.retryAfter,
-        };
-      } catch (error) {
-        console.error('[useReportGenerator] Save exports error:', error);
-        updateState({
-          phase: 'completed',
-          progress: 100,
-          message: 'Export check failed',
-        });
-        return null;
-      }
+      return lastResult;
     },
     [accessToken, updateState]
   );
