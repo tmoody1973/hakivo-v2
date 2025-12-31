@@ -1962,7 +1962,7 @@ function SettingsPageContent() {
                               {/* Actions */}
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 {/* Preview in Hakivo */}
-                                {doc.status === 'completed' && getEmbedUrl(doc) && (
+                                {doc.status === 'completed' && (
                                   <button
                                     onClick={() => setPreviewDocument(doc)}
                                     className="p-2 hover:bg-accent rounded-md"
@@ -2499,14 +2499,37 @@ function SettingsPageContent() {
             </DialogTitle>
           </DialogHeader>
           <div className="flex-1 h-full min-h-0">
-            {previewDocument && getEmbedUrl(previewDocument) && (
+            {previewDocument && getEmbedUrl(previewDocument) ? (
               <iframe
                 src={getEmbedUrl(previewDocument)!}
                 className="w-full h-[calc(85vh-60px)] border-0"
                 title={previewDocument.title}
                 allowFullScreen
               />
-            )}
+            ) : previewDocument ? (
+              <div className="flex flex-col items-center justify-center h-[calc(85vh-60px)] text-center p-8">
+                <svg className="w-16 h-16 text-muted-foreground mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 className="text-lg font-medium mb-2">Preview Not Available</h3>
+                <p className="text-muted-foreground mb-4 max-w-md">
+                  This document doesn&apos;t have a preview URL. You can open it directly in Gamma to view and export.
+                </p>
+                {getGammaUrl(previewDocument) && (
+                  <a
+                    href={getGammaUrl(previewDocument)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    Open in Gamma
+                  </a>
+                )}
+              </div>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
