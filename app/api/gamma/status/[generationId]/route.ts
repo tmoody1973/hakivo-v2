@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 
+const GAMMA_SERVICE_URL = process.env.NEXT_PUBLIC_GAMMA_SERVICE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'https://svc-01kcp5rv55e6psxh5ht7byqrgd.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+
 /**
  * GET /api/gamma/status/[generationId]
- * Call Gamma API directly to poll generation status
+ * Poll Gamma API for generation status AND update database via Raindrop
  */
 export async function GET(
   request: NextRequest,
@@ -26,20 +30,21 @@ export async function GET(
 
     console.log('[API] Checking Gamma status for:', generationId);
 
-    const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+    // 1. Poll Gamma API for current status
+    const gammaResponse = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       method: 'GET',
       headers: {
         'X-API-KEY': gammaApiKey,
       },
     });
 
-    const responseText = await response.text();
+    const responseText = await gammaResponse.text();
 
-    if (!response.ok) {
-      console.error('[API] Gamma status error:', response.status, responseText);
+    if (!gammaResponse.ok) {
+      console.error('[API] Gamma status error:', gammaResponse.status, responseText);
       return NextResponse.json(
         { error: 'Gamma API error', details: responseText },
-        { status: response.status }
+        { status: gammaResponse.status }
       );
     }
 
@@ -54,16 +59,44 @@ export async function GET(
       );
     }
 
-    // Log FULL Gamma response to debug missing fields
-    console.log('[API] Gamma FULL status response:', JSON.stringify(result, null, 2));
+    console.log('[API] Gamma status response:', JSON.stringify(result, null, 2));
+
+    // 2. If completed, update database via Raindrop with the gamma_url
+    if (result.status === 'completed' && (result.gammaUrl || result.url)) {
+      try {
+        console.log('[API] Generation completed, updating database via Raindrop');
+
+        // Call Raindrop's update endpoint to save gamma_url to database
+        await fetch(`${GAMMA_SERVICE_URL}/api/gamma/update-generation`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            generationId: generationId,
+            status: 'completed',
+            gammaUrl: result.gammaUrl || result.url,
+            thumbnailUrl: result.thumbnailUrl,
+            cardCount: result.cardCount,
+            title: result.title,
+            exports: result.exports,
+          }),
+        });
+
+        console.log('[API] Database updated with gamma_url');
+      } catch (updateError) {
+        // Log but don't fail - status response is more important
+        console.error('[API] Failed to update database:', updateError);
+      }
+    }
 
     // Gamma API returns 'gammaUrl' not 'url' per their docs
-    // https://developers.gamma.app/docs/generate-api-parameters-explained
     return NextResponse.json({
       success: true,
       generationId: result.id || result.generationId || generationId,
       status: result.status,
-      url: result.gammaUrl || result.url, // Gamma returns gammaUrl, fallback to url
+      url: result.gammaUrl || result.url,
       thumbnailUrl: result.thumbnailUrl,
       title: result.title,
       cardCount: result.cardCount,

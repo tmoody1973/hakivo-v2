@@ -816,6 +816,83 @@ app.get('/api/gamma/status/:generationId', async (c) => {
 });
 
 /**
+ * POST /api/gamma/update-generation
+ * Update a generation record with completion data (gamma_url, etc.)
+ * Called by Next.js status route when Gamma reports completion
+ */
+app.post('/api/gamma/update-generation', async (c) => {
+  const auth = await verifyAuth(c.req.header('Authorization'), c.env.JWT_SECRET);
+  if (!auth) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const body = await c.req.json() as {
+      generationId: string;
+      status: string;
+      gammaUrl?: string;
+      thumbnailUrl?: string;
+      cardCount?: number;
+      title?: string;
+      exports?: { pdf?: string; pptx?: string };
+    };
+
+    if (!body.generationId) {
+      return c.json({ error: 'generationId is required' }, 400);
+    }
+
+    const gammaDb = c.env.GAMMA_DB;
+    const now = Date.now();
+
+    console.log(`[Gamma Service] Updating generation ${body.generationId} with status ${body.status}`);
+
+    // Update the document in database by gamma_generation_id
+    const result = await gammaDb
+      .prepare(`
+        UPDATE gamma_documents SET
+          status = ?,
+          gamma_url = COALESCE(?, gamma_url),
+          gamma_thumbnail_url = COALESCE(?, gamma_thumbnail_url),
+          card_count = COALESCE(?, card_count),
+          title = COALESCE(?, title),
+          pdf_url = COALESCE(?, pdf_url),
+          pptx_url = COALESCE(?, pptx_url),
+          completed_at = CASE WHEN ? = 'completed' THEN ? ELSE completed_at END,
+          updated_at = ?
+        WHERE gamma_generation_id = ? AND user_id = ?
+      `)
+      .bind(
+        body.status,
+        body.gammaUrl || null,
+        body.thumbnailUrl || null,
+        body.cardCount || null,
+        body.title || null,
+        body.exports?.pdf || null,
+        body.exports?.pptx || null,
+        body.status,
+        now,
+        now,
+        body.generationId,
+        auth.userId
+      )
+      .run();
+
+    console.log(`[Gamma Service] Updated ${result.meta.changes} rows for generation ${body.generationId}`);
+
+    return c.json({
+      success: true,
+      updated: result.meta.changes > 0,
+    });
+  } catch (error) {
+    console.error('[Gamma Service] Update generation error:', error);
+    return c.json({
+      error: 'Failed to update generation',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    }, 500);
+  }
+});
+
+/**
  * POST /api/gamma/save/:documentId
  * Save export files (PDF/PPTX) to Vultr storage
  * Also checks if exports are already cached in the database
