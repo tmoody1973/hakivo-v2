@@ -254,7 +254,7 @@ export function GenerationProgress({
         {state.phase === 'completed' && result && (
           <div className="space-y-4">
             {/* Iframe Preview */}
-            {getEmbedUrl(result.url) && (
+            {getEmbedUrl(result.url) ? (
               <div className="rounded-lg overflow-hidden border bg-muted/30">
                 <iframe
                   src={getEmbedUrl(result.url)!}
@@ -262,6 +262,18 @@ export function GenerationProgress({
                   allow="fullscreen"
                   title={result.title || 'Document Preview'}
                 />
+              </div>
+            ) : (
+              <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-sm">
+                <p className="font-medium text-amber-800 dark:text-amber-200">Preview not available</p>
+                <p className="text-amber-600 dark:text-amber-400 mt-1">
+                  The document URL was not returned by Gamma. Check server logs for details.
+                  {result.generationId && (
+                    <span className="block mt-1 font-mono text-xs">
+                      Generation ID: {result.generationId}
+                    </span>
+                  )}
+                </p>
               </div>
             )}
 
@@ -281,7 +293,7 @@ export function GenerationProgress({
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{result.title || 'Your Document'}</p>
                 <p className="text-sm text-muted-foreground">
-                  {result.cardCount} slides generated
+                  {result.cardCount ? `${result.cardCount} slides generated` : 'Document generated'}
                 </p>
               </div>
             </div>

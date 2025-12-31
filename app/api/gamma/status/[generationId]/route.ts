@@ -54,13 +54,16 @@ export async function GET(
       );
     }
 
-    console.log('[API] Gamma status:', result.status, 'exports:', JSON.stringify(result.exports));
+    // Log FULL Gamma response to debug missing fields
+    console.log('[API] Gamma FULL status response:', JSON.stringify(result, null, 2));
 
+    // Gamma API returns 'gammaUrl' not 'url' per their docs
+    // https://developers.gamma.app/docs/generate-api-parameters-explained
     return NextResponse.json({
       success: true,
-      generationId: result.id || generationId,
+      generationId: result.id || result.generationId || generationId,
       status: result.status,
-      url: result.url,
+      url: result.gammaUrl || result.url, // Gamma returns gammaUrl, fallback to url
       thumbnailUrl: result.thumbnailUrl,
       title: result.title,
       cardCount: result.cardCount,

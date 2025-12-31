@@ -75,7 +75,8 @@ export async function POST(
     }
 
     const result = await response.json();
-    console.log(`[API] Gamma response: status=${result.status}, exports=${JSON.stringify(result.exports)}, url=${result.url}`);
+    // Note: Gamma API returns 'gammaUrl' not 'url' per their docs
+    console.log(`[API] Gamma response: status=${result.status}, exports=${JSON.stringify(result.exports)}, gammaUrl=${result.gammaUrl}`);
 
     // If generation is still in progress
     if (result.status !== 'completed') {
@@ -116,13 +117,14 @@ export async function POST(
     }
 
     // If we have exports, return them
+    // Note: Gamma API returns 'gammaUrl' not 'url' per their docs
     if (hasAnyExport) {
       console.log('[API] Exports available:', JSON.stringify(exports));
       return NextResponse.json({
         success: true,
         generationId,
         exports,
-        gammaUrl: result.url,
+        gammaUrl: result.gammaUrl || result.url,
         ...(missingFormats.length > 0 && {
           partialMessage: `Some formats not available: ${missingFormats.join(', ')}`,
         }),
@@ -130,13 +132,15 @@ export async function POST(
     }
 
     // No exports yet - this is normal, they take 30-120 seconds after generation
-    console.log('[API] No exports available yet, document URL:', result.url);
+    // Note: Gamma API returns 'gammaUrl' not 'url' per their docs
+    const docUrl = result.gammaUrl || result.url;
+    console.log('[API] No exports available yet, document URL:', docUrl);
     return NextResponse.json({
       success: false,
       generationId,
       exports: {},
       status: 'exports_pending',
-      gammaUrl: result.url,
+      gammaUrl: docUrl,
       message: 'Exports are still being prepared by Gamma. This usually takes 1-2 minutes after document creation.',
       hint: 'Please try again in a minute, or open the document in Gamma to download manually.',
       retryAfter: 30, // seconds
