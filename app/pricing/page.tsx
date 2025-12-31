@@ -167,6 +167,43 @@ export default function PricingPage() {
             </div>
           </div>
         </div>
+
+        {/* Beta Support Message */}
+        <div className="mt-16 max-w-3xl mx-auto">
+          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 rounded-3xl p-8 border border-purple-200 dark:border-purple-800/50">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold mb-2 text-purple-900 dark:text-purple-100">
+                  Supporting Innovation in Beta
+                </h3>
+                <p className="text-purple-700 dark:text-purple-300 leading-relaxed">
+                  Hakivo is currently in public beta, built entirely by one person using AI as a co-developer.
+                  Your subscription directly supports server costs, API fees, and continued development time.
+                  As an early supporter, you're not just getting a service—you're investing in the future of
+                  civic technology and helping prove that individual creators can compete with million-dollar
+                  platforms. Thank you for being part of this journey.
+                </p>
+                <div className="mt-4 flex items-center gap-4 text-sm">
+                  <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                    <Check className="w-4 h-4" />
+                    <span>100% bootstrapped</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                    <Check className="w-4 h-4" />
+                    <span>No VC funding</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                    <Check className="w-4 h-4" />
+                    <span>Built with AI</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Feature Comparison */}

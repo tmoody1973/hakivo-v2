@@ -10,6 +10,7 @@ import { C1Provider } from "@/components/c1"
 import { FeaturebaseWidget } from "@/components/featurebase"
 import { PostHogProvider, PostHogPageview, MixpanelProvider, MixpanelPageview } from "@/lib/analytics"
 import { OrganizationJsonLd, WebSiteJsonLd } from "@/components/seo/json-ld"
+import { BetaBanner } from "@/components/beta-banner"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -133,6 +134,7 @@ export default function RootLayout({
                     <PostHogPageview />
                     <MixpanelPageview />
                     <div className="flex h-screen flex-col">
+                      <BetaBanner />
                       <ConditionalNav />
 
                       <main className="flex-1 overflow-auto pb-24">
