@@ -9,12 +9,20 @@ export function BetaBanner() {
 
   useEffect(() => {
     // Check if user has dismissed the banner
-    const dismissed = localStorage.getItem('beta-banner-dismissed')
-    const dismissedDate = dismissed ? new Date(dismissed) : null
+    const dismissedUntil = localStorage.getItem('beta-banner-dismissed')
+    const dismissedUntilDate = dismissedUntil ? new Date(dismissedUntil) : null
     const now = new Date()
 
-    // Show banner if never dismissed or if 7 days have passed
-    if (!dismissedDate || now > dismissedDate) {
+    // Debug logging
+    console.log('Beta Banner Debug:', {
+      dismissedUntil,
+      dismissedUntilDate: dismissedUntilDate?.toISOString(),
+      now: now.toISOString(),
+      willShow: !dismissedUntilDate || now >= dismissedUntilDate
+    })
+
+    // Show banner if never dismissed or if the dismissal period has expired
+    if (!dismissedUntilDate || now >= dismissedUntilDate) {
       setIsVisible(true)
     }
   }, [])
