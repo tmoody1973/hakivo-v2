@@ -8,6 +8,14 @@ export function BetaBanner() {
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
+    // Force show banner if URL has ?show-beta-banner=true (for testing)
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('show-beta-banner') === 'true') {
+      localStorage.removeItem('beta-banner-dismissed')
+      setIsVisible(true)
+      return
+    }
+
     // Check if user has dismissed the banner
     const dismissedUntil = localStorage.getItem('beta-banner-dismissed')
     const dismissedUntilDate = dismissedUntil ? new Date(dismissedUntil) : null
@@ -38,7 +46,7 @@ export function BetaBanner() {
   if (!isVisible) return null
 
   return (
-    <div className="relative isolate flex items-center gap-x-6 overflow-hidden bg-gray-50 dark:bg-gray-900 px-6 py-2.5 sm:px-3.5 sm:before:flex-1">
+    <div className="relative isolate flex items-center gap-x-6 overflow-hidden bg-gray-50 dark:bg-gray-900 px-6 py-2.5 sm:px-3.5">
       <div
         className="absolute left-[max(-7rem,calc(50%-52rem))] top-1/2 -z-10 -translate-y-1/2 transform-gpu blur-2xl"
         aria-hidden="true"
