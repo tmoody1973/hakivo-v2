@@ -539,9 +539,11 @@ export function useReportGenerator() {
 
   /**
    * Save exports (PDF/PPTX) to storage
+   * @param generationId - The Gamma generation ID (NOT Hakivo's document ID)
+   * @param formats - Array of export formats to request
    */
   const saveExports = useCallback(
-    async (documentId: string, formats: ('pdf' | 'pptx')[]): Promise<{ pdf?: string; pptx?: string } | null> => {
+    async (generationId: string, formats: ('pdf' | 'pptx')[]): Promise<{ pdf?: string; pptx?: string } | null> => {
       if (!accessToken) return null;
 
       updateState({
@@ -551,7 +553,7 @@ export function useReportGenerator() {
       });
 
       try {
-        const response = await fetch(`/api/gamma/save/${documentId}`, {
+        const response = await fetch(`/api/gamma/save/${generationId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

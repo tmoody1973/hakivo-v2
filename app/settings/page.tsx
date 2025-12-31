@@ -7,6 +7,12 @@ import { useAuth } from '@/lib/auth/auth-context';
 import { getUserPreferences, updateUserProfile, updateUserPreferences } from '@/lib/api/backend';
 import { useTracking, TrackedFederalBill, TrackedStateBill } from '@/lib/hooks/use-tracking';
 import { subscriptionApi, SubscriptionStatus } from '@/lib/raindrop-client';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // Artifact type from API
 interface UserArtifact {
@@ -197,6 +203,7 @@ function SettingsPageContent() {
   });
   const [deletingGammaId, setDeletingGammaId] = useState<string | null>(null);
   const [sharingGammaId, setSharingGammaId] = useState<string | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<GammaDocument | null>(null);
   const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<'pdf' | 'pptx' | null>(null);
 
@@ -469,6 +476,14 @@ function SettingsPageContent() {
       return `https://gamma.app/docs/${doc.gamma_generation_id}`;
     }
     return null;
+  };
+
+  // Convert Gamma docs URL to embed URL for iframe preview
+  const getEmbedUrl = (doc: GammaDocument): string | null => {
+    const gammaUrl = getGammaUrl(doc);
+    if (!gammaUrl) return null;
+    // Gamma URLs: https://gamma.app/docs/xyz → https://gamma.app/embed/xyz
+    return gammaUrl.replace('/docs/', '/embed/');
   };
 
   // Helper to open Gamma for manual PDF export
@@ -1946,6 +1961,20 @@ function SettingsPageContent() {
 
                               {/* Actions */}
                               <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Preview in Hakivo */}
+                                {doc.status === 'completed' && getEmbedUrl(doc) && (
+                                  <button
+                                    onClick={() => setPreviewDocument(doc)}
+                                    className="p-2 hover:bg-accent rounded-md"
+                                    title="Preview document"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    </svg>
+                                  </button>
+                                )}
+
                                 {/* Open in Gamma */}
                                 {doc.gamma_url && doc.status === 'completed' && (
                                   <a
@@ -2459,6 +2488,28 @@ function SettingsPageContent() {
           )}
         </div>
       </div>
+
+      {/* Gamma Document Preview Dialog */}
+      <Dialog open={!!previewDocument} onOpenChange={(open) => !open && setPreviewDocument(null)}>
+        <DialogContent className="max-w-5xl w-[95vw] h-[85vh] p-0 overflow-hidden">
+          <DialogHeader className="p-4 pb-2 border-b">
+            <DialogTitle className="flex items-center gap-2">
+              <span>{getGammaFormatIcon(previewDocument?.format || 'document')}</span>
+              {previewDocument?.title || 'Document Preview'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 h-full min-h-0">
+            {previewDocument && getEmbedUrl(previewDocument) && (
+              <iframe
+                src={getEmbedUrl(previewDocument)!}
+                className="w-full h-[calc(85vh-60px)] border-0"
+                title={previewDocument.title}
+                allowFullScreen
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

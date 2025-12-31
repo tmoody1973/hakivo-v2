@@ -190,11 +190,12 @@ export default function StudioContent() {
       return;
     }
 
-    // If no URL but we have a documentId, try to fetch/save exports
-    const documentId = generationState.generationResult?.documentId;
-    if (documentId) {
-      console.log(`[Studio] No ${format} URL available, attempting to save exports...`);
-      const savedExports = await saveExports(documentId, [format]);
+    // If no URL but we have a generationId, try to fetch/save exports
+    // IMPORTANT: The save API expects the Gamma generation ID, not Hakivo's document ID
+    const generationId = generationState.generationResult?.generationId;
+    if (generationId) {
+      console.log(`[Studio] No ${format} URL available, attempting to save exports with generationId: ${generationId}`);
+      const savedExports = await saveExports(generationId, [format]);
       url = format === 'pdf' ? savedExports?.pdf : savedExports?.pptx;
       if (url) {
         await forceDownload(url, filename);

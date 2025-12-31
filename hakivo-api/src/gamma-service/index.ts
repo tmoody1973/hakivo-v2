@@ -163,7 +163,19 @@ app.post('/api/gamma/generate', async (c) => {
 
     if (body.themeId) gammaRequest.themeId = body.themeId;
     if (body.numCards) gammaRequest.numCards = body.numCards;
-    if (body.textOptions) gammaRequest.textOptions = body.textOptions;
+    // Add textOptions with no-quotes instruction appended to tone
+    if (body.textOptions) {
+      gammaRequest.textOptions = {
+        ...body.textOptions,
+        tone: body.textOptions.tone
+          ? `${body.textOptions.tone}. IMPORTANT: Do not generate fictional quotes, testimonials, or made-up statements. Only use real, verifiable information.`
+          : 'Factual and professional. IMPORTANT: Do not generate fictional quotes, testimonials, or made-up statements. Only use real, verifiable information.',
+      };
+    } else {
+      gammaRequest.textOptions = {
+        tone: 'Factual and professional. IMPORTANT: Do not generate fictional quotes, testimonials, or made-up statements. Only use real, verifiable information.',
+      };
+    }
     if (body.imageOptions) gammaRequest.imageOptions = body.imageOptions;
     // Default to PDF export
     gammaRequest.exportAs = body.exportAs || 'pdf';
@@ -338,7 +350,19 @@ app.post('/api/gamma/generate-enriched', async (c) => {
 
     if (gammaOptions.themeId) gammaRequest.themeId = gammaOptions.themeId;
     if (gammaOptions.numCards) gammaRequest.numCards = gammaOptions.numCards;
-    if (gammaOptions.textOptions) gammaRequest.textOptions = gammaOptions.textOptions;
+    // Add textOptions with no-quotes instruction appended to tone
+    if (gammaOptions.textOptions) {
+      gammaRequest.textOptions = {
+        ...gammaOptions.textOptions,
+        tone: gammaOptions.textOptions.tone
+          ? `${gammaOptions.textOptions.tone}. IMPORTANT: Do not generate fictional quotes, testimonials, or made-up statements. Only use real, verifiable information.`
+          : 'Factual and professional. IMPORTANT: Do not generate fictional quotes, testimonials, or made-up statements. Only use real, verifiable information.',
+      };
+    } else {
+      gammaRequest.textOptions = {
+        tone: 'Factual and professional. IMPORTANT: Do not generate fictional quotes, testimonials, or made-up statements. Only use real, verifiable information.',
+      };
+    }
     if (gammaOptions.imageOptions) gammaRequest.imageOptions = gammaOptions.imageOptions;
     // Default to PDF export
     gammaRequest.exportAs = gammaOptions.exportAs || 'pdf';
