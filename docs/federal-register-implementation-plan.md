@@ -128,28 +128,113 @@ export default observer(
 - Provide "why matched" explanations
 - Enable quick feedback (relevant/not relevant)
 
-#### Task 1.2.2: Basic Notification System
+#### Task 1.2.2: Integration with Existing Bell Notification System
 **Priority:** Medium
 **Effort:** 4 hours
 **Dependencies:** Task 1.2.1
 
-**Notification Types:**
+**Integration with Hakivo's Bell Icon System:**
 ```typescript
-interface FederalNotification {
-  type: 'executive_order' | 'new_rule' | 'comment_deadline';
+// Extend existing notification system in /components/notifications
+interface FederalNotification extends BaseNotification {
+  type: 'executive_order' | 'new_rule' | 'comment_deadline' | 'implementation_update';
   priority: 'urgent' | 'normal' | 'low';
   title: string;
   summary: string;
   actionUrl: string;
   actionText: string; // "Read Order", "Submit Comment", etc.
+  federalData?: {
+    documentNumber?: string;
+    agencyName?: string;
+    daysUntilDeadline?: number;
+    impactScore?: number;
+  };
 }
+
+// Add to existing notification bell component
+const NotificationBell = () => {
+  // Existing notifications (bills, briefs, etc.)
+  const existingNotifications = useNotifications();
+
+  // NEW: Federal Register notifications
+  const federalNotifications = useFederalNotifications();
+
+  // Combine and sort by priority/time
+  const allNotifications = [
+    ...existingNotifications,
+    ...federalNotifications
+  ].sort((a, b) => b.priority - a.priority);
+
+  return (
+    <Bell
+      count={allNotifications.length}
+      notifications={allNotifications}
+    />
+  );
+};
+```
+
+**Bell Icon UI Enhancements:**
+```typescript
+// Visual indicators for different federal notification types
+const NotificationIcon = ({ type }) => {
+  switch(type) {
+    case 'executive_order':
+      return <Gavel className="text-blue-500" />; // Presidential action
+    case 'new_rule':
+      return <FileText className="text-green-500" />; // New regulation
+    case 'comment_deadline':
+      return <Clock className="text-orange-500" />; // Time-sensitive
+    case 'implementation_update':
+      return <TrendingUp className="text-purple-500" />; // Progress update
+    default:
+      return <Bell className="text-gray-500" />;
+  }
+};
+```
+
+**Notification Display in Bell Dropdown:**
+```tsx
+<NotificationItem>
+  <div className="flex items-start gap-3">
+    <NotificationIcon type={notification.type} />
+    <div className="flex-1">
+      <p className="font-semibold text-sm">
+        {notification.title}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {notification.summary}
+      </p>
+      {notification.federalData?.daysUntilDeadline && (
+        <p className="text-xs text-orange-500 mt-1">
+          ⏰ {notification.federalData.daysUntilDeadline} days left
+        </p>
+      )}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="mt-2"
+        onClick={() => navigate(notification.actionUrl)}
+      >
+        {notification.actionText}
+      </Button>
+    </div>
+    <Badge variant={getPriorityVariant(notification.priority)}>
+      {notification.priority}
+    </Badge>
+  </div>
+</NotificationItem>
 ```
 
 **UX Best Practices:**
+- Use existing notification preferences/settings
+- Maintain consistent bell badge count behavior
+- Group federal notifications in dropdown
 - Batch non-urgent notifications
-- Respect quiet hours (no overnight pushes)
+- Respect user's existing quiet hours settings
 - One-click unsubscribe per notification type
 - Preview in notification (first 100 chars)
+- Mark as read/unread functionality
 
 ### 1.3 Daily Brief Integration
 
