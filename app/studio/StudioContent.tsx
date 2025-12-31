@@ -19,6 +19,8 @@ import {
   Wand2,
   Eye,
   Loader2,
+  Library,
+  Plus,
 } from 'lucide-react';
 
 // Import template presets
@@ -44,6 +46,7 @@ import {
   EnrichmentOptionsPanel,
   ContentPreview,
   GenerationProgress,
+  StudioLibrary,
   getDefaultEnrichmentOptions,
   detectSubjectType,
   type DataSource,
@@ -54,6 +57,7 @@ import {
 // Import generation hook
 import { useReportGenerator, type GammaOptions } from '@/hooks/useReportGenerator';
 
+type StudioView = 'library' | 'create';
 type StudioStep = 'template' | 'data' | 'enrich' | 'preview';
 
 const STEPS: { id: StudioStep; label: string; description: string }[] = [
@@ -66,6 +70,7 @@ const STEPS: { id: StudioStep; label: string; description: string }[] = [
 export default function StudioContent() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [view, setView] = useState<StudioView>('library');
   const [currentStep, setCurrentStep] = useState<StudioStep>('template');
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -305,6 +310,26 @@ export default function StudioContent() {
     }
   };
 
+  // Switch to create mode
+  const handleCreateNew = useCallback(() => {
+    setView('create');
+    setCurrentStep('template');
+    setSelectedTemplate(null);
+    setSelectedDataSource(null);
+    setShowPreview(false);
+    reset();
+  }, [reset]);
+
+  // Switch back to library
+  const handleBackToLibrary = useCallback(() => {
+    setView('library');
+    setCurrentStep('template');
+    setSelectedTemplate(null);
+    setSelectedDataSource(null);
+    setShowPreview(false);
+    reset();
+  }, [reset]);
+
   const handleNext = () => {
     if (currentStep === 'template' && selectedTemplate) {
       setCurrentStep('data');
@@ -331,54 +356,88 @@ export default function StudioContent() {
       {/* Header */}
       <div className="border-b bg-card/50">
         <div className="container max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-              <Sparkles className="h-5 w-5 text-primary-foreground" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+                <Sparkles className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold">Hakivo Studio</h1>
+                <p className="text-sm text-muted-foreground">
+                  {view === 'library'
+                    ? 'Your generated documents'
+                    : 'Create professional documents from your legislative data'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold">Hakivo Studio</h1>
-              <p className="text-sm text-muted-foreground">
-                Create professional documents from your legislative data
-              </p>
+            {/* View Toggle */}
+            <div className="flex gap-2">
+              <Button
+                variant={view === 'library' ? 'default' : 'outline'}
+                size="sm"
+                onClick={handleBackToLibrary}
+                className="gap-2"
+              >
+                <Library className="h-4 w-4" />
+                <span className="hidden sm:inline">Library</span>
+              </Button>
+              <Button
+                variant={view === 'create' ? 'default' : 'outline'}
+                size="sm"
+                onClick={handleCreateNew}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Create</span>
+              </Button>
             </div>
           </div>
 
-          {/* Step Indicator */}
-          <div className="flex items-center gap-2">
-            {STEPS.map((step, index) => (
-              <div key={step.id} className="flex items-center">
-                <div
-                  className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
-                    currentStep === step.id
-                      ? 'bg-primary text-primary-foreground'
-                      : index < currentStepIndex
-                      ? 'bg-primary/20 text-primary'
-                      : 'bg-muted text-muted-foreground'
+          {/* Step Indicator - only show in create mode */}
+          {view === 'create' && (
+            <div className="flex items-center gap-2">
+              {STEPS.map((step, index) => (
+                <div key={step.id} className="flex items-center">
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
+                      currentStep === step.id
+                        ? 'bg-primary text-primary-foreground'
+                        : index < currentStepIndex
+                        ? 'bg-primary/20 text-primary'
+                        : 'bg-muted text-muted-foreground'
+                    )}
+                  >
+                    {index < currentStepIndex ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">
+                        {index + 1}
+                      </span>
+                    )}
+                    <span className="hidden sm:inline">{step.label}</span>
+                  </div>
+                  {index < STEPS.length - 1 && (
+                    <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground" />
                   )}
-                >
-                  {index < currentStepIndex ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">
-                      {index + 1}
-                    </span>
-                  )}
-                  <span className="hidden sm:inline">{step.label}</span>
                 </div>
-                {index < STEPS.length - 1 && (
-                  <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground" />
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main Content */}
       <div className="container max-w-6xl mx-auto px-4 py-8">
+        {/* Library View */}
+        {view === 'library' && (
+          <StudioLibrary
+            onCreateNew={handleCreateNew}
+          />
+        )}
+
         {/* Step 1: Template Selection */}
-        {currentStep === 'template' && (
+        {view === 'create' && currentStep === 'template' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-semibold mb-2">Choose a Template</h2>
@@ -471,7 +530,7 @@ export default function StudioContent() {
         )}
 
         {/* Step 2: Data Selection */}
-        {currentStep === 'data' && (
+        {view === 'create' && currentStep === 'data' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-semibold mb-2">Select Your Data Source</h2>
@@ -506,7 +565,7 @@ export default function StudioContent() {
         )}
 
         {/* Step 3: Enrich Content */}
-        {currentStep === 'enrich' && selectedDataSource && (
+        {view === 'create' && currentStep === 'enrich' && selectedDataSource && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-semibold mb-2">Enrich Your Content</h2>
@@ -539,7 +598,7 @@ export default function StudioContent() {
         )}
 
         {/* Step 4: Preview & Generate */}
-        {currentStep === 'preview' && selectedDataSource && (
+        {view === 'create' && currentStep === 'preview' && selectedDataSource && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -685,79 +744,81 @@ export default function StudioContent() {
           </div>
         )}
 
-        {/* Navigation Buttons */}
-        <div className="flex items-center justify-between mt-8 pt-6 border-t">
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            disabled={currentStep === 'template' || isGenerating}
-            className="gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-
-          {currentStep === 'preview' ? (
-            <div className="flex items-center gap-2">
-              {isCompleted && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    reset();
-                    setCurrentStep('template');
-                    setSelectedTemplate(null);
-                    setSelectedDataSource(null);
-                    setShowPreview(false);
-                  }}
-                  className="gap-2"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Create Another
-                </Button>
-              )}
-              {!isCompleted && (
-                <Button
-                  onClick={handleGenerate}
-                  disabled={isGenerating}
-                  className="gap-2"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Wand2 className="h-4 w-4" />
-                      Generate Document
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-          ) : (
+        {/* Navigation Buttons - only show in create mode */}
+        {view === 'create' && (
+          <div className="flex items-center justify-between mt-8 pt-6 border-t">
             <Button
-              onClick={handleNext}
-              disabled={
-                (currentStep === 'template' && !selectedTemplate) ||
-                (currentStep === 'data' && !selectedDataSource)
-              }
+              variant="outline"
+              onClick={currentStep === 'template' ? handleBackToLibrary : handleBack}
+              disabled={isGenerating}
               className="gap-2"
             >
-              {currentStep === 'enrich' ? (
-                <>
-                  Preview Document
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              ) : (
-                <>
-                  Continue
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
+              <ArrowLeft className="h-4 w-4" />
+              {currentStep === 'template' ? 'Library' : 'Back'}
             </Button>
-          )}
-        </div>
+
+            {currentStep === 'preview' ? (
+              <div className="flex items-center gap-2">
+                {isCompleted && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      reset();
+                      setCurrentStep('template');
+                      setSelectedTemplate(null);
+                      setSelectedDataSource(null);
+                      setShowPreview(false);
+                    }}
+                    className="gap-2"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Create Another
+                  </Button>
+                )}
+                {!isCompleted && (
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="gap-2"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="h-4 w-4" />
+                        Generate Document
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Button
+                onClick={handleNext}
+                disabled={
+                  (currentStep === 'template' && !selectedTemplate) ||
+                  (currentStep === 'data' && !selectedDataSource)
+                }
+                className="gap-2"
+              >
+                {currentStep === 'enrich' ? (
+                  <>
+                    Preview Document
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

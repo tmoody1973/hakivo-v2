@@ -1,10 +1,27 @@
 'use client';
 
-import { FC, useState } from 'react';
+import { FC, useState, useEffect, useCallback } from 'react';
 import { ErrorState } from "@/components/ui/error-state";
 import { useOnline } from "@/lib/hooks/use-online";
 import { useSubscription } from "@/lib/subscription/subscription-context";
-import { Crown, Check, Zap, Bell, FileText, Users, Bookmark, Loader2 } from 'lucide-react';
+import { useAuth } from "@/lib/auth/auth-context";
+import { Crown, Check, Zap, Bell, FileText, Users, Bookmark, Loader2, ExternalLink, Download, Presentation, Globe, RefreshCw, FolderOpen } from 'lucide-react';
+
+/**
+ * Document type from gamma_documents table
+ */
+interface GammaDocument {
+  id: string;
+  gamma_url: string | null;
+  gamma_thumbnail_url: string | null;
+  title: string;
+  format: 'presentation' | 'document' | 'webpage';
+  card_count: number;
+  pdf_url: string | null;
+  pptx_url: string | null;
+  status: string;
+  created_at: number;
+}
 
 const POLICY_INTERESTS = [
   { id: 'environment-energy', label: 'Environment & Energy', icon: '🌱' },
@@ -30,6 +47,17 @@ interface SettingsPageClientProps {
   initialInterests?: string[];
 }
 
+/**
+ * Format timestamp to readable date
+ */
+function formatDate(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
 export const SettingsPageClient: FC<SettingsPageClientProps> = ({
   initialFirstName = 'Jane',
   initialLastName = 'Doe',
@@ -43,6 +71,47 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isOnline = useOnline();
+  const { accessToken } = useAuth();
+
+  // Documents state
+  const [documents, setDocuments] = useState<GammaDocument[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+
+  // Fetch documents when documents tab is active
+  const fetchDocuments = useCallback(async () => {
+    if (!accessToken) return;
+
+    setIsLoadingDocs(true);
+    setDocsError(null);
+
+    try {
+      const response = await fetch('/api/gamma/documents', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load documents');
+      }
+
+      const data = await response.json();
+      setDocuments(data.documents || []);
+    } catch (err) {
+      console.error('[Settings] Error fetching documents:', err);
+      setDocsError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setIsLoadingDocs(false);
+    }
+  }, [accessToken]);
+
+  // Load documents when tab changes
+  useEffect(() => {
+    if (activeTab === 'documents') {
+      fetchDocuments();
+    }
+  }, [activeTab, fetchDocuments]);
 
   // Subscription state
   const {
@@ -246,6 +315,17 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
             }`}
           >
             Audio
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`px-3 py-2 text-sm font-medium rounded-md text-left flex items-center gap-2 ${
+              activeTab === 'documents'
+                ? 'bg-accent text-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            <Presentation className="w-4 h-4" />
+            Documents
           </button>
           <button
             onClick={() => setActiveTab('account')}
@@ -843,6 +923,148 @@ export const SettingsPageClient: FC<SettingsPageClientProps> = ({
                   {isSaving ? 'Saving...' : 'Save Settings'}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Documents Tab */}
+          {activeTab === 'documents' && (
+            <div className="rounded-lg border bg-card p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold mb-1">Generated Documents</h2>
+                  <p className="text-sm text-muted-foreground">
+                    View and access your Gamma documents
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={fetchDocuments}
+                    disabled={isLoadingDocs}
+                    className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingDocs ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                  <a
+                    href="/studio"
+                    className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Create New
+                  </a>
+                </div>
+              </div>
+
+              {/* Loading State */}
+              {isLoadingDocs && (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {/* Error State */}
+              {docsError && !isLoadingDocs && (
+                <div className="text-center py-8">
+                  <p className="text-destructive mb-2">{docsError}</p>
+                  <button
+                    onClick={fetchDocuments}
+                    className="text-sm text-primary hover:underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {/* Empty State */}
+              {!isLoadingDocs && !docsError && documents.length === 0 && (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 rounded-2xl bg-muted mx-auto flex items-center justify-center mb-4">
+                    <FolderOpen className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-medium mb-2">No Documents Yet</h3>
+                  <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                    Create professional documents from your legislative data in Hakivo Studio.
+                  </p>
+                  <a
+                    href="/studio"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Go to Studio
+                  </a>
+                </div>
+              )}
+
+              {/* Documents List */}
+              {!isLoadingDocs && !docsError && documents.length > 0 && (
+                <div className="space-y-4">
+                  {documents.map((doc) => {
+                    const FormatIcon = doc.format === 'presentation' ? Presentation : doc.format === 'webpage' ? Globe : FileText;
+                    return (
+                      <div
+                        key={doc.id}
+                        className="flex items-start gap-4 p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                      >
+                        {/* Thumbnail */}
+                        <div className="w-24 h-16 rounded overflow-hidden bg-muted flex-shrink-0">
+                          {doc.gamma_thumbnail_url ? (
+                            <img
+                              src={doc.gamma_thumbnail_url}
+                              alt={doc.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <FormatIcon className="h-6 w-6 text-muted-foreground/50" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium line-clamp-1">{doc.title}</h3>
+                          <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+                            <span className="flex items-center gap-1 capitalize">
+                              <FormatIcon className="h-3.5 w-3.5" />
+                              {doc.format}
+                            </span>
+                            {doc.card_count > 0 && (
+                              <span>{doc.card_count} slides</span>
+                            )}
+                            <span>{formatDate(doc.created_at)}</span>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {doc.gamma_url && (
+                            <a
+                              href={doc.gamma_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent flex items-center gap-1.5"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              View in Gamma
+                            </a>
+                          )}
+                          {doc.pdf_url && (
+                            <a
+                              href={doc.pdf_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 text-sm border rounded-md hover:bg-accent flex items-center gap-1.5"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              PDF
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

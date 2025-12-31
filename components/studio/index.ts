@@ -9,3 +9,4 @@ export {
 export { ContentPreview } from './ContentPreview';
 export { GenerationProgress } from './GenerationProgress';
 export { ResultViewer, ResultCard } from './ResultViewer';
+export { StudioLibrary, type GammaDocument } from './StudioLibrary';
