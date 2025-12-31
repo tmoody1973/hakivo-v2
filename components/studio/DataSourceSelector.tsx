@@ -212,8 +212,9 @@ export function DataSourceSelector({ onSelect, selectedSource }: DataSourceSelec
       'hres': 'H.Res.',
       'sres': 'S.Res.',
     };
-    const formattedType = typeMap[bill.type.toLowerCase()] || bill.type.toUpperCase();
-    const formattedNumber = `${formattedType} ${bill.number}`;
+    const billType = bill.type || 'bill';
+    const formattedType = typeMap[billType.toLowerCase()] || billType.toUpperCase();
+    const formattedNumber = `${formattedType} ${bill.number || ''}`;
 
     onSelect({
       type: 'search',
@@ -523,7 +524,8 @@ export function DataSourceSelector({ onSelect, selectedSource }: DataSourceSelec
                         'hres': 'H.Res.',
                         'sres': 'S.Res.',
                       };
-                      const formattedType = typeMap[bill.type.toLowerCase()] || bill.type.toUpperCase();
+                      const billType = bill.type || 'bill';
+                      const formattedType = typeMap[billType.toLowerCase()] || billType.toUpperCase();
 
                       return (
                         <div
