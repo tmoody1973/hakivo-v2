@@ -22,11 +22,27 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const response = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
       method: 'GET',
-      headers: { 'X-API-KEY': apiKey },
+      headers: {
+        'X-API-KEY': apiKey,
+        'Accept': 'application/json',
+      },
     });
 
+    // Check content type before parsing
+    const contentType = response.headers.get('content-type') || '';
+
     if (!response.ok) {
-      throw new Error(`Gamma API error: ${response.status}`);
+      // Try to get error details
+      const errorText = await response.text();
+      console.error(`[API] Gamma API error ${response.status}:`, errorText.substring(0, 200));
+      throw new Error(`Gamma API error: ${response.status} - ${response.statusText}`);
+    }
+
+    // Handle HTML responses (error pages)
+    if (!contentType.includes('application/json')) {
+      const responseText = await response.text();
+      console.error(`[API] Gamma returned non-JSON (${contentType}):`, responseText.substring(0, 200));
+      throw new Error(`Gamma API returned invalid response type: ${contentType}. The generation ID may be invalid.`);
     }
 
     const result = await response.json();
