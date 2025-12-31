@@ -17,8 +17,8 @@ import {
   FolderOpen,
   AlertCircle,
   RefreshCw,
-  Trash2,
   Eye,
+  ArrowLeft,
 } from 'lucide-react';
 
 /**
@@ -64,19 +64,37 @@ const STATUS_COLORS = {
 };
 
 /**
- * Extract presentation ID from Gamma URL for embed
- * Note: Gamma uses Iframely for embedding. Direct embed URLs don't work.
- * We'll use the share/present mode instead.
+ * Convert Gamma docs URL to embed URL for iframe preview
+ * Handles two URL formats:
+ * 1. With title: https://gamma.app/docs/Texas-Redefines-Privacy-s57ul9u5xrcwq68?mode=doc
+ * 2. Without title: https://gamma.app/docs/l5nvus9p46bj53e
+ * Output: https://gamma.app/embed/{docId}
  */
-function getPresentUrl(gammaUrl: string | null): string | null {
+function getEmbedUrl(gammaUrl: string | null): string | null {
   if (!gammaUrl) return null;
 
   try {
-    // Gamma URLs look like: https://gamma.app/docs/Title-abc123xyz
-    // Present mode URL: https://gamma.app/docs/Title-abc123xyz?mode=present
     const url = new URL(gammaUrl);
-    url.searchParams.set('mode', 'present');
-    return url.toString();
+    const pathParts = url.pathname.split('/');
+    // Path is like /docs/Title-Here-docId or /docs/docId
+    const docPath = pathParts[pathParts.length - 1];
+
+    // Check if URL has title (contains hyphen)
+    const lastHyphenIndex = docPath.lastIndexOf('-');
+
+    let docId: string;
+    if (lastHyphenIndex === -1) {
+      // No hyphen - the entire path is the doc ID
+      // e.g., /docs/l5nvus9p46bj53e
+      docId = docPath;
+    } else {
+      // Has hyphen - doc ID is after the last hyphen
+      // e.g., /docs/Title-Here-s57ul9u5xrcwq68
+      docId = docPath.substring(lastHyphenIndex + 1);
+    }
+
+    if (!docId) return null;
+    return `https://gamma.app/embed/${docId}`;
   } catch {
     return null;
   }
@@ -109,6 +127,7 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
   const [documents, setDocuments] = useState<GammaDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<GammaDocument | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     if (!accessToken) return;
@@ -155,16 +174,15 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
   };
 
   const handlePreview = (doc: GammaDocument) => {
-    // Open in Gamma's present mode for a fullscreen preview
-    const presentUrl = getPresentUrl(doc.gamma_url);
-    if (presentUrl) {
-      window.open(presentUrl, '_blank');
-    } else if (doc.gamma_url) {
-      window.open(doc.gamma_url, '_blank');
-    }
+    // Set selected doc to show iframe preview
+    setSelectedDoc(doc);
     if (onSelectDocument) {
       onSelectDocument(doc);
     }
+  };
+
+  const handleClosePreview = () => {
+    setSelectedDoc(null);
   };
 
   // Loading state
@@ -206,6 +224,86 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
           <FileText className="h-4 w-4" />
           Create Your First Document
         </Button>
+      </div>
+    );
+  }
+
+  // Preview mode - show iframe when a document is selected
+  if (selectedDoc) {
+    const embedUrl = getEmbedUrl(selectedDoc.gamma_url);
+    const FormatIcon = FORMAT_ICONS[selectedDoc.format] || FileText;
+
+    return (
+      <div className={cn('space-y-4', className)}>
+        {/* Header with back button */}
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={handleClosePreview} className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Documents
+          </Button>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold line-clamp-1">{selectedDoc.title}</h2>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <FormatIcon className="h-4 w-4" />
+              <span className="capitalize">{selectedDoc.format}</span>
+              {selectedDoc.card_count > 0 && (
+                <span>• {selectedDoc.card_count} slides</span>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {selectedDoc.gamma_url && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => handleViewInGamma(selectedDoc)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open in Gamma
+              </Button>
+            )}
+            {selectedDoc.pdf_url && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => handleDownload(selectedDoc, 'pdf')}
+              >
+                <Download className="h-4 w-4" />
+                PDF
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Iframe Preview */}
+        {embedUrl ? (
+          <div className="relative w-full aspect-video bg-muted rounded-lg overflow-hidden border">
+            <iframe
+              src={embedUrl}
+              className="absolute inset-0 w-full h-full"
+              allow="fullscreen"
+              title={selectedDoc.title}
+            />
+          </div>
+        ) : (
+          <div className="w-full aspect-video bg-muted rounded-lg flex items-center justify-center">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground/50 mb-2" />
+              <p className="text-muted-foreground">Preview not available</p>
+              {selectedDoc.gamma_url && (
+                <Button
+                  variant="link"
+                  className="mt-2"
+                  onClick={() => handleViewInGamma(selectedDoc)}
+                >
+                  Open in Gamma
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
