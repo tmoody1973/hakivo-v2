@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Eye,
   ArrowLeft,
+  Trash2,
 } from 'lucide-react';
 
 /**
@@ -140,6 +141,7 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<GammaDocument | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchDocuments = useCallback(async () => {
     if (!accessToken) return;
@@ -195,6 +197,39 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
 
   const handleClosePreview = () => {
     setSelectedDoc(null);
+  };
+
+  const handleDelete = async (doc: GammaDocument, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (!accessToken) return;
+    if (!confirm(`Are you sure you want to delete "${stripMarkdown(doc.title)}"? This cannot be undone.`)) return;
+
+    setDeletingId(doc.id);
+    try {
+      const response = await fetch(`/api/gamma/documents/${doc.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.ok) {
+        setDocuments(prev => prev.filter(d => d.id !== doc.id));
+        // Close preview if we're deleting the selected doc
+        if (selectedDoc?.id === doc.id) {
+          setSelectedDoc(null);
+        }
+      } else {
+        alert('Failed to delete document. Please try again.');
+      }
+    } catch (error) {
+      console.error('[StudioLibrary] Error deleting document:', error);
+      alert('Failed to delete document. Please try again.');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   // Loading state
@@ -286,6 +321,21 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
                 PDF
               </Button>
             )}
+            {/* Delete button */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
+              onClick={() => handleDelete(selectedDoc)}
+              disabled={deletingId === selectedDoc.id}
+            >
+              {deletingId === selectedDoc.id ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Delete
+            </Button>
           </div>
         </div>
 
@@ -439,6 +489,20 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
                       PDF
                     </Button>
                   )}
+                  {/* Delete button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={(e) => handleDelete(doc, e)}
+                    disabled={deletingId === doc.id}
+                  >
+                    {deletingId === doc.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
