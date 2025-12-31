@@ -34,6 +34,12 @@ export function PublicHeader() {
             Pricing
           </Link>
           <Link
+            href="/faq"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
+          >
+            FAQ
+          </Link>
+          <Link
             href="/blog"
             className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-2 hidden sm:block"
           >

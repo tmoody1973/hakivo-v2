@@ -289,46 +289,9 @@ export default function FAQPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/90 backdrop-blur-xl">
-        <div className="flex h-16 items-center justify-between px-6 md:px-8 max-w-7xl mx-auto">
-          <Link href="/" className="flex items-center">
-            <HakivoLogo height={32} className="text-primary" showBeta />
-          </Link>
-          <nav className="flex items-center gap-3">
-            <Link
-              href="/podcast"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2 hidden sm:block"
-            >
-              Podcast
-            </Link>
-            <Link
-              href="/about"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2 hidden sm:block"
-            >
-              About
-            </Link>
-            <Link
-              href="/pricing"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2 hidden sm:block"
-            >
-              Pricing
-            </Link>
-            <Link
-              href="/auth/signin"
-              className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2"
-            >
-              Log In
-            </Link>
-            <Button asChild className="rounded-full px-5">
-              <Link href="/auth/signup">Get Started</Link>
-            </Button>
-          </nav>
-        </div>
-      </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-16 px-6 md:px-8">
+      <section className="pt-16 pb-16 px-6 md:px-8">
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-8">
             <HelpCircle className="w-4 h-4" />

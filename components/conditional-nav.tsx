@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth/auth-context"
 
 // Routes that are publicly accessible without authentication
 // Includes shareable content pages (bills, briefs) for public sharing
-const PUBLIC_ROUTES = ['/podcast', '/pricing', '/about', '/bills', '/briefs', '/blog']
+const PUBLIC_ROUTES = ['/podcast', '/pricing', '/about', '/faq', '/bills', '/briefs', '/blog']
 
 export function ConditionalNav() {
   const pathname = usePathname()
