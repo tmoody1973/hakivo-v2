@@ -101,6 +101,18 @@ function getEmbedUrl(gammaUrl: string | null): string | null {
 }
 
 /**
+ * Strip markdown formatting from title
+ */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/(\*\*|__)(.*?)\1/g, '$2') // Bold
+    .replace(/(\*|_)(.*?)\1/g, '$2')    // Italic
+    .replace(/^\*\*\s*/, '')            // Leading **
+    .replace(/\s*\*\*$/, '')            // Trailing **
+    .trim();
+}
+
+/**
  * Format timestamp to relative time
  */
 function formatRelativeTime(timestamp: number): string {
@@ -242,7 +254,7 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
             Back to Documents
           </Button>
           <div className="flex-1">
-            <h2 className="text-lg font-semibold line-clamp-1">{selectedDoc.title}</h2>
+            <h2 className="text-lg font-semibold line-clamp-1">{stripMarkdown(selectedDoc.title)}</h2>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <FormatIcon className="h-4 w-4" />
               <span className="capitalize">{selectedDoc.format}</span>
@@ -284,7 +296,7 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
               src={embedUrl}
               className="absolute inset-0 w-full h-full"
               allow="fullscreen"
-              title={selectedDoc.title}
+              title={stripMarkdown(selectedDoc.title)}
             />
           </div>
         ) : (
@@ -348,7 +360,7 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
                 {doc.gamma_thumbnail_url ? (
                   <img
                     src={doc.gamma_thumbnail_url}
-                    alt={doc.title}
+                    alt={stripMarkdown(doc.title)}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -380,7 +392,7 @@ export function StudioLibrary({ onCreateNew, onSelectDocument, className }: Stud
 
               <CardContent className="p-4">
                 {/* Title */}
-                <h3 className="font-medium line-clamp-2 mb-2">{doc.title}</h3>
+                <h3 className="font-medium line-clamp-2 mb-2">{stripMarkdown(doc.title)}</h3>
 
                 {/* Meta info */}
                 <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
