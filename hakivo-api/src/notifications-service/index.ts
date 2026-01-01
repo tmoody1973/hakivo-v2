@@ -7,32 +7,15 @@
 
 import { Service } from '@liquidmetal-ai/raindrop-framework';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Middleware
+// Middleware - use Hono's built-in CORS
+app.use('*', cors());
 app.use('*', logger());
-
-// Manual CORS middleware
-app.use('*', async (c, next) => {
-  const origin = c.req.header('Origin') || '';
-  const allowedOrigins = ['http://localhost:3000', 'https://hakivo.com', 'https://www.hakivo.com', 'https://hakivo-v2.netlify.app'];
-
-  if (allowedOrigins.includes(origin) || origin.endsWith('.netlify.app')) {
-    c.header('Access-Control-Allow-Origin', origin);
-    c.header('Access-Control-Allow-Credentials', 'true');
-    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  }
-
-  if (c.req.method === 'OPTIONS') {
-    return c.text('', 200);
-  }
-
-  await next();
-});
 
 // Helper to decode URL-safe base64 (used by JWTs)
 function decodeBase64Url(str: string): string {

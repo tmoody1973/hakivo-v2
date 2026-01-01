@@ -29,8 +29,8 @@ export interface NotificationCounts {
   general: number;
 }
 
-const NOTIFICATIONS_API_URL = process.env.NEXT_PUBLIC_NOTIFICATIONS_API_URL ||
-  'https://svc-01kdx37eqyyqj5gjxkxhjynwsf.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
+// Use local API proxy to avoid CORS issues with Raindrop services
+const NOTIFICATIONS_API_URL = '/api/notifications';
 
 export function useNotifications() {
   const { accessToken, isAuthenticated } = useAuth();
@@ -44,7 +44,7 @@ export function useNotifications() {
     if (!isAuthenticated || !accessToken) return;
 
     try {
-      const response = await fetch(`${NOTIFICATIONS_API_URL}/notifications/count`, {
+      const response = await fetch(`${NOTIFICATIONS_API_URL}/count`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
@@ -78,7 +78,7 @@ export function useNotifications() {
       if (options?.limit) params.set('limit', options.limit.toString());
 
       const response = await fetch(
-        `${NOTIFICATIONS_API_URL}/notifications?${params.toString()}`,
+        `${NOTIFICATIONS_API_URL}?${params.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -109,7 +109,7 @@ export function useNotifications() {
 
     try {
       const response = await fetch(
-        `${NOTIFICATIONS_API_URL}/notifications/${notificationId}/read`,
+        `${NOTIFICATIONS_API_URL}/${notificationId}`,
         {
           method: 'POST',
           headers: {
@@ -138,7 +138,7 @@ export function useNotifications() {
 
     try {
       const response = await fetch(
-        `${NOTIFICATIONS_API_URL}/notifications/read-all`,
+        NOTIFICATIONS_API_URL,
         {
           method: 'POST',
           headers: {
@@ -165,7 +165,7 @@ export function useNotifications() {
 
     try {
       const response = await fetch(
-        `${NOTIFICATIONS_API_URL}/notifications/${notificationId}`,
+        `${NOTIFICATIONS_API_URL}/${notificationId}`,
         {
           method: 'DELETE',
           headers: {
