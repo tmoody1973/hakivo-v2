@@ -177,7 +177,8 @@ export default class extends Each<FederalRegisterSyncMessage, Env> {
               doc.effective_on || null,
               doc.publication_date,
               JSON.stringify(doc.agencies || []),
-              JSON.stringify(doc.agency_names || []),
+              // Extract agency names from agencies array if agency_names is null
+              JSON.stringify(doc.agency_names || (doc.agencies?.map((a: any) => a.name) || [])),
               JSON.stringify(doc.topics || []),
               doc.significant ? 1 : 0,
               JSON.stringify(doc.cfr_references || []),
@@ -332,6 +333,8 @@ export default class extends Each<FederalRegisterSyncMessage, Env> {
 
     try {
       // Convert doc to FederalRegisterDocument for scoring
+      // Extract agency names from agencies array if agency_names is null
+      const agencyNames = doc.agency_names || (doc.agencies?.map((a: any) => a.name) || []);
       const federalDoc: FederalRegisterDocument = {
         document_number: doc.document_number,
         type: doc.type,
@@ -341,7 +344,7 @@ export default class extends Each<FederalRegisterSyncMessage, Env> {
         action: doc.action,
         publication_date: doc.publication_date,
         agencies: doc.agencies || [],
-        agency_names: doc.agency_names || [],
+        agency_names: agencyNames,
         topics: doc.topics || [],
         significant: doc.significant,
         comments_close_on: doc.comments_close_on,
