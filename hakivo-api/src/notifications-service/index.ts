@@ -34,6 +34,18 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+// Helper to decode URL-safe base64 (used by JWTs)
+function decodeBase64Url(str: string): string {
+  // Convert URL-safe base64 to standard base64
+  let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  // Add padding if needed
+  const padding = base64.length % 4;
+  if (padding) {
+    base64 += '='.repeat(4 - padding);
+  }
+  return atob(base64);
+}
+
 // Helper to extract user ID from auth header
 function getUserIdFromAuth(authHeader: string | undefined): string | null {
   if (!authHeader?.startsWith('Bearer ')) return null;
@@ -41,9 +53,11 @@ function getUserIdFromAuth(authHeader: string | undefined): string | null {
     const token = authHeader.substring(7);
     const parts = token.split('.');
     if (parts.length < 2 || !parts[1]) return null;
-    const payload = JSON.parse(atob(parts[1]));
+    // Use URL-safe base64 decoding for JWT payload
+    const payload = JSON.parse(decodeBase64Url(parts[1]));
     return payload.sub || payload.userId || null;
-  } catch {
+  } catch (e) {
+    console.error('[getUserIdFromAuth] Error decoding token:', e);
     return null;
   }
 }
