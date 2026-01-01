@@ -33,7 +33,7 @@ const NOTIFICATIONS_API_URL = process.env.NEXT_PUBLIC_NOTIFICATIONS_API_URL ||
   'https://svc-01kdx37eqyyqj5gjxkxhjynwsf.01k66gywmx8x4r0w31fdjjfekf.lmapp.run';
 
 export function useNotifications() {
-  const { token, isAuthenticated } = useAuth();
+  const { accessToken, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState<FederalNotification[]>([]);
   const [counts, setCounts] = useState<NotificationCounts>({ unread: 0, urgent: 0, federal: 0, general: 0 });
   const [isLoading, setIsLoading] = useState(false);
@@ -41,12 +41,12 @@ export function useNotifications() {
 
   // Fetch notification counts (lightweight, for badge)
   const fetchCounts = useCallback(async () => {
-    if (!isAuthenticated || !token) return;
+    if (!isAuthenticated || !accessToken) return;
 
     try {
       const response = await fetch(`${NOTIFICATIONS_API_URL}/notifications/count`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
       });
@@ -58,7 +58,7 @@ export function useNotifications() {
     } catch (err) {
       console.error('Failed to fetch notification counts:', err);
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, accessToken]);
 
   // Fetch full notifications list
   const fetchNotifications = useCallback(async (options?: {
@@ -66,7 +66,7 @@ export function useNotifications() {
     unreadOnly?: boolean;
     limit?: number;
   }) => {
-    if (!isAuthenticated || !token) return;
+    if (!isAuthenticated || !accessToken) return;
 
     setIsLoading(true);
     setError(null);
@@ -81,7 +81,7 @@ export function useNotifications() {
         `${NOTIFICATIONS_API_URL}/notifications?${params.toString()}`,
         {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -101,11 +101,11 @@ export function useNotifications() {
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, accessToken]);
 
   // Mark single notification as read
   const markAsRead = useCallback(async (notificationId: string) => {
-    if (!isAuthenticated || !token) return;
+    if (!isAuthenticated || !accessToken) return;
 
     try {
       const response = await fetch(
@@ -113,7 +113,7 @@ export function useNotifications() {
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -130,11 +130,11 @@ export function useNotifications() {
     } catch (err) {
       console.error('Failed to mark notification as read:', err);
     }
-  }, [isAuthenticated, token, fetchCounts]);
+  }, [isAuthenticated, accessToken, fetchCounts]);
 
   // Mark all notifications as read
   const markAllAsRead = useCallback(async () => {
-    if (!isAuthenticated || !token) return;
+    if (!isAuthenticated || !accessToken) return;
 
     try {
       const response = await fetch(
@@ -142,7 +142,7 @@ export function useNotifications() {
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -157,11 +157,11 @@ export function useNotifications() {
     } catch (err) {
       console.error('Failed to mark all notifications as read:', err);
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, accessToken]);
 
   // Delete notification
   const deleteNotification = useCallback(async (notificationId: string) => {
-    if (!isAuthenticated || !token) return;
+    if (!isAuthenticated || !accessToken) return;
 
     try {
       const response = await fetch(
@@ -169,7 +169,7 @@ export function useNotifications() {
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
         }
@@ -184,7 +184,7 @@ export function useNotifications() {
     } catch (err) {
       console.error('Failed to delete notification:', err);
     }
-  }, [isAuthenticated, token, fetchCounts]);
+  }, [isAuthenticated, accessToken, fetchCounts]);
 
   // Initial fetch on mount
   useEffect(() => {
