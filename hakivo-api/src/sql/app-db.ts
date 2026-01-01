@@ -190,6 +190,159 @@ CREATE TABLE IF NOT EXISTS district_cache (
   cached_at INTEGER NOT NULL
 );
 
+-- Federal Register Documents table (main storage for all federal documents)
+CREATE TABLE IF NOT EXISTS federal_documents (
+  id TEXT PRIMARY KEY,
+  document_number TEXT UNIQUE NOT NULL,
+  type TEXT NOT NULL,
+  subtype TEXT,
+  title TEXT NOT NULL,
+  abstract TEXT,
+  action TEXT,
+  dates TEXT,
+  effective_on TEXT,
+  publication_date TEXT NOT NULL,
+  agencies TEXT NOT NULL,
+  agency_names TEXT NOT NULL,
+  topics TEXT,
+  significant INTEGER DEFAULT 0,
+  cfr_references TEXT,
+  docket_ids TEXT,
+  html_url TEXT NOT NULL,
+  pdf_url TEXT,
+  full_text_xml_url TEXT,
+  raw_text_url TEXT,
+  page_length INTEGER DEFAULT 0,
+  comments_close_on TEXT,
+  comment_url TEXT,
+  start_page INTEGER,
+  end_page INTEGER,
+  synced_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Executive Orders table (detailed EO tracking with presidential info)
+CREATE TABLE IF NOT EXISTS executive_orders (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  executive_order_number TEXT UNIQUE NOT NULL,
+  president_name TEXT NOT NULL,
+  president_identifier TEXT NOT NULL,
+  signing_date TEXT,
+  title TEXT NOT NULL,
+  abstract TEXT,
+  full_text TEXT,
+  implementation_status TEXT DEFAULT 'active',
+  implementation_notes TEXT,
+  revoked_by TEXT,
+  revokes TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES federal_documents(id) ON DELETE CASCADE
+);
+
+-- User Document Interests table (personalization and tracking)
+CREATE TABLE IF NOT EXISTS user_federal_interests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  interest_type TEXT NOT NULL,
+  tracked_at INTEGER NOT NULL,
+  notifications_enabled INTEGER DEFAULT 1,
+  notes TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (document_id) REFERENCES federal_documents(id) ON DELETE CASCADE
+);
+
+-- Public Comment Opportunities table (track open comment periods)
+CREATE TABLE IF NOT EXISTS comment_opportunities (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  document_number TEXT NOT NULL,
+  title TEXT NOT NULL,
+  agency TEXT NOT NULL,
+  comment_url TEXT,
+  opens_on TEXT NOT NULL,
+  closes_on TEXT NOT NULL,
+  days_remaining INTEGER,
+  total_comments INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'open',
+  synced_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES federal_documents(id) ON DELETE CASCADE
+);
+
+-- User Comments table (track user-submitted comments)
+CREATE TABLE IF NOT EXISTS user_comments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  opportunity_id TEXT NOT NULL,
+  comment_text TEXT NOT NULL,
+  status TEXT DEFAULT 'draft',
+  submitted_at INTEGER,
+  confirmation_number TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (opportunity_id) REFERENCES comment_opportunities(id) ON DELETE CASCADE
+);
+
+-- Federal Agencies table (cache of agencies for filtering/display)
+CREATE TABLE IF NOT EXISTS federal_agencies (
+  id INTEGER PRIMARY KEY,
+  slug TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  short_name TEXT,
+  description TEXT,
+  parent_id INTEGER,
+  logo_url TEXT,
+  recent_articles_url TEXT,
+  synced_at INTEGER NOT NULL
+);
+
+-- User Agency Follows table (agencies user wants to track)
+CREATE TABLE IF NOT EXISTS user_agency_follows (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  agency_id INTEGER NOT NULL,
+  followed_at INTEGER NOT NULL,
+  notifications_enabled INTEGER DEFAULT 1,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (agency_id) REFERENCES federal_agencies(id) ON DELETE CASCADE
+);
+
+-- Federal Notifications table (federal-specific notifications)
+CREATE TABLE IF NOT EXISTS federal_notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  notification_type TEXT NOT NULL,
+  document_id TEXT,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  priority TEXT DEFAULT 'normal',
+  federal_data TEXT,
+  action_url TEXT,
+  read INTEGER DEFAULT 0,
+  auto_dismiss_at INTEGER,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (document_id) REFERENCES federal_documents(id) ON DELETE SET NULL
+);
+
+-- Federal Sync Log table (track sync job history)
+CREATE TABLE IF NOT EXISTS federal_sync_log (
+  id TEXT PRIMARY KEY,
+  sync_type TEXT NOT NULL,
+  documents_fetched INTEGER DEFAULT 0,
+  documents_stored INTEGER DEFAULT 0,
+  notifications_created INTEGER DEFAULT 0,
+  status TEXT NOT NULL,
+  error_message TEXT,
+  started_at INTEGER NOT NULL,
+  completed_at INTEGER
+);
+
 -- Indexes for performance optimization
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_tracked_bills_user_id ON tracked_bills(user_id);
@@ -211,6 +364,29 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expir
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_shared_threads_expires_at ON shared_threads(expires_at);
+
+-- Federal Register indexes
+CREATE INDEX IF NOT EXISTS idx_federal_documents_document_number ON federal_documents(document_number);
+CREATE INDEX IF NOT EXISTS idx_federal_documents_type ON federal_documents(type);
+CREATE INDEX IF NOT EXISTS idx_federal_documents_publication_date ON federal_documents(publication_date);
+CREATE INDEX IF NOT EXISTS idx_federal_documents_significant ON federal_documents(significant);
+CREATE INDEX IF NOT EXISTS idx_federal_documents_synced_at ON federal_documents(synced_at);
+CREATE INDEX IF NOT EXISTS idx_executive_orders_eo_number ON executive_orders(executive_order_number);
+CREATE INDEX IF NOT EXISTS idx_executive_orders_president ON executive_orders(president_identifier);
+CREATE INDEX IF NOT EXISTS idx_executive_orders_status ON executive_orders(implementation_status);
+CREATE INDEX IF NOT EXISTS idx_user_federal_interests_user_id ON user_federal_interests(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_federal_interests_document_id ON user_federal_interests(document_id);
+CREATE INDEX IF NOT EXISTS idx_comment_opportunities_closes_on ON comment_opportunities(closes_on);
+CREATE INDEX IF NOT EXISTS idx_comment_opportunities_status ON comment_opportunities(status);
+CREATE INDEX IF NOT EXISTS idx_user_comments_user_id ON user_comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_comments_status ON user_comments(status);
+CREATE INDEX IF NOT EXISTS idx_federal_agencies_slug ON federal_agencies(slug);
+CREATE INDEX IF NOT EXISTS idx_user_agency_follows_user_id ON user_agency_follows(user_id);
+CREATE INDEX IF NOT EXISTS idx_federal_notifications_user_id ON federal_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_federal_notifications_type ON federal_notifications(notification_type);
+CREATE INDEX IF NOT EXISTS idx_federal_notifications_read ON federal_notifications(read);
+CREATE INDEX IF NOT EXISTS idx_federal_sync_log_status ON federal_sync_log(status);
+CREATE INDEX IF NOT EXISTS idx_federal_sync_log_started_at ON federal_sync_log(started_at);
 `;
 
 export const tables = [
@@ -229,5 +405,15 @@ export const tables = [
   'email_verification_tokens',
   'rate_limits',
   'district_cache',
-  'shared_threads'
+  'shared_threads',
+  // Federal Register tables
+  'federal_documents',
+  'executive_orders',
+  'user_federal_interests',
+  'comment_opportunities',
+  'user_comments',
+  'federal_agencies',
+  'user_agency_follows',
+  'federal_notifications',
+  'federal_sync_log'
 ];

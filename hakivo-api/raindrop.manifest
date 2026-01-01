@@ -223,6 +223,14 @@ application "hakivo-prod" {
     visibility = "private"
   }
 
+  service "federal-register-client" {
+    visibility = "private"
+  }
+
+  service "federal-register-embedder" {
+    visibility = "private"
+  }
+
   service "podcast-generator" {
     visibility = "private"
   }
@@ -249,6 +257,12 @@ application "hakivo-prod" {
   observer "bill-indexing-observer" {
     source {
       queue = "bill-indexing-queue"
+    }
+  }
+
+  observer "federal-register-sync-observer" {
+    source {
+      queue = "federal-register-queue"
     }
   }
 
@@ -298,6 +312,11 @@ application "hakivo-prod" {
     cron = "0 10 * * *"
   }
 
+  task "federal-register-sync-scheduler" {
+    type = "cron"
+    cron = "0 11 * * *"
+  }
+
   // Message queues
   queue "brief-queue" {}
 
@@ -306,6 +325,8 @@ application "hakivo-prod" {
   queue "enrichment-queue" {}
 
   queue "bill-indexing-queue" {}
+
+  queue "federal-register-queue" {}
 
   // SQL databases
   sql_database "app-db" {}
@@ -339,6 +360,9 @@ application "hakivo-prod" {
 
   // SmartBucket for semantic search on legislation
   smartbucket "legislation-search" {}
+
+  // SmartBucket for Federal Register document search
+  smartbucket "federal-register-search" {}
 
   // SmartMemory for multi-layered AI memory
   smartmemory "civic-memory" {}

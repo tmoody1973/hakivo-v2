@@ -1,6 +1,7 @@
 import { Each, Message } from '@liquidmetal-ai/raindrop-framework';
 import { Env } from './raindrop.gen';
 import { getPolicyAreasForInterests, getKeywordsForInterests } from '../config/user-interests';
+import type { FederalRegisterDocument } from '../federal-register-client';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 /**
@@ -207,6 +208,21 @@ export default class extends Each<Body, Env> {
       console.log(`[STAGE-2c] No user state set, skipping state bills`);
     }
 
+    // ==================== STAGE 2d: FETCH FEDERAL REGISTER DOCUMENTS ====================
+    // Get recent executive orders, rules, and regulations matching user interests
+    let federalRegisterDocs: FederalRegisterBriefDoc[] = [];
+    console.log(`[STAGE-2d] Fetching Federal Register documents...`);
+    try {
+      federalRegisterDocs = await this.getFederalRegisterDocuments(policyInterests);
+      console.log(`[STAGE-2d] Got ${federalRegisterDocs.length} Federal Register documents. Elapsed: ${Date.now() - startTime}ms`);
+      if (federalRegisterDocs.length > 0) {
+        console.log(`[STAGE-2d] Types: ${federalRegisterDocs.map(d => d.type).join(', ')}`);
+      }
+    } catch (frError) {
+      console.error(`[STAGE-2d] Federal Register fetch FAILED (non-fatal):`, frError);
+      // Continue without Federal Register - non-fatal
+    }
+
     // ==================== STAGE 3: FETCH BILL ACTIONS ====================
     console.log(`[STAGE-3] Fetching bill actions...`);
     let billsWithActions: any[];
@@ -246,6 +262,26 @@ export default class extends Each<Body, Env> {
       };
     }
 
+    // ==================== STAGE 4.5: BILL RESOLUTION PIPELINE ====================
+    // Extract bill mentions from news and verify URLs via APIs
+    console.log(`[STAGE-4.5] Resolving bill mentions from news content...`);
+    let resolvedBills: ResolvedBill[] = [];
+    let verifiedBillsContext = '';
+
+    try {
+      const mentions = this.extractBillMentions(newsJSON, userState);
+      if (mentions.length > 0) {
+        resolvedBills = await this.resolveBillMentions(mentions);
+        verifiedBillsContext = this.buildVerifiedBillsContext(resolvedBills);
+        console.log(`[STAGE-4.5] Bill resolution complete. ${resolvedBills.filter(b => b.found).length} verified. Elapsed: ${Date.now() - startTime}ms`);
+      } else {
+        console.log(`[STAGE-4.5] No bill mentions found in news content. Elapsed: ${Date.now() - startTime}ms`);
+      }
+    } catch (resolveError) {
+      console.error(`[STAGE-4.5] Bill resolution failed (non-fatal):`, resolveError);
+      // Continue without verified bills - non-fatal
+    }
+
     // ==================== CHECKPOINT: SAVE CONTENT GATHERED ====================
     console.log(`[CHECKPOINT] Saving gathered content. Elapsed: ${Date.now() - startTime}ms`);
     await db.prepare('UPDATE briefs SET status = ? WHERE id = ?')
@@ -263,7 +299,8 @@ export default class extends Each<Body, Env> {
       district: userDistrict,
       repBillIds: Array.from(repBillIds),
       policyInterests,
-      stateBills // Include state legislature bills
+      stateBills, // Include state legislature bills
+      federalRegisterDocs // Include Federal Register documents (executive orders, rules, notices)
     };
 
     try {
@@ -279,11 +316,11 @@ export default class extends Each<Body, Env> {
     }
 
     // ==================== STAGE 6: GENERATE ARTICLE ====================
-    console.log(`[STAGE-6] Generating written article...`);
+    console.log(`[STAGE-6] Generating written article with ${verifiedBillsContext ? 'verified bills context' : 'no verified bills'}...`);
     let article: string = '';
     let wordCount: number = 0;
     try {
-      const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsJSON, headline, stateBills, userState);
+      const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsJSON, headline, stateBills, userState, verifiedBillsContext);
       article = articleResult.article;
       wordCount = articleResult.wordCount;
       console.log(`[STAGE-6] Generated article: ${wordCount} words. Elapsed: ${Date.now() - startTime}ms`);
@@ -1135,6 +1172,125 @@ export default class extends Each<Body, Env> {
   }
 
   /**
+   * Get Federal Register documents (executive orders, rules, proposed rules, notices)
+   * matching user policy interests from the last 14 days
+   */
+  private async getFederalRegisterDocuments(
+    interests: string[]
+  ): Promise<FederalRegisterBriefDoc[]> {
+    const db = this.env.APP_DB;
+
+    // Map user policy interests to Federal Register topics and agency keywords
+    const topicMap: Record<string, string[]> = {
+      'Commerce & Labor': ['commerce', 'trade', 'labor', 'employment', 'workforce', 'business'],
+      'Education & Science': ['education', 'science', 'research', 'technology', 'stem'],
+      'Economy & Finance': ['finance', 'banking', 'securities', 'treasury', 'economic'],
+      'Environment & Energy': ['environmental', 'energy', 'climate', 'epa', 'conservation'],
+      'Health & Social Welfare': ['health', 'medicare', 'medicaid', 'fda', 'cdc', 'welfare'],
+      'Defense & Security': ['defense', 'homeland', 'security', 'military', 'veteran'],
+      'Immigration': ['immigration', 'uscis', 'border', 'visa', 'asylum'],
+      'Foreign Affairs': ['foreign', 'state department', 'international', 'treaty'],
+      'Government': ['federal', 'agency', 'regulation', 'procurement'],
+      'Civil Rights': ['civil rights', 'discrimination', 'voting', 'eeoc']
+    };
+
+    // Build search keywords from interests
+    const keywords: string[] = [];
+    for (const interest of interests) {
+      const mapped = topicMap[interest];
+      if (mapped) {
+        keywords.push(...mapped);
+      }
+    }
+
+    try {
+      console.log(`[GET-FEDERAL-REGISTER] Searching for docs with ${keywords.length} keywords`);
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      // Build keyword conditions for title, abstract, topics, and agency_names
+      let whereConditions = [`publication_date >= ?`];
+      const params: (string | number)[] = [fourteenDaysAgo || ''];
+
+      if (keywords.length > 0) {
+        const keywordConditions = keywords.slice(0, 10).map(() =>
+          `(LOWER(title) LIKE ? OR LOWER(abstract) LIKE ? OR LOWER(topics) LIKE ? OR LOWER(agency_names) LIKE ?)`
+        ).join(' OR ');
+        whereConditions.push(`(${keywordConditions})`);
+        for (const kw of keywords.slice(0, 10)) {
+          const pattern = `%${kw.toLowerCase()}%`;
+          params.push(pattern, pattern, pattern, pattern);
+        }
+      }
+
+      // Prioritize: Executive orders first, then significant rules, then proposed rules with open comments
+      const result = await db
+        .prepare(`
+          SELECT
+            id, document_number, type, subtype, title, abstract, action,
+            dates, effective_on, publication_date, agencies, agency_names,
+            topics, significant, html_url, pdf_url, comments_close_on, comment_url
+          FROM federal_documents
+          WHERE ${whereConditions.join(' AND ')}
+          ORDER BY
+            CASE type
+              WHEN 'PRESDOCU' THEN 1
+              WHEN 'RULE' THEN 2
+              WHEN 'PRORULE' THEN 3
+              WHEN 'NOTICE' THEN 4
+              ELSE 5
+            END,
+            significant DESC,
+            publication_date DESC
+          LIMIT 5
+        `)
+        .bind(...params)
+        .all<{
+          id: string;
+          document_number: string;
+          type: string;
+          subtype: string | null;
+          title: string;
+          abstract: string | null;
+          action: string | null;
+          dates: string | null;
+          effective_on: string | null;
+          publication_date: string;
+          agencies: string;
+          agency_names: string;
+          topics: string | null;
+          significant: number;
+          html_url: string;
+          pdf_url: string | null;
+          comments_close_on: string | null;
+          comment_url: string | null;
+        }>();
+
+      console.log(`[GET-FEDERAL-REGISTER] Found ${result.results.length} matching documents`);
+
+      // Transform to brief doc format
+      return result.results.map(doc => ({
+        document_number: doc.document_number,
+        type: doc.type as 'RULE' | 'PRORULE' | 'NOTICE' | 'PRESDOCU',
+        title: doc.title,
+        abstract: doc.abstract,
+        action: doc.action,
+        effective_on: doc.effective_on,
+        publication_date: doc.publication_date,
+        agency_names: doc.agency_names,
+        topics: doc.topics,
+        significant: doc.significant === 1,
+        html_url: doc.html_url,
+        comments_close_on: doc.comments_close_on,
+        comment_url: doc.comment_url
+      }));
+
+    } catch (error) {
+      console.error(`[GET-FEDERAL-REGISTER] Failed to fetch Federal Register documents:`, error);
+      return [];
+    }
+  }
+
+  /**
    * Get recent actions for bills
    */
   private async getBillActions(bills: any[]): Promise<any[]> {
@@ -1273,6 +1429,7 @@ export default class extends Each<Body, Env> {
       repBillIds: string[];
       policyInterests: string[];
       stateBills: any[];
+      federalRegisterDocs: FederalRegisterBriefDoc[];
     }
   ): Promise<{
     script: string;
@@ -1351,6 +1508,33 @@ CHAMBER: ${bill.chamber || 'Unknown'}
 SUBJECTS: ${subjectStr}
 LATEST ACTION: ${bill.latest_action_date || 'Unknown'} - ${bill.latest_action_description || 'No action recorded'}
 URL: ${stateBillUrl}${textContent}${pdfNote}`;
+        }).join('\n')
+      : '';
+
+    // Format Federal Register documents (executive orders, rules, proposed rules, notices)
+    const federalRegisterText = personalization.federalRegisterDocs.length > 0
+      ? personalization.federalRegisterDocs.map((doc) => {
+          const typeLabel = {
+            'PRESDOCU': 'EXECUTIVE ORDER',
+            'RULE': 'FINAL RULE',
+            'PRORULE': 'PROPOSED RULE',
+            'NOTICE': 'NOTICE'
+          }[doc.type] || doc.type;
+
+          const commentsInfo = doc.comments_close_on
+            ? `\nCOMMENT PERIOD CLOSES: ${doc.comments_close_on}${doc.comment_url ? ` (Submit at: ${doc.comment_url})` : ''}`
+            : '';
+
+          return `
+${typeLabel}: ${doc.document_number}
+TITLE: ${doc.title}
+AGENCIES: ${doc.agency_names}
+PUBLICATION DATE: ${doc.publication_date}
+${doc.effective_on ? `EFFECTIVE DATE: ${doc.effective_on}` : ''}
+${doc.abstract ? `SUMMARY: ${doc.abstract}` : ''}
+${doc.action ? `ACTION: ${doc.action}` : ''}
+${doc.significant ? 'SIGNIFICANT: Yes (economically significant or major policy impact)' : ''}${commentsInfo}
+URL: ${doc.html_url}`;
         }).join('\n')
       : '';
 
@@ -1460,6 +1644,15 @@ ${stateBillsText ? `STATE LEGISLATURE (1-2 minutes):
 - Connect to listener's interests
 - "You can find more details on this at OpenStates - we'll link it in your brief."
 
+` : ''}${federalRegisterText ? `EXECUTIVE BRANCH & FEDERAL REGISTER (1-2 minutes):
+- Transition: "Now ${hostB}, let's check in on what the executive branch has been up to..."
+- Cover executive orders, rules, or proposed regulations matching listener interests
+- For EXECUTIVE ORDERS: Explain what the President is directing and who it affects
+- For RULES: Explain how agencies are changing regulations and the impact on people/businesses
+- For PROPOSED RULES: Highlight comment periods - "Listeners, if you have opinions on this, the public comment period closes on..."
+- Connect to listener's interests: "This directly relates to ${personalization.policyInterests[0] || 'policy areas'} you care about..."
+- Keep it accessible: "In plain terms, this means..."
+
 ` : ''}CLOSING (30-40 seconds):
 - Warm wrap-up: "That's today's Hakivo Daily."
 - Personal call to action: "${personalization.userName}, want to track these bills and see how they develop? Open Hakivo to follow them."
@@ -1539,6 +1732,8 @@ ${spotlightText || 'No additional bills for spotlight'}
 
 ${stateBillsText ? `=== STATE LEGISLATURE (${spokenState || personalization.state}) ===
 ${stateBillsText}
+` : ''}${federalRegisterText ? `=== FEDERAL REGISTER (Executive Orders, Rules, Regulations) ===
+${federalRegisterText}
 ` : ''}=== NEWS COVERAGE ===
 ${newsSection || 'No recent news headlines'}
 
@@ -1547,11 +1742,12 @@ ${newsSection || 'No recent news headlines'}
 2. ${isTopStoryFromRep ? `The TOP STORY is from ${personalization.userName}'s OWN representative - emphasize this personal connection!` : 'Make the top story feel relevant to their interests'}
 3. ${newsJSON.categories.state_legislation.length > 0 ? `Include the STATE LEGISLATION news from ${spokenState} - make it feel personal and relevant` : 'Focus on federal legislation and policy news relevant to their interests'}
 4. ${stateBillsText ? `Include the STATE LEGISLATURE section - transition with "Now let's check in on what's happening in the ${spokenState || 'state'} legislature..." and cover 1-2 state bills` : 'No state bills this time'}
-5. Follow the show structure: Personalized Opening → Intro → Top Story → Headlines → Spotlight${stateBillsText ? ' → State Legislature' : ''} → Personalized Outro
-6. The HAKIVO OUTRO must include ${personalization.userName}'s name in the call to action
-7. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
-8. Include emotional cues in [brackets]
-9. Make it conversational and engaging - this brief was made JUST for ${personalization.userName}
+5. ${federalRegisterText ? `Include the FEDERAL REGISTER section - cover executive orders, rules, or proposed regulations. Highlight any open comment periods.` : 'No Federal Register documents this time'}
+6. Follow the show structure: Personalized Opening → Intro → Top Story → Headlines → Spotlight${stateBillsText ? ' → State Legislature' : ''}${federalRegisterText ? ' → Federal Register' : ''} → Personalized Outro
+7. The HAKIVO OUTRO must include ${personalization.userName}'s name in the call to action
+8. Every line starts with "${hostA.toUpperCase()}:" or "${hostB.toUpperCase()}:"
+9. Include emotional cues in [brackets]
+10. Make it conversational and engaging - this brief was made JUST for ${personalization.userName}
 
 Generate a HEADLINE in the style of The New York Times.
 
@@ -1633,7 +1829,8 @@ ${hostB.toUpperCase()}: [emotional cue] dialogue...
     newsJSON: NewsJSON,
     headline: string,
     stateBills: any[] = [],
-    userState: string | null = null
+    userState: string | null = null,
+    verifiedBillsContext: string = ''
   ): Promise<{ article: string; wordCount: number }> {
     // Build bill links for hyperlinks with actions
     const billLinks = bills.map((bill: any) => {
@@ -1763,7 +1960,18 @@ TONE:
 - Professional yet conversational
 - Explain jargon in plain language
 - Focus on impact to readers
-- Empowering, not preachy`;
+- Empowering, not preachy
+
+CRITICAL URL RULE (MANDATORY - VIOLATIONS CAUSE BROKEN LINKS):
+- ONLY use URLs that appear EXACTLY as provided in the source data above
+- For federal bills: ONLY use URLs from KEY FEDERAL LEGISLATION section or VERIFIED BILLS section
+- For state bills: ONLY use URLs from STATE LEGISLATION section or VERIFIED BILLS section
+- For news: ONLY use URLs from RELATED NEWS COVERAGE section
+- NEVER construct, guess, or create URLs yourself - this creates broken links
+- NEVER use legiscan.com URLs - they are unreliable
+- If a bill is mentioned in news but no URL is provided in the sections above, mention the bill WITHOUT a hyperlink
+- Example of WRONG: Making up a URL like "https://legiscan.com/US/bill/SB2392"
+- Example of RIGHT: Using exact URL from source data or mentioning "Senate Bill 2392" without a link`;
 
     // User prompt with context and instructions
     const userPrompt = `Write a polished news article for: "${headline}"
@@ -1780,7 +1988,10 @@ ${stateBillsContext}
 ` : ''}
 === RELATED NEWS COVERAGE (integrate these into your article) ===
 ${newsContext}
-
+${verifiedBillsContext ? `
+=== VERIFIED BILLS FROM NEWS (use ONLY these URLs for bills mentioned in news) ===
+${verifiedBillsContext}
+` : ''}
 Write the article naturally without any structural labels. Start directly with an engaging opening paragraph.
 Include ## subheadings where they make sense to break up content.
 
@@ -1800,6 +2011,13 @@ ${stateBillsContext ? `CRITICAL REQUIREMENT - STATE LEGISLATION:
 - Do NOT write unsourced claims - if you mention a fact, link to the article where you found it
 - Examples: "According to [The Texas Tribune](url)..." or "The [$1.4B Meta settlement](url)..."
 - Aim for at least one cited source link per paragraph
+
+FINAL URL REMINDER (READ THIS CAREFULLY):
+- If news mentions a bill (e.g., "SB 2392", "H.R. 1234") that is NOT in the sections above, mention it by name WITHOUT a link
+- DO NOT make up URLs like "legiscan.com/..." or "congress.gov/bill/..." for bills not in the provided data
+- Only use URLs that appear EXACTLY in: KEY FEDERAL LEGISLATION, STATE LEGISLATION, VERIFIED BILLS, or NEWS COVERAGE sections
+- Breaking this rule creates 404 errors and broken links for users
+
 End with an empowering note about staying informed.`;
 
     // Use Gemini 3 Flash - Fast, rich writing with emotional depth
@@ -2069,6 +2287,431 @@ End with an empowering note about staying informed.`;
     }
   }
 
+  // ==================== BILL RESOLUTION PIPELINE ====================
+
+  /**
+   * Extract bill mentions from news content
+   * Identifies federal and state bill references that need URL verification
+   */
+  private extractBillMentions(newsJSON: NewsJSON, userState: string | null): ExtractedBillMention[] {
+    const mentions: ExtractedBillMention[] = [];
+    const seen = new Set<string>();
+
+    // Combine all news text for extraction
+    const allNewsText: string[] = [];
+    for (const item of newsJSON.categories.federal_legislation) {
+      allNewsText.push(item.headline, item.summary);
+    }
+    for (const item of newsJSON.categories.state_legislation) {
+      allNewsText.push(item.headline, item.summary);
+    }
+    for (const items of Object.values(newsJSON.categories.policy_news)) {
+      for (const item of items) {
+        allNewsText.push(item.headline, item.summary);
+      }
+    }
+
+    const fullText = allNewsText.join(' ');
+
+    // Federal bill patterns: H.R. 1234, HR1234, S. 567, S567, H.Res. 12, S.Res. 34
+    const federalPatterns = [
+      /\b(H\.?R\.?)\s*(\d+)\b/gi,          // H.R. 1234, HR1234
+      /\b(S\.?)\s*(\d+)\b/gi,               // S. 567, S567
+      /\b(H\.?\s*Res\.?)\s*(\d+)\b/gi,      // H.Res. 12
+      /\b(S\.?\s*Res\.?)\s*(\d+)\b/gi,      // S.Res. 34
+      /\b(H\.?\s*J\.?\s*Res\.?)\s*(\d+)\b/gi, // H.J.Res. 1
+      /\b(S\.?\s*J\.?\s*Res\.?)\s*(\d+)\b/gi, // S.J.Res. 1
+    ];
+
+    for (const pattern of federalPatterns) {
+      let match;
+      while ((match = pattern.exec(fullText)) !== null) {
+        const typeRaw = match[1]?.replace(/\./g, '').replace(/\s/g, '').toLowerCase() || '';
+        const number = parseInt(match[2] || '0', 10);
+
+        // Normalize bill type
+        let billType = 'hr';
+        if (typeRaw.startsWith('s') && !typeRaw.includes('res')) billType = 's';
+        else if (typeRaw.includes('hres')) billType = 'hres';
+        else if (typeRaw.includes('sres')) billType = 'sres';
+        else if (typeRaw.includes('hjres')) billType = 'hjres';
+        else if (typeRaw.includes('sjres')) billType = 'sjres';
+
+        const key = `federal:${billType}:${number}`;
+        if (!seen.has(key) && number > 0) {
+          seen.add(key);
+          mentions.push({
+            original: match[0],
+            type: 'federal',
+            billType,
+            billNumber: number,
+            congress: 119 // Current congress
+          });
+        }
+      }
+    }
+
+    // State bill patterns (only if we know user's state)
+    if (userState) {
+      const statePatterns = [
+        /\b(AB|A\.B\.)\s*(\d+)\b/gi,           // Assembly Bill: AB 123
+        /\b(SB|S\.B\.)\s*(\d+)\b/gi,           // Senate Bill: SB 456
+        /\b(HB|H\.B\.)\s*(\d+)\b/gi,           // House Bill: HB 789
+        /\bAssembly Bill\s*(\d+)\b/gi,         // Full name: Assembly Bill 123
+        /\bSenate Bill\s*(\d+)\b/gi,           // Full name: Senate Bill 456
+        /\bHouse Bill\s*(\d+)\b/gi,            // Full name: House Bill 789
+      ];
+
+      for (const pattern of statePatterns) {
+        let match;
+        while ((match = pattern.exec(fullText)) !== null) {
+          let billType = '';
+          let number = 0;
+
+          if (match[1]) {
+            // Short form: AB, SB, HB
+            const typeRaw = match[1].replace(/\./g, '').toLowerCase();
+            billType = typeRaw;
+            number = parseInt(match[2] || '0', 10);
+          } else {
+            // Long form: Assembly Bill, Senate Bill, House Bill
+            if (match[0].toLowerCase().includes('assembly')) billType = 'ab';
+            else if (match[0].toLowerCase().includes('senate')) billType = 'sb';
+            else if (match[0].toLowerCase().includes('house')) billType = 'hb';
+            number = parseInt(match[1] || '0', 10);
+          }
+
+          const key = `state:${userState}:${billType}:${number}`;
+          if (!seen.has(key) && number > 0 && billType) {
+            seen.add(key);
+            mentions.push({
+              original: match[0],
+              type: 'state',
+              billType,
+              billNumber: number,
+              state: userState
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`[BILL-RESOLVE] Extracted ${mentions.length} bill mentions from news content`);
+    return mentions;
+  }
+
+  /**
+   * Resolve federal bill via database first, then Congress.gov API
+   * If found in API but not DB, adds to database
+   */
+  private async resolveFederalBill(mention: ExtractedBillMention): Promise<ResolvedBill> {
+    const { billType, billNumber, congress = 119 } = mention;
+    const db = this.env.APP_DB;
+
+    console.log(`[BILL-RESOLVE] Resolving federal bill: ${billType.toUpperCase()} ${billNumber}`);
+
+    // Step 1: Check our database first
+    try {
+      const dbResult = await db
+        .prepare(`SELECT id, title, congress FROM bills WHERE bill_type = ? AND bill_number = ? AND congress = ? LIMIT 1`)
+        .bind(billType.toUpperCase(), billNumber, congress)
+        .first<{ id: string; title: string; congress: number }>();
+
+      if (dbResult) {
+        const url = `https://www.congress.gov/bill/${dbResult.congress}th-congress/${billType.toLowerCase()}/${billNumber}`;
+        console.log(`[BILL-RESOLVE] ✅ Found in database: ${billType.toUpperCase()} ${billNumber}`);
+        return {
+          mention,
+          found: true,
+          url,
+          title: dbResult.title,
+          inDatabase: true,
+          addedToDatabase: false
+        };
+      }
+    } catch (dbError) {
+      console.error(`[BILL-RESOLVE] Database lookup error:`, dbError);
+    }
+
+    // Step 2: Query Congress.gov API
+    try {
+      const apiResult = await this.env.CONGRESS_API_CLIENT.getBillDetails(congress, billType, billNumber);
+
+      if (apiResult?.bill) {
+        const bill = apiResult.bill;
+        const url = `https://www.congress.gov/bill/${congress}th-congress/${billType.toLowerCase()}/${billNumber}`;
+
+        console.log(`[BILL-RESOLVE] ✅ Found via Congress.gov API: ${bill.title?.substring(0, 50)}...`);
+
+        // Step 3: Add to database for future use
+        try {
+          const now = Date.now();
+          await db.prepare(`
+            INSERT INTO bills (
+              id, bill_type, bill_number, congress, title,
+              policy_area, latest_action_text, latest_action_date,
+              introduced_date, origin_chamber, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO NOTHING
+          `).bind(
+            `${billType}${billNumber}-${congress}`,
+            billType.toUpperCase(),
+            billNumber,
+            congress,
+            bill.title || `${billType.toUpperCase()} ${billNumber}`,
+            bill.policyArea?.name || null,
+            bill.latestAction?.text || null,
+            bill.latestAction?.actionDate || null,
+            bill.introducedDate || null,
+            bill.originChamber || null,
+            now,
+            now
+          ).run();
+
+          console.log(`[BILL-RESOLVE] ➕ Added to database: ${billType.toUpperCase()} ${billNumber}`);
+
+          return {
+            mention,
+            found: true,
+            url,
+            title: bill.title,
+            inDatabase: false,
+            addedToDatabase: true
+          };
+        } catch (insertError) {
+          console.error(`[BILL-RESOLVE] Failed to insert bill:`, insertError);
+          // Still return the bill even if insert failed
+          return {
+            mention,
+            found: true,
+            url,
+            title: bill.title,
+            inDatabase: false,
+            addedToDatabase: false
+          };
+        }
+      }
+    } catch (apiError) {
+      console.error(`[BILL-RESOLVE] Congress.gov API error:`, apiError);
+    }
+
+    // Bill not found
+    console.log(`[BILL-RESOLVE] ❌ Bill not found: ${billType.toUpperCase()} ${billNumber}`);
+    return {
+      mention,
+      found: false,
+      inDatabase: false,
+      addedToDatabase: false
+    };
+  }
+
+  /**
+   * Resolve state bill via database first, then OpenStates API
+   * If found in API but not DB, adds to database
+   */
+  private async resolveStateBill(mention: ExtractedBillMention): Promise<ResolvedBill> {
+    const { billType, billNumber, state } = mention;
+    if (!state) {
+      return { mention, found: false, inDatabase: false, addedToDatabase: false };
+    }
+
+    const db = this.env.APP_DB;
+    const identifier = `${billType.toUpperCase()} ${billNumber}`;
+
+    console.log(`[BILL-RESOLVE] Resolving state bill: ${state} ${identifier}`);
+
+    // Step 1: Check our database first
+    try {
+      const dbResult = await db
+        .prepare(`SELECT id, title, session_identifier FROM state_bills WHERE state = ? AND identifier = ? LIMIT 1`)
+        .bind(state.toUpperCase(), identifier)
+        .first<{ id: string; title: string; session_identifier: string }>();
+
+      if (dbResult) {
+        const session = encodeURIComponent(dbResult.session_identifier || '');
+        const billId = encodeURIComponent(identifier);
+        const url = `https://openstates.org/${state.toLowerCase()}/bills/${session}/${billId}/`;
+
+        console.log(`[BILL-RESOLVE] ✅ Found in database: ${state} ${identifier}`);
+        return {
+          mention,
+          found: true,
+          url,
+          title: dbResult.title,
+          inDatabase: true,
+          addedToDatabase: false
+        };
+      }
+    } catch (dbError) {
+      console.error(`[BILL-RESOLVE] Database lookup error:`, dbError);
+    }
+
+    // Step 2: Query OpenStates API
+    try {
+      // Search for the bill by identifier
+      const results = await this.env.OPENSTATES_CLIENT.searchBillsByState(state, identifier, 5);
+
+      // Find exact match
+      const match = results.find((b: any) =>
+        b.identifier?.toUpperCase() === identifier.toUpperCase()
+      );
+
+      if (match) {
+        const session = encodeURIComponent(match.sessionIdentifier || match.session || '');
+        const billId = encodeURIComponent(match.identifier || identifier);
+        const url = `https://openstates.org/${state.toLowerCase()}/bills/${session}/${billId}/`;
+
+        console.log(`[BILL-RESOLVE] ✅ Found via OpenStates API: ${match.title?.substring(0, 50)}...`);
+
+        // Step 3: Add to database for future use
+        try {
+          const now = Date.now();
+          await db.prepare(`
+            INSERT INTO state_bills (
+              id, state, identifier, title, session_identifier,
+              chamber, subjects, latest_action_date, latest_action_description,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO NOTHING
+          `).bind(
+            match.id || `${state}-${identifier}`,
+            state.toUpperCase(),
+            match.identifier || identifier,
+            match.title || identifier,
+            match.sessionIdentifier || match.session || '',
+            match.chamber || null,
+            JSON.stringify(match.subjects || []),
+            match.latestActionDate || null,
+            match.latestActionDescription || null,
+            now,
+            now
+          ).run();
+
+          console.log(`[BILL-RESOLVE] ➕ Added to database: ${state} ${identifier}`);
+
+          return {
+            mention,
+            found: true,
+            url,
+            title: match.title,
+            inDatabase: false,
+            addedToDatabase: true
+          };
+        } catch (insertError) {
+          console.error(`[BILL-RESOLVE] Failed to insert state bill:`, insertError);
+          return {
+            mention,
+            found: true,
+            url,
+            title: match.title,
+            inDatabase: false,
+            addedToDatabase: false
+          };
+        }
+      }
+    } catch (apiError) {
+      console.error(`[BILL-RESOLVE] OpenStates API error:`, apiError);
+    }
+
+    // Bill not found
+    console.log(`[BILL-RESOLVE] ❌ State bill not found: ${state} ${identifier}`);
+    return {
+      mention,
+      found: false,
+      inDatabase: false,
+      addedToDatabase: false
+    };
+  }
+
+  /**
+   * Resolve all bill mentions from news content
+   * Returns list of verified bills with correct URLs
+   */
+  private async resolveBillMentions(
+    mentions: ExtractedBillMention[]
+  ): Promise<ResolvedBill[]> {
+    const resolved: ResolvedBill[] = [];
+
+    // Process bills with rate limiting (avoid hammering APIs)
+    for (const mention of mentions) {
+      try {
+        if (mention.type === 'federal') {
+          const result = await this.resolveFederalBill(mention);
+          resolved.push(result);
+        } else if (mention.type === 'state') {
+          const result = await this.resolveStateBill(mention);
+          resolved.push(result);
+        }
+
+        // Small delay between API calls
+        await new Promise(r => setTimeout(r, 100));
+      } catch (error) {
+        console.error(`[BILL-RESOLVE] Error resolving ${mention.original}:`, error);
+        resolved.push({
+          mention,
+          found: false,
+          inDatabase: false,
+          addedToDatabase: false
+        });
+      }
+    }
+
+    const found = resolved.filter(r => r.found).length;
+    const added = resolved.filter(r => r.addedToDatabase).length;
+    console.log(`[BILL-RESOLVE] Resolved ${found}/${mentions.length} bills (${added} added to DB)`);
+
+    return resolved;
+  }
+
+  /**
+   * Build verified bills context for article generation
+   * Only includes bills with confirmed URLs
+   */
+  private buildVerifiedBillsContext(resolvedBills: ResolvedBill[]): string {
+    const verified = resolvedBills.filter(b => b.found && b.url);
+
+    if (verified.length === 0) {
+      return '';
+    }
+
+    const lines = verified.map(b => {
+      const typeLabel = b.mention.type === 'federal'
+        ? `${b.mention.billType.toUpperCase()} ${b.mention.billNumber}`
+        : `${b.mention.state} ${b.mention.billType.toUpperCase()} ${b.mention.billNumber}`;
+
+      return `Bill: ${typeLabel}
+Title: ${b.title || 'Unknown'}
+URL: ${b.url}
+Source: ${b.inDatabase ? 'Database' : 'API-verified'}`;
+    });
+
+    return `
+=== VERIFIED BILL REFERENCES (from news content) ===
+These bills were mentioned in news and have been verified with official APIs.
+Use these exact URLs when referencing these bills:
+
+${lines.join('\n\n')}
+`;
+  }
+
+}
+
+// ==================== FEDERAL REGISTER TYPES ====================
+
+interface FederalRegisterBriefDoc {
+  document_number: string;
+  type: 'RULE' | 'PRORULE' | 'NOTICE' | 'PRESDOCU';
+  title: string;
+  abstract: string | null;
+  action: string | null;
+  effective_on: string | null;
+  publication_date: string;
+  agency_names: string;
+  topics: string | null;
+  significant: boolean;
+  html_url: string;
+  comments_close_on: string | null;
+  comment_url: string | null;
 }
 
 // ==================== NEWS TYPES ====================
@@ -2096,6 +2739,30 @@ interface NewsJSON {
     duplicates_removed: number;
     new_items_included: number;
   };
+}
+
+/**
+ * Extracted bill mention from news content
+ */
+interface ExtractedBillMention {
+  original: string;        // Original text (e.g., "H.R. 1234", "SB 456")
+  type: 'federal' | 'state';
+  billType: string;        // hr, s, hjres, sjres, ab, sb, hb, etc.
+  billNumber: number;
+  state?: string;          // For state bills
+  congress?: number;       // For federal bills (default to 119)
+}
+
+/**
+ * Resolved bill with verified URL
+ */
+interface ResolvedBill {
+  mention: ExtractedBillMention;
+  found: boolean;
+  url?: string;
+  title?: string;
+  inDatabase: boolean;
+  addedToDatabase: boolean;
 }
 
 export interface Body {
