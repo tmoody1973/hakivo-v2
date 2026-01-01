@@ -48,14 +48,25 @@ function decodeBase64Url(str: string): string {
 
 // Helper to extract user ID from auth header
 function getUserIdFromAuth(authHeader: string | undefined): string | null {
-  if (!authHeader?.startsWith('Bearer ')) return null;
+  if (!authHeader?.startsWith('Bearer ')) {
+    console.log('[getUserIdFromAuth] No Bearer token found');
+    return null;
+  }
   try {
     const token = authHeader.substring(7);
     const parts = token.split('.');
-    if (parts.length < 2 || !parts[1]) return null;
+    if (parts.length < 2 || !parts[1]) {
+      console.log('[getUserIdFromAuth] Invalid token structure, parts:', parts.length);
+      return null;
+    }
     // Use URL-safe base64 decoding for JWT payload
-    const payload = JSON.parse(decodeBase64Url(parts[1]));
-    return payload.sub || payload.userId || null;
+    const decoded = decodeBase64Url(parts[1]);
+    console.log('[getUserIdFromAuth] Decoded payload:', decoded.substring(0, 200));
+    const payload = JSON.parse(decoded);
+    console.log('[getUserIdFromAuth] Parsed payload keys:', Object.keys(payload));
+    const userId = payload.sub || payload.userId || null;
+    console.log('[getUserIdFromAuth] Extracted userId:', userId);
+    return userId;
   } catch (e) {
     console.error('[getUserIdFromAuth] Error decoding token:', e);
     return null;

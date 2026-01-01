@@ -84,10 +84,23 @@ export function DashboardHeader() {
     counts,
     hasNotifications,
     hasUrgent,
+    isLoading: notificationsLoading,
+    error: notificationsError,
     fetchNotifications,
     markAsRead,
     markAllAsRead,
   } = useNotifications()
+
+  // Debug logging for notifications
+  useEffect(() => {
+    console.log('[DashboardHeader] Notifications state:', {
+      count: notifications.length,
+      counts,
+      isLoading: notificationsLoading,
+      error: notificationsError,
+      hasNotifications
+    });
+  }, [notifications, counts, notificationsLoading, notificationsError, hasNotifications]);
 
   // Fetch notifications when dropdown opens
   useEffect(() => {
@@ -369,6 +382,25 @@ export function DashboardHeader() {
                             </div>
                           )
                         })}
+                      </div>
+                    ) : notificationsLoading ? (
+                      <div className="p-8 text-center">
+                        <div className="w-10 h-10 mx-auto mb-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        <p className="text-sm font-medium">Loading notifications...</p>
+                      </div>
+                    ) : notificationsError ? (
+                      <div className="p-8 text-center">
+                        <AlertTriangle className="w-10 h-10 mx-auto text-destructive mb-3" />
+                        <p className="text-sm font-medium text-destructive">Error loading notifications</p>
+                        <p className="text-xs text-muted-foreground mt-1">{notificationsError}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => fetchNotifications({ limit: 10 })}
+                        >
+                          Retry
+                        </Button>
                       </div>
                     ) : (
                       <div className="p-8 text-center">
