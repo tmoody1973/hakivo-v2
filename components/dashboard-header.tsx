@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from 'next/navigation'
-import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, AlertTriangle, Crown, Zap, Bookmark, Sparkles, Newspaper } from 'lucide-react'
+import { Bell, Settings, LayoutDashboard, FileText, Users, Radio, Mic, MessageSquare, LogOut, Menu, AlertTriangle, Crown, Zap, Bookmark, Sparkles, Newspaper, Building, Scale, Clock, CheckCheck, ExternalLink } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { HakivoLogo } from "@/components/hakivo-logo"
@@ -26,6 +26,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useSubscription } from "@/lib/subscription/subscription-context"
+import { useNotifications, FederalNotification, formatNotificationTime } from "@/lib/hooks/use-notifications"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 const routes = [
   {
@@ -74,9 +77,26 @@ export function DashboardHeader() {
   const pathname = usePathname()
   const { user, logout } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
   const { subscription, usageAlerts, hasUsageAlerts, openCheckout } = useSubscription()
+  const {
+    notifications,
+    counts,
+    hasNotifications,
+    hasUrgent,
+    fetchNotifications,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications()
 
-  // Get icon for alert category
+  // Fetch notifications when dropdown opens
+  useEffect(() => {
+    if (notificationsOpen) {
+      fetchNotifications({ limit: 10 })
+    }
+  }, [notificationsOpen, fetchNotifications])
+
+  // Get icon for usage alert category
   const getAlertIcon = (category: string) => {
     switch (category) {
       case 'briefs':
@@ -92,14 +112,46 @@ export function DashboardHeader() {
     }
   }
 
+  // Get icon for federal notification type
+  const getFederalNotificationIcon = (type: FederalNotification['type']) => {
+    switch (type) {
+      case 'executive_order':
+      case 'significant_action':
+        return FileText
+      case 'comment_deadline':
+        return Clock
+      case 'agency_update':
+        return Building
+      case 'federal_rule':
+        return Scale
+      case 'interest_match':
+      default:
+        return Bell
+    }
+  }
+
+  // Get color for federal notification priority
+  const getPriorityColor = (priority: FederalNotification['priority']) => {
+    switch (priority) {
+      case 'urgent':
+        return 'bg-destructive/10 text-destructive'
+      case 'high':
+        return 'bg-orange-500/10 text-orange-600'
+      case 'normal':
+        return 'bg-primary/10 text-primary'
+      case 'low':
+      default:
+        return 'bg-muted text-muted-foreground'
+    }
+  }
+
   const handleLogout = () => {
-    // The auth context's logout() handles:
-    // 1. Clearing localStorage (tokens, session IDs, user data)
-    // 2. Clearing React state
-    // 3. Redirecting to backend WorkOS logout endpoint with both sessionId and workosSessionId
-    // 4. WorkOS logout endpoint terminates the SSO session and redirects to app
     logout()
   }
+
+  // Calculate total notification count
+  const totalNotificationCount = counts.unread + (hasUsageAlerts ? usageAlerts.length : 0)
+  const hasAnyNotifications = totalNotificationCount > 0
 
   // Generate user initials for avatar fallback
   const userInitials = user?.firstName && user?.lastName
@@ -194,85 +246,197 @@ export function DashboardHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {/* Notification Bell with Usage Alerts */}
-          <DropdownMenu>
+          {/* Notification Bell with Federal Notifications + Usage Alerts */}
+          <DropdownMenu open={notificationsOpen} onOpenChange={setNotificationsOpen}>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
-                {hasUsageAlerts && (
+                {hasAnyNotifications && (
                   <Badge
                     className={cn(
                       "absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]",
-                      usageAlerts.some(a => a.type === 'limit_reached')
+                      hasUrgent || usageAlerts.some(a => a.type === 'limit_reached')
                         ? "bg-destructive"
+                        : counts.unread > 0
+                        ? "bg-primary"
                         : "bg-yellow-500"
                     )}
                   >
-                    {usageAlerts.length}
+                    {totalNotificationCount > 9 ? '9+' : totalNotificationCount}
                   </Badge>
                 )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel className="flex items-center justify-between">
-                <span>Notifications</span>
-                {!subscription.isPro && (
-                  <span className="text-xs font-normal text-muted-foreground">Free Plan</span>
+            <DropdownMenuContent align="end" className="w-96">
+              <div className="flex items-center justify-between px-3 py-2">
+                <span className="font-semibold">Notifications</span>
+                {counts.unread > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto py-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      markAllAsRead()
+                    }}
+                  >
+                    <CheckCheck className="w-3 h-3 mr-1" />
+                    Mark all read
+                  </Button>
                 )}
-              </DropdownMenuLabel>
+              </div>
               <DropdownMenuSeparator />
 
-              {/* Usage Alerts for Free Users */}
-              {!subscription.isPro && hasUsageAlerts && (
-                <>
-                  {usageAlerts.map((alert) => {
-                    const IconComponent = getAlertIcon(alert.category)
-                    return (
-                      <DropdownMenuItem
-                        key={alert.id}
-                        className="flex flex-col items-start gap-1 p-3 cursor-pointer"
-                        onClick={openCheckout}
-                      >
-                        <div className="flex items-center gap-2 w-full">
-                          <div className={cn(
-                            "w-8 h-8 rounded-full flex items-center justify-center",
-                            alert.type === 'limit_reached'
-                              ? "bg-destructive/10 text-destructive"
-                              : "bg-yellow-500/10 text-yellow-600"
-                          )}>
-                            <IconComponent className="w-4 h-4" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{alert.message}</p>
-                            {alert.action && (
-                              <p className="text-xs text-primary">{alert.action}</p>
-                            )}
-                          </div>
-                        </div>
-                      </DropdownMenuItem>
-                    )
-                  })}
-                  <DropdownMenuSeparator />
-                </>
-              )}
+              <Tabs defaultValue="federal" className="w-full">
+                <TabsList className="w-full grid grid-cols-2 h-9 mx-2" style={{ width: 'calc(100% - 16px)' }}>
+                  <TabsTrigger value="federal" className="text-xs">
+                    Federal Register
+                    {counts.federal > 0 && (
+                      <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                        {counts.federal}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="usage" className="text-xs">
+                    Usage Alerts
+                    {hasUsageAlerts && (
+                      <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                        {usageAlerts.length}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
 
-              {/* Pro User or No Alerts */}
-              {(subscription.isPro || !hasUsageAlerts) && (
-                <div className="p-4 text-center">
-                  {subscription.isPro ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <Crown className="w-8 h-8 text-primary" />
-                      <p className="text-sm font-medium">You're on Hakivo Pro</p>
-                      <p className="text-xs text-muted-foreground">Enjoy unlimited access to all features</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2">
-                      <Bell className="w-8 h-8 text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">No new notifications</p>
-                    </div>
-                  )}
-                </div>
-              )}
+                {/* Federal Register Notifications Tab */}
+                <TabsContent value="federal" className="m-0">
+                  <ScrollArea className="h-[300px]">
+                    {notifications.length > 0 ? (
+                      <div className="p-2 space-y-1">
+                        {notifications.map((notification) => {
+                          const IconComponent = getFederalNotificationIcon(notification.type)
+                          return (
+                            <div
+                              key={notification.id}
+                              className={cn(
+                                "flex gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-accent",
+                                !notification.read && "bg-primary/5"
+                              )}
+                              onClick={() => {
+                                markAsRead(notification.id)
+                                if (notification.actionUrl) {
+                                  window.open(notification.actionUrl, '_blank')
+                                }
+                              }}
+                            >
+                              <div className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                                getPriorityColor(notification.priority)
+                              )}>
+                                <IconComponent className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className={cn(
+                                    "text-sm line-clamp-2",
+                                    !notification.read && "font-medium"
+                                  )}>
+                                    {notification.title}
+                                  </p>
+                                  {notification.actionUrl && (
+                                    <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0 mt-1" />
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                  {notification.message}
+                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {formatNotificationTime(notification.createdAt)}
+                                  </span>
+                                  {notification.federalData?.documentType && (
+                                    <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                                      {notification.federalData.documentType}
+                                    </Badge>
+                                  )}
+                                  {notification.priority === 'urgent' && (
+                                    <Badge variant="destructive" className="h-4 px-1 text-[10px]">
+                                      Urgent
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Building className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-sm font-medium">No Federal Register notifications</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          We'll notify you about executive orders, rules, and regulations matching your interests
+                        </p>
+                      </div>
+                    )}
+                  </ScrollArea>
+                </TabsContent>
+
+                {/* Usage Alerts Tab */}
+                <TabsContent value="usage" className="m-0">
+                  <ScrollArea className="h-[300px]">
+                    {!subscription.isPro && hasUsageAlerts ? (
+                      <div className="p-2 space-y-1">
+                        {usageAlerts.map((alert) => {
+                          const IconComponent = getAlertIcon(alert.category)
+                          return (
+                            <div
+                              key={alert.id}
+                              className="flex gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-accent"
+                              onClick={openCheckout}
+                            >
+                              <div className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                                alert.type === 'limit_reached'
+                                  ? "bg-destructive/10 text-destructive"
+                                  : "bg-yellow-500/10 text-yellow-600"
+                              )}>
+                                <IconComponent className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{alert.message}</p>
+                                {alert.action && (
+                                  <p className="text-xs text-primary mt-1">{alert.action}</p>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center">
+                        {subscription.isPro ? (
+                          <>
+                            <Crown className="w-10 h-10 mx-auto text-primary mb-3" />
+                            <p className="text-sm font-medium">You're on Hakivo Pro</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Enjoy unlimited access to all features
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <Bell className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                            <p className="text-sm font-medium">No usage alerts</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              You're within your free plan limits
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </TabsContent>
+              </Tabs>
 
               {/* Upgrade CTA for Free Users */}
               {!subscription.isPro && (
