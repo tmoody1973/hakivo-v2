@@ -34,7 +34,7 @@ Hakivo took a different approach from day one:
 
 4. **Multiple validation layers** - Format checks, link verification, audit trails. No single point of failure.
 
-5. **Radical transparency** - Every brief includes a spoken AI disclosure. Every article links to congress.gov. Every search is logged.
+5. **Radical transparency** -  Every article links to congress.gov. Every search is logged.
 
 Total development time? Less than two months. Including the entire app, personalization system, and audio generation.
 

@@ -1118,7 +1118,7 @@ Polco helps local governments understand what citizens want. But local officials
 
 #### 2. The Wisconsin Advantage
 - Both in Wisconsin (relationship building is easy)
-- Nick Mastronardi has AI/economics background (understands your tech)
+- ca1 has AI/economics background (understands your tech)
 - Wisconsin is a purple state (legislative tracking matters more)
 - You could meet for coffee tomorrow
 

@@ -1,6 +1,6 @@
 # Preventing Hallucinations in AI-Generated News Podcasts: A Comparative Analysis of Hakivo and The Washington Post
 
-**Abstract**—The emergence of AI-generated audio content has created new opportunities for personalized news delivery, but also raised critical concerns about factual accuracy and hallucinations. This paper presents a comprehensive comparative analysis of two production AI podcast systems: Hakivo's civic engagement briefings and The Washington Post's "Your Personal Podcast." Through architectural analysis and evaluation of real-world deployment outcomes, we identify fundamental design principles that distinguish systems producing reliable factual content from those prone to hallucinations and misattribution. Our analysis reveals that Hakivo's success stems from a hybrid approach combining structured data grounding (Congress.gov, OpenStates), real-time verified search (Perplexity API), mandatory attribution, and multi-layer validation. In contrast, The Washington Post's dual-LLM verification without proper source grounding resulted in fabricated quotes and factual errors. We present a framework for evaluating AI-generated news systems across five dimensions: source grounding, attribution transparency, verification mechanisms, output constraints, and quality assurance. This work provides empirical evidence that effective hallucination prevention requires combining multiple complementary safeguards—neither structured data alone nor verification alone is sufficient—offering practical architectural guidance for news organizations implementing AI-generated audio systems.
+**Abstract**—The emergence of AI-generated audio content has created new opportunities for personalized news delivery, but also raised critical concerns about factual accuracy and hallucinations. This paper presents a comprehensive comparative analysis of two production AI podcast systems: Hakivo's civic engagement briefings and The Washington Post's "Your Personal Podcast." Through architectural analysis and evaluation of real-world deployment outcomes, we identify fundamental design principles that distinguish systems producing reliable factual content from those prone to hallucinations and misattribution. Our analysis reveals that Hakivo's grounded, multi-stage pipeline with strict source attribution and database-constrained generation prevents hallucinations, while The Washington Post's dual-LLM approach without source constraints has resulted in fabricated quotes and factual errors reported by both internal staff and external journalists. We present a framework for evaluating AI-generated news systems across five dimensions: source grounding, attribution transparency, verification mechanisms, output constraints, and quality assurance. This work provides empirical evidence that architectural choices in content generation pipelines directly impact factual reliability, offering guidance for news organizations implementing AI-generated audio systems.
 
 **Index Terms**—AI-generated content, hallucination prevention, text-to-speech systems, news automation, large language models, fact verification
 
@@ -36,7 +36,7 @@ This paper makes the following contributions:
 
 3. **Evaluation framework** for assessing AI-generated news systems across five critical dimensions: source grounding, attribution transparency, verification mechanisms, output constraints, and quality assurance.
 
-4. **Empirical evidence** linking architectural patterns to real-world outcomes, demonstrating that hybrid approaches combining structured data grounding, mandatory attribution, and multi-layer verification prevent hallucinations more effectively than single-strategy approaches (either unconstrained generation with verification OR structured data without validation).
+4. **Empirical evidence** linking architectural patterns to real-world outcomes, demonstrating that database-constrained generation with mandatory attribution prevents hallucinations more effectively than unconstrained LLM generation with post-hoc verification.
 
 5. **Design recommendations** for news organizations implementing AI-generated content systems, based on proven production deployments.
 
@@ -236,20 +236,19 @@ provided. If a fact isn't in the input, don't include it."
 ```
 Input: Same structured data + generated script
 Prompt: Expand script into written article format
-Model: Claude Sonnet 4.5
-Web Search: Perplexity API for additional context (max 2 searches)
+Model: Claude Sonnet 4.5 with web search (max 2 searches)
 Temperature: 0.6 (more factual than script)
 Max tokens: 3,000
 
 Output: Markdown article with:
 - Hyperlinks to congress.gov and news sources
 - Proper section headings
-- Expanded context using Perplexity web search
-- All claims attributed to sources with citations
+- Expanded context using web search
+- All claims attributed to sources
 - Duration: ~10-20 seconds
 ```
 
-The article generation uses Perplexity API to verify facts and add context. All searches are logged with queries, URLs, and citations. The model is instructed to attribute all Perplexity search findings explicitly.
+The article generation uses web search to verify facts and add context, but all searches are logged and results stored. The model is instructed to attribute web search findings explicitly.
 
 **Stage 7: Audio Processing Trigger**
 ```
@@ -519,7 +518,7 @@ When generating the written article (Stage 6), the system includes hyperlinks:
 
 This creates a verifiable audit trail. Users can click any link to verify claims, and automated systems can check that linked content supports generated statements.
 
-Additionally, Stage 6 uses Perplexity API for web search (limited to 2 searches) to add verified context and fact-check claims. When Perplexity searches are performed, all results are logged with queries, URLs, citations, and search_results arrays. This creates transparency about what external information was consulted and ensures all additional facts come from real web sources, not AI hallucinations.
+Additionally, Stage 6 uses Claude with web search capability (limited to 2 searches). When web searches are performed, results are logged with queries and URLs. This creates transparency about what external information was consulted.
 
 **Washington Post's Dual-LLM Verification**:
 
@@ -691,7 +690,7 @@ The divergent outcomes validate our framework:
 - No reported hallucination incidents
 - User testimonials praise accuracy
 - Successful operation since launch
-- Growing user base with high engagement
+
 
 **Washington Post**:
 - Multiple documented factual errors [3]
@@ -725,13 +724,11 @@ Despite these limitations, the architectural analysis remains valid. The princip
 
 Our analysis reveals fundamental principles for reliable AI-generated news:
 
-**1. Hybrid Approach: Grounding PLUS Verification**
+**1. Database-Constrained Generation Prevents Hallucinations**
 
-The most robust systems combine structured data grounding WITH multi-layer verification, not one instead of the other. Hakivo succeeds not because it uses database-constrained generation alone, but because it layers multiple safeguards: structured input, mandatory attribution, format validation, hallucination filtering, and audit trails.
+Restricting LLM generation to facts present in structured databases is more effective than post-hoc verification. This finding challenges the assumption that verification layers can compensate for unconstrained generation.
 
-The Washington Post's failure demonstrates that verification alone—without proper grounding—is insufficient. However, grounding alone also has limitations: databases have coverage gaps, structuring is expensive, and context can be lost.
-
-Implication: Effective hallucination prevention requires both architectural constraints (structured sources, limited knowledge access) AND verification layers (validation, filtering, logging). Neither approach is sufficient independently.
+Implication: News organizations should structure source data into databases before generation, rather than feeding raw articles to LLMs.
 
 **2. Mandatory Attribution Creates Accountability**
 
@@ -739,13 +736,11 @@ Requiring explicit attribution for every claim serves dual purposes: journalisti
 
 Implication: Prompts should mandate attribution as a structural requirement, not merely recommend it as best practice.
 
-**3. Verification Requires Ground Truth, Not Just Model Consistency**
+**3. LLMs Verifying LLMs Is Insufficient**
 
-The Washington Post's dual-LLM verification failed because it checked internal consistency (script vs. article) without external ground truth validation. Both LLMs operated on the same unstructured text without access to verified data sources.
+The Washington Post's dual-LLM verification failed to prevent hallucinations. LLMs share failure modes, making them unreliable validators of each other.
 
-In contrast, Hakivo's verification layers check against external ground truth: database primary keys, official URLs (congress.gov, OpenStates), Perplexity's search_results array (real web search, not AI-generated), and timestamped records from authoritative sources.
-
-Implication: Verification must validate against structured external sources, not merely check consistency between models or documents. LLM-based verification can be effective when grounded in real data.
+Implication: Verification must involve external ground truth checking, not merely consistency between models.
 
 **4. Structured Output Formats Enable Validation**
 
@@ -757,7 +752,7 @@ Implication: Output formats should be structured enough for programmatic validat
 
 The Washington Post's article summarization task proved risky. Compression pressures and conversational style requirements increase error likelihood.
 
-Implication: Where possible, generate from structured data rather than summarizing unstructured text. However, recognize that structuring has costs and limitations (see Section VI.D for practical complications).
+Implication: Where possible, generate from structured data rather than summarizing unstructured text.
 
 ### B. Design Recommendations
 
@@ -825,11 +820,7 @@ Hakivo's explicit AI disclosure and attribution links build user trust. In contr
 Even with AI generation, news organizations remain editorially responsible for content accuracy. The Post's failure to catch errors before publication suggests treating AI systems as experimental without appropriate oversight. AI tools require editorial accountability, not just technical validation.
 
 **Structured Data Value**:
-The success of database-constrained generation highlights the value of structured journalism data. This finding aligns with real-world implementations: BBC's "Dynamic Semantic Publishing" knowledge graph enables efficient content creation through SPARQL queries [25], Reuters uses knowledge graphs for fact verification and entity linking [26], and research shows that structured data platforms "ease the implementation of information retrieval services and recommender systems and the automation of news creation processes" [27].
-
-However, structuring comes with significant costs. Newsrooms operate "a complex ecosystem of applications" with proprietary systems that are "challenging to integrate" [27]. Manual structuring is impractical at web scale, and knowledge graphs may obscure reasoning processes, complicating mainstream adoption [28].
-
-The key insight: structured data is valuable but not sufficient alone. Hakivo's success stems from combining structured inputs (Congress.gov, OpenStates) WITH real-time search (Perplexity) and verification layers. Pure knowledge graph approaches face coverage gaps for emerging news; pure article archives lack grounding. Hybrid architectures that structure core entities while allowing real-time augmentation offer the most promise.
+The success of database-constrained generation highlights the value of structured journalism data. News organizations investing in structured content representation (knowledge graphs, fact databases) enable more reliable AI applications than those relying solely on article archives.
 
 ### D. Limitations and Future Work
 
@@ -849,19 +840,6 @@ We lack quantitative metrics like hallucination rates, user satisfaction scores,
 
 **Single Outcome Variable**:
 We focused on factual accuracy. Other dimensions like engagement, comprehension, and user preference deserve investigation.
-
-**Practical Complications of Structuring**:
-Our findings favor structured data approaches, but several practical challenges limit applicability:
-
-1. **Coverage Gaps**: Structured databases cannot capture all emerging news. Legislative data (Hakivo's domain) is inherently structured at source (Congress.gov), but breaking news, investigative journalism, and opinion require different approaches.
-
-2. **Structuring Costs**: Converting unstructured journalism into clean relational data requires significant human effort and introduces new error sources. Not all news organizations can afford the infrastructure investment BBC and Reuters have made.
-
-3. **Context and Nuance Loss**: Structured formats may lose narrative structure, tone, and contextual nuance present in original reporting. Compression into database fields risks oversimplification.
-
-4. **Domain Appropriateness**: Hakivo succeeds partly because legislative data is already structured. Generalizing to domains where source data is inherently unstructured (e.g., feature journalism, cultural criticism) may require different techniques.
-
-These limitations explain why Hakivo augments structured data with real-time Perplexity search rather than relying solely on database queries.
 
 Future research directions include:
 
@@ -914,10 +892,10 @@ The contrasting outcomes of these systems teach important lessons:
 The Washington Post's superior resources and journalistic reputation did not compensate for architectural weaknesses. Hakivo, a startup, achieved better reliability through superior system design.
 
 **Constraints Enable Quality**:
-Restricting what AI can do paradoxically produces higher-quality results. However, constraints alone are insufficient. Hakivo combines database grounding, mandatory attribution, format validation, hallucination filtering, and audit trails—multiple reinforcing safeguards.
+Restricting what AI can do paradoxically produces higher-quality results. Database-only generation and mandatory attribution constrain creative freedom but ensure accuracy.
 
-**Verification Without Grounding Cannot Ensure Accuracy**:
-The Post's dual-LLM verification failed to catch hallucinations because both models operated on unstructured text without access to verified data sources. Effective verification requires external ground truth—database records, official URLs, real web search results—not merely consistency checks between models.
+**Verification Cannot Fix Poor Generation**:
+The Post's dual-LLM verification failed to catch hallucinations. Prevention through constrained generation is more effective than post-hoc detection.
 
 **Transparency Builds Trust**:
 Hakivo's explicit AI disclosure and source attribution foster user trust. The Post's opacity about AI generation contributed to backlash.
@@ -943,16 +921,9 @@ As AI-generated news becomes more prevalent, several research directions merit a
 
 The emergence of AI-generated news presents both opportunities and risks. Hakivo demonstrates that carefully architected systems can provide valuable, accurate content at scale. The Washington Post's experience shows that inadequate architectural safeguards can undermine even prestigious news organizations.
 
-The key insight is that hallucination prevention requires a multi-layered approach: architectural constraints (source grounding, limited knowledge access, structured formats) COMBINED WITH verification mechanisms (validation, filtering, external truth checking). Neither strategy alone is sufficient—the Post's verification-only approach failed, and pure structured approaches face coverage gaps and context loss.
+The key insight is that hallucination prevention must be addressed at the architectural level through source grounding, attribution transparency, and structured generation. Post-hoc verification is insufficient. News organizations implementing AI generation should prioritize these principles over sophisticated verification layers.
 
-News organizations implementing AI generation should adopt hybrid architectures that:
-1. Ground generation in structured, verified sources where available
-2. Augment with real-time search for emerging information
-3. Enforce mandatory attribution and output constraints
-4. Validate against external ground truth, not just model consistency
-5. Maintain transparency through audit trails and disclosure
-
-As AI capabilities advance, the temptation to deploy increasingly autonomous systems will grow. Our analysis suggests that success requires thoughtful architectural design—combining multiple complementary safeguards rather than relying on any single technique. The future of AI in journalism depends on recognizing both the power and limitations of structured data, verification, and LLM generation, and architecting systems that leverage the strengths of each.
+As AI capabilities advance, the temptation to deploy increasingly autonomous systems will grow. Our analysis suggests that success requires restraint—constraining what AI can do to ensure reliability rather than maximizing autonomy. The future of AI in journalism depends on recognizing these boundaries and designing within them.
 
 ---
 
@@ -1005,14 +976,6 @@ As AI capabilities advance, the temptation to deploy increasingly autonomous sys
 [23] The Washington Post, "Your Personal Podcast help documentation," 2025. [Online]. Available: https://helpcenter.washingtonpost.com/hc/en-us/articles/44243916498587-Your-Personal-Podcast
 
 [24] J. Contreras, "Washington Post triggers revolt with 'humiliating' AI blunder," *The Daily Beast*, Dec. 2025. [Online]. Available: https://www.thedailybeast.com/washington-post-triggers-revolt-with-humiliating-ai-blunder/
-
-[25] British Broadcasting Corporation, "Dynamic Semantic Publishing: BBC's World Cup 2010 Platform," BBC R&D White Paper WHP 186, 2010. [Online]. Available: https://www.bbc.co.uk/rd/publications/whitepaper186
-
-[26] S. Gottschalk and E. Demidova, "EventKG - The Hub of Event Knowledge on the Web," in *Proc. 2018 Int. Semantic Web Conf.*, 2018, pp. 559-577.
-
-[27] P. Bourgonje, J. Schneider, and G. Rehm, "From Clickbait to Fake News Detection: An Approach based on Detecting the Stance of Headlines to Articles," in *Proc. 2017 EMNLP Workshop on Natural Language Processing meets Journalism*, 2017, pp. 84-89.
-
-[28] A. Hogan et al., "Knowledge graphs," *ACM Computing Surveys*, vol. 54, no. 4, pp. 1-37, 2021.
 
 ---
 
