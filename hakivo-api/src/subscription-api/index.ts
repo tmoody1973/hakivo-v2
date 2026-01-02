@@ -4,8 +4,9 @@ import { logger } from 'hono/logger';
 import { Env } from './raindrop.gen';
 import Stripe from 'stripe';
 
-// Stripe price ID for Hakivo Pro ($12/month)
-const HAKIVO_PRO_PRICE_ID = 'price_1SbrvvCpozUWtHfyCFE5Lyur';
+// Stripe price ID for Hakivo Pro ($12/month) - LIVE MODE
+// Previous test mode ID: price_1SbrvvCpozUWtHfyCFE5Lyur
+const HAKIVO_PRO_PRICE_ID = 'price_1SlFRECpozUWtHfykQIqPv28';
 
 // Free tier limits
 const FREE_TIER_BRIEFS_PER_MONTH = 3;

@@ -12,11 +12,21 @@ Hakivo Pro is a $12/month subscription that unlocks:
 
 ## Stripe Configuration
 
-### Product & Price
-- **Product ID**: `prod_TYstNGX1R577Gr`
-- **Price ID**: `price_1Sbl9Z2SDNFB3sqEVZH1v8Yr`
+### Product & Price (LIVE MODE)
+- **Product ID**: `prod_TigokRwZOHInFc`
+- **Price ID**: `price_1SlFRECpozUWtHfykQIqPv28`
 - **Amount**: $12.00/month
-- **Mode**: Test (change to live for production)
+- **Mode**: Live (production)
+
+### Founder's Gift Coupon
+- **Coupon ID**: `t5HqGxmD`
+- **Discount**: 100% off
+- **Duration**: 12 months
+- **Purpose**: All early adopters get 1 year free premium
+
+### Legacy Test Mode IDs (deprecated)
+- Product ID: `prod_TYstNGX1R577Gr`
+- Price ID: `price_1SbrvvCpozUWtHfyCFE5Lyur` (also `price_1Sbl9Z2SDNFB3sqEVZH1v8Yr`)
 
 ### Webhook URL
 Configure this URL in Stripe Dashboard > Developers > Webhooks:
@@ -139,10 +149,53 @@ async function handleUpgrade(userId: string) {
 | Real-time alerts | No | Yes |
 | Audio digests | No | Yes |
 
+## Migration to Live Mode
+
+### Migration Script
+A migration script is available to give existing users the Founder's Gift (1 year free premium):
+
+```bash
+# From hakivo-api directory:
+STRIPE_LIVE_SECRET_KEY=sk_live_xxx npx tsx scripts/migrate-stripe-live-founders-gift.ts
+```
+
+The script:
+1. Creates Stripe customers in LIVE mode for all existing users
+2. Creates subscriptions with 100% off coupon for 12 months
+3. Updates database with live Stripe IDs and active subscription status
+
+### Migration Checklist
+
+1. ✅ Create live Stripe product and price
+2. ✅ Create Founder's Gift coupon (100% off, 12 months)
+3. ✅ Write migration script (`scripts/migrate-stripe-live-founders-gift.ts`)
+4. ✅ Update `subscription-api/index.ts` with live price ID
+5. ⬜ Update environment variables:
+   - `STRIPE_SECRET_KEY` - live secret key (sk_live_...)
+   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` - live publishable key (pk_live_...)
+6. ⬜ Configure live webhooks in Stripe Dashboard:
+   - URL: `https://<stripe-webhook-service-url>/api/stripe/webhook`
+   - Events: checkout.session.completed, customer.subscription.*, invoice.payment_*
+7. ⬜ Deploy updated backend services (`npx raindrop build start`)
+8. ⬜ Run migration script with live Stripe key
+
+## Environment Variables
+
+### Backend (Raindrop/Cloudflare Workers)
+```
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+### Frontend (Next.js/Netlify)
+```
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
+```
+
 ## Next Steps
 
-1. **Configure Stripe Webhook**: Add the webhook URL in Stripe Dashboard
-2. **Add Publishable Key**: Set `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` in frontend
-3. **Build Pricing Page**: Create `/pricing` page with plan comparison
-4. **Add Upgrade Prompts**: Show upgrade prompts when limits are reached
-5. **Test Full Flow**: Test checkout � webhook � subscription activation
+1. **Update Environment Variables**: Switch STRIPE keys from test to live mode
+2. **Configure Live Webhooks**: Add webhook URL in Stripe Dashboard (Live mode)
+3. **Deploy Backend**: Run `npx raindrop build start` from hakivo-api
+4. **Run Migration**: Execute the Founder's Gift migration script
+5. **Verify**: Check that users have active subscriptions in Stripe Dashboard
