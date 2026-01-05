@@ -2,12 +2,14 @@
  * Netlify Background Function for Content Backfill
  *
  * Regenerates written articles for briefs that have scripts but empty content.
- * Uses Claude Haiku 4.5 to convert podcast scripts into professional articles.
+ * Uses Gemini Flash to convert podcast scripts into professional articles.
  *
  * Background functions get 15-minute timeout (vs 10s for regular functions).
  */
 import type { Context } from "@netlify/functions";
-import Anthropic from "@anthropic-ai/sdk";
+
+// Gemini Flash for text generation (stable model)
+const GEMINI_TEXT_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 // Get Raindrop DB admin service URL from env or use default
 const getDbAdminUrl = () => {
@@ -148,9 +150,9 @@ function extractBillReferences(script: string): string[] {
 }
 
 /**
- * Convert podcast script to written article using Claude Haiku 4.5
+ * Convert podcast script to written article using Gemini Flash
  */
-async function scriptToArticle(brief: BriefToBackfill, anthropic: Anthropic): Promise<string | null> {
+async function scriptToArticle(brief: BriefToBackfill, geminiApiKey: string): Promise<string | null> {
   console.log(`[BACKFILL] Converting script to article for brief: ${brief.id}`);
   console.log(`[BACKFILL] Title: ${brief.title}`);
   console.log(`[BACKFILL] Script length: ${brief.script.length} chars`);
@@ -209,25 +211,40 @@ REQUIREMENTS:
 - Structure with clear sections (## headers)
 - Minimum 5 source citations with hyperlinks`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 3000,
-      temperature: 0.5,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
+    // Call Gemini Flash API
+    const response = await fetch(`${GEMINI_TEXT_ENDPOINT}?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.5,
+          maxOutputTokens: 4000,
+          responseMimeType: 'text/plain'
+        }
+      })
     });
 
-    if (!response.content || response.content.length === 0) {
-      console.error('[BACKFILL] No content in Claude response');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[BACKFILL] Gemini API error: ${response.status} - ${errorText}`);
       return null;
     }
 
-    let article = '';
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        article += block.text;
-      }
-    }
+    const result = await response.json() as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>;
+        };
+      }>;
+    };
+
+    const article = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!article || article.length < 200) {
       console.error(`[BACKFILL] Article too short: ${article?.length || 0} chars`);
@@ -251,13 +268,11 @@ REQUIREMENTS:
 export default async (_req: Request, _context: Context) => {
   console.log('[BACKFILL] Background function triggered');
 
-  const anthropicApiKey = Netlify.env.get('ANTHROPIC_API_KEY');
-  if (!anthropicApiKey) {
-    console.error('[BACKFILL] ANTHROPIC_API_KEY not configured');
-    return new Response('ANTHROPIC_API_KEY not configured', { status: 500 });
+  const geminiApiKey = Netlify.env.get('GEMINI_API_KEY');
+  if (!geminiApiKey) {
+    console.error('[BACKFILL] GEMINI_API_KEY not configured');
+    return new Response('GEMINI_API_KEY not configured', { status: 500 });
   }
-
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
   // Query for briefs needing backfill
   const briefs = await getBriefsNeedingBackfill();
@@ -274,7 +289,7 @@ export default async (_req: Request, _context: Context) => {
   let failCount = 0;
 
   for (const brief of briefs) {
-    const article = await scriptToArticle(brief, anthropic);
+    const article = await scriptToArticle(brief, geminiApiKey);
 
     if (article) {
       const updated = await updateBriefContent(brief.id, article);
