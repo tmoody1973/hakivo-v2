@@ -3,6 +3,7 @@ import { Env } from './raindrop.gen';
 import { getPolicyAreasForInterests, getKeywordsForInterests } from '../config/user-interests';
 import type { FederalRegisterDocument } from '../federal-register-client';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
 /**
  * Brief Generator - Multi-Stage Pipeline
@@ -10,7 +11,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  * This observer handles brief generation in stages:
  * - Stage 1-4: Content gathering (user prefs, bills, actions, news)
  * - Stage 5: Script generation (Gemini 3 Flash - fast, rich writing)
- * - Stage 6: Article generation (Gemini 3 Flash - emotional depth & coherence)
+ * - Stage 6: Article generation (Claude Haiku 4.5 - reliable, quality writing)
  * - Stage 7: Set status to 'script_ready' and trigger immediate audio processing
  *
  * Audio generation is handled by Netlify Background Function (audio-processor):
@@ -316,17 +317,28 @@ export default class extends Each<Body, Env> {
     }
 
     // ==================== STAGE 6: GENERATE ARTICLE ====================
-    console.log(`[STAGE-6] Generating written article with ${verifiedBillsContext ? 'verified bills context' : 'no verified bills'}...`);
+    console.log(`[STAGE-6] Generating written article with Claude Haiku 4.5...`);
     let article: string = '';
     let wordCount: number = 0;
+
     try {
       const articleResult = await this.generateWrittenArticle(type, billsWithActions, newsJSON, headline, stateBills, userState, verifiedBillsContext);
       article = articleResult.article;
       wordCount = articleResult.wordCount;
       console.log(`[STAGE-6] Generated article: ${wordCount} words. Elapsed: ${Date.now() - startTime}ms`);
     } catch (articleError) {
-      console.error(`[STAGE-6] Article generation failed (non-fatal):`, articleError);
-      // Continue without article - non-fatal
+      console.error(`[STAGE-6] Article generation FAILED:`, articleError);
+      await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
+        .bind('failed', Date.now(), briefId).run();
+      return;
+    }
+
+    // Validate article was generated
+    if (!article || article.length < 100) {
+      console.error(`[STAGE-6] Article empty or too short`);
+      await db.prepare('UPDATE briefs SET status = ?, updated_at = ? WHERE id = ?')
+        .bind('failed', Date.now(), briefId).run();
+      return;
     }
 
     // ==================== STAGE 7: GET FEATURE IMAGE ====================
@@ -2020,26 +2032,48 @@ FINAL URL REMINDER (READ THIS CAREFULLY):
 
 End with an empowering note about staying informed.`;
 
-    // Use Gemini 3 Flash - Fast, rich writing with emotional depth
-    const genAI = new GoogleGenerativeAI(this.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3-flash-preview',
-      generationConfig: {
-        temperature: 0.6,
-        maxOutputTokens: 3000,
-      }
+    // Use Claude Haiku 4.5 - Fast, reliable, excellent writing quality
+    const anthropic = new Anthropic({ apiKey: this.env.ANTHROPIC_API_KEY });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20250514',
+      max_tokens: 3000,
+      temperature: 0.6,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }]
     });
 
-    const geminiResult = await model.generateContent([
-      { text: systemPrompt },
-      { text: userPrompt }
-    ]);
+    // Validate response
+    if (!response.content || response.content.length === 0) {
+      throw new Error('No content in Claude response');
+    }
 
-    const response = geminiResult.response;
-    const article = response.text();
+    // Extract text from response
+    let article = '';
+    for (const block of response.content) {
+      if (block.type === 'text') {
+        article += block.text;
+      }
+    }
+
+    if (!article) {
+      throw new Error('No text content in Claude response');
+    }
     const wordCount = article.split(/\s+/).length;
 
-    console.log(`✓ Generated written article with Gemini 3 Flash: ${wordCount} words`);
+    // Validate minimum word count
+    const MIN_ARTICLE_WORDS = 400;
+    if (wordCount < MIN_ARTICLE_WORDS) {
+      console.warn(`[ARTICLE-GEN] Article too short (${wordCount} words, minimum ${MIN_ARTICLE_WORDS})`);
+      throw new Error(`Article truncated: only ${wordCount} words (minimum ${MIN_ARTICLE_WORDS} required)`);
+    }
+
+    // Check stop reason
+    if (response.stop_reason !== 'end_turn') {
+      console.warn(`[ARTICLE-GEN] Claude stop_reason: ${response.stop_reason}`);
+    }
+
+    console.log(`✓ Generated written article with Claude Haiku 4.5: ${wordCount} words (stop_reason: ${response.stop_reason})`);
 
     return { article, wordCount };
   }
