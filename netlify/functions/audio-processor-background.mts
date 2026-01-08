@@ -226,36 +226,81 @@ async function saveFederalBillsFromContent(briefId: string): Promise<void> {
     const content = briefData.results?.[0]?.content;
     if (!content) return;
 
-    // Extract federal bill mentions (HR 1234, S 567, H.R. 1234, etc.)
-    // Patterns: HR 1234, H.R. 1234, S 567, S. 567
-    const billMatches = content.matchAll(/\b(HR?\.?\s*(\d+)|S\.?\s*(\d+))\b/gi);
-    const billIdentifiers = new Set<{ type: string; number: string }>();
+    // Extract federal bill mentions - comprehensive patterns for all bill types
+    // Bills: HR 1234, H.R. 1234, S 567, S. 567
+    // Resolutions: SRES 563, S.RES. 563, S. Res. 563, HRES 123, H.RES. 123
+    // Joint Resolutions: SJRES/HJRES, S.J.Res./H.J.Res.
+    // Concurrent Resolutions: SCONRES/HCONRES
+    const billIdentifiers: Array<{ type: string; number: string }> = [];
 
-    for (const match of billMatches) {
-      const fullMatch = match[1]!;
-      let type: string;
-      let num: string;
-
-      if (fullMatch.toUpperCase().includes('H')) {
-        type = 'hr';
-        num = match[2]!;
-      } else {
-        type = 's';
-        num = match[3]!;
-      }
-
-      billIdentifiers.add({ type, number: num });
+    // Pattern 1: Senate Resolutions - SRES 563, S.RES. 563, S. Res. 563, S.Res.563
+    const sresMatches = content.matchAll(/\bS\.?\s*RES\.?\s*(\d+)/gi);
+    for (const match of sresMatches) {
+      billIdentifiers.push({ type: 'sres', number: match[1]! });
     }
 
-    if (billIdentifiers.size === 0) return;
+    // Pattern 2: House Resolutions - HRES 123, H.RES. 123, H. Res. 123
+    const hresMatches = content.matchAll(/\bH\.?\s*RES\.?\s*(\d+)/gi);
+    for (const match of hresMatches) {
+      billIdentifiers.push({ type: 'hres', number: match[1]! });
+    }
 
-    console.log(`[FEDERAL-BILLS] Found ${billIdentifiers.size} bill mentions in brief ${briefId}`);
+    // Pattern 3: Senate Joint Resolutions - SJRES, S.J.RES., S. J. Res.
+    const sjresMatches = content.matchAll(/\bS\.?\s*J\.?\s*RES\.?\s*(\d+)/gi);
+    for (const match of sjresMatches) {
+      billIdentifiers.push({ type: 'sjres', number: match[1]! });
+    }
+
+    // Pattern 4: House Joint Resolutions - HJRES, H.J.RES., H. J. Res.
+    const hjresMatches = content.matchAll(/\bH\.?\s*J\.?\s*RES\.?\s*(\d+)/gi);
+    for (const match of hjresMatches) {
+      billIdentifiers.push({ type: 'hjres', number: match[1]! });
+    }
+
+    // Pattern 5: Senate Concurrent Resolutions - SCONRES
+    const sconresMatches = content.matchAll(/\bS\.?\s*CON\.?\s*RES\.?\s*(\d+)/gi);
+    for (const match of sconresMatches) {
+      billIdentifiers.push({ type: 'sconres', number: match[1]! });
+    }
+
+    // Pattern 6: House Concurrent Resolutions - HCONRES
+    const hconresMatches = content.matchAll(/\bH\.?\s*CON\.?\s*RES\.?\s*(\d+)/gi);
+    for (const match of hconresMatches) {
+      billIdentifiers.push({ type: 'hconres', number: match[1]! });
+    }
+
+    // Pattern 7: Regular House bills - HR 1234, H.R. 1234 (but NOT HRES which was matched above)
+    // Use negative lookahead to avoid matching HRES/HJRES/HCONRES
+    const hrMatches = content.matchAll(/\bH\.?\s*R\.?\s*(?!ES|J|CON)(\d+)/gi);
+    for (const match of hrMatches) {
+      billIdentifiers.push({ type: 'hr', number: match[1]! });
+    }
+
+    // Pattern 8: Regular Senate bills - S 567, S. 567 (but NOT SRES which was matched above)
+    // Use negative lookahead to avoid matching SRES/SJRES/SCONRES
+    const sMatches = content.matchAll(/\bS\.?\s*(?!RES|J|CON)(\d+)/gi);
+    for (const match of sMatches) {
+      billIdentifiers.push({ type: 's', number: match[1]! });
+    }
+
+    // Deduplicate by type+number
+    const uniqueBills = new Map<string, { type: string; number: string }>();
+    for (const bill of billIdentifiers) {
+      const key = `${bill.type}-${bill.number}`;
+      if (!uniqueBills.has(key)) {
+        uniqueBills.set(key, bill);
+      }
+    }
+
+    if (uniqueBills.size === 0) return;
+
+    console.log(`[FEDERAL-BILLS] Found ${uniqueBills.size} unique bill mentions in brief ${briefId}`);
 
     // Get current congress (119th)
     const currentCongress = 119;
 
     // For each bill identifier, look it up and save to junction table
-    for (const { type, number } of billIdentifiers) {
+    for (const { type, number } of uniqueBills.values()) {
       // Look up bill in database
       const lookupQuery = `SELECT id FROM bills WHERE congress = ${currentCongress} AND bill_type = '${type}' AND bill_number = ${number}`;
       const lookupResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
