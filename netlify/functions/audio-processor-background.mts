@@ -10,7 +10,7 @@
  */
 import type { Context } from "@netlify/functions";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-// @ts-expect-error - lamejs doesn't have TypeScript definitions
+// @ts-ignore - lamejs doesn't have TypeScript definitions
 import lamejs from "lamejs";
 
 // Gemini TTS voice pairs for brief audio generation
@@ -231,7 +231,20 @@ async function saveFederalBillsFromContent(briefId: string): Promise<void> {
     // Resolutions: SRES 563, S.RES. 563, S. Res. 563, HRES 123, H.RES. 123
     // Joint Resolutions: SJRES/HJRES, S.J.Res./H.J.Res.
     // Concurrent Resolutions: SCONRES/HCONRES
+    // ALSO: Congress.gov URLs like congress.gov/bill/119th-congress/sres/563
     const billIdentifiers: Array<{ type: string; number: string }> = [];
+
+    // CRITICAL: Extract from Congress.gov URLs first (most reliable)
+    // Pattern: congress.gov/bill/{congress}th-congress/{bill_type}/{bill_number}
+    const urlMatches = content.matchAll(/congress\.gov\/bill\/\d+(?:th|st|nd|rd)-congress\/([a-z]+)\/(\d+)/gi);
+    for (const match of urlMatches) {
+      const billType = match[1]!.toLowerCase();
+      const billNumber = match[2]!;
+      // Only add valid federal bill types
+      if (['hr', 's', 'hres', 'sres', 'hjres', 'sjres', 'hconres', 'sconres'].includes(billType)) {
+        billIdentifiers.push({ type: billType, number: billNumber });
+      }
+    }
 
     // Pattern 1: Senate Resolutions - SRES 563, S.RES. 563, S. Res. 563, S.Res.563
     const sresMatches = content.matchAll(/\bS\.?\s*RES\.?\s*(\d+)/gi);
@@ -300,7 +313,7 @@ async function saveFederalBillsFromContent(briefId: string): Promise<void> {
     const currentCongress = 119;
 
     // For each bill identifier, look it up and save to junction table
-    for (const { type, number } of uniqueBills.values()) {
+    for (const { type, number } of Array.from(uniqueBills.values())) {
       // Look up bill in database
       const lookupQuery = `SELECT id FROM bills WHERE congress = ${currentCongress} AND bill_type = '${type}' AND bill_number = ${number}`;
       const lookupResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
@@ -369,7 +382,7 @@ async function saveStateBillsFromContent(briefId: string): Promise<void> {
     console.log(`[STATE-BILLS] Found ${billIdentifiers.size} bill mentions in brief ${briefId}`);
 
     // For each bill identifier, look it up and save to junction table
-    for (const identifier of billIdentifiers) {
+    for (const identifier of Array.from(billIdentifiers)) {
       // Look up bill in database (assuming Wisconsin for now)
       const lookupQuery = `SELECT id FROM state_bills WHERE state = 'WI' AND identifier = '${identifier}'`;
       const lookupResp = await fetch(`${getDbAdminUrl()}/db-admin/query`, {
