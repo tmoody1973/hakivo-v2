@@ -34,6 +34,24 @@ function formatDate(dateString: string): string {
   }
 }
 
+// Extract first paragraph from markdown content
+function getContentPreview(content: string, maxLength: number = 200): string {
+  if (!content) return "";
+  // Remove markdown formatting and get plain text
+  const plainText = content
+    .replace(/#{1,6}\s/g, "") // headers
+    .replace(/\*\*([^*]+)\*\*/g, "$1") // bold
+    .replace(/\*([^*]+)\*/g, "$1") // italic
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // links
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "") // images
+    .replace(/^[-*]\s/gm, "") // list items
+    .replace(/\n+/g, " ") // newlines
+    .trim();
+
+  if (plainText.length <= maxLength) return plainText;
+  return plainText.substring(0, maxLength).trim() + "...";
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -44,13 +62,14 @@ export async function GET(
   const title = brief?.title || "Daily Congressional Brief";
   const headline = brief?.headline || "";
   const createdAt = brief?.created_at ? formatDate(brief.created_at) : "";
-  const interests = brief?.interests || [];
-  const articleCount = brief?.articles?.length || 0;
   const hasAudio = !!brief?.audio_url;
+  const featuredImage = brief?.featured_image || brief?.brief?.featured_image;
+  const content = brief?.content || brief?.brief?.content || "";
+  const contentPreview = getContentPreview(content, 280);
 
-  // Truncate headline
+  // Truncate headline for left side
   const truncatedHeadline =
-    headline.length > 120 ? headline.substring(0, 117) + "..." : headline;
+    headline.length > 80 ? headline.substring(0, 77) + "..." : headline;
 
   return new ImageResponse(
     (
@@ -65,33 +84,32 @@ export async function GET(
         {/* LEFT SIDE - Branding */}
         <div
           style={{
-            width: "45%",
+            width: "42%",
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            padding: "50px",
-            borderRight: "3px solid #1e40af",
+            padding: "45px",
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`${SITE_URL}/hakivo.png`}
-            width="160"
-            height="70"
+            width="140"
+            height="60"
             alt="Hakivo"
-            style={{ objectFit: "contain", marginBottom: "24px" }}
+            style={{ objectFit: "contain", marginBottom: "20px" }}
           />
 
           <div
             style={{
               display: "flex",
               flexDirection: "column",
-              marginBottom: "24px",
+              marginBottom: "20px",
             }}
           >
             <span
               style={{
-                fontSize: "72px",
+                fontSize: "56px",
                 fontWeight: "800",
                 color: "white",
                 lineHeight: 1,
@@ -102,7 +120,7 @@ export async function GET(
             </span>
             <span
               style={{
-                fontSize: "72px",
+                fontSize: "56px",
                 fontWeight: "800",
                 color: "#3b82f6",
                 lineHeight: 1,
@@ -115,14 +133,14 @@ export async function GET(
 
           <p
             style={{
-              fontSize: "22px",
+              fontSize: "18px",
               color: "#94a3b8",
               lineHeight: 1.4,
               margin: 0,
-              marginBottom: "24px",
+              marginBottom: "20px",
             }}
           >
-            Personalized congressional news and legislation tracking.
+            {truncatedHeadline || "Personalized congressional news and legislation tracking."}
           </p>
 
           {/* Audio badge */}
@@ -136,140 +154,163 @@ export async function GET(
                 color: "white",
                 padding: "8px 16px",
                 borderRadius: "20px",
-                fontSize: "16px",
+                fontSize: "14px",
                 fontWeight: "600",
                 width: "fit-content",
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
               </svg>
               Listen Now
             </div>
           )}
+
+          {/* From line */}
+          <span style={{ color: "#64748b", fontSize: "14px", marginTop: "auto" }}>
+            From hakivo.com
+          </span>
         </div>
 
-        {/* RIGHT SIDE - Content Preview */}
+        {/* RIGHT SIDE - Screenshot Preview */}
         <div
           style={{
-            width: "55%",
+            width: "58%",
             display: "flex",
-            flexDirection: "column",
-            padding: "50px",
-            backgroundColor: "#1e293b",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "30px",
+            paddingLeft: "15px",
           }}
         >
-          {/* Date Badge */}
-          {createdAt && (
+          {/* Phone/Browser mockup */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: "100%",
+              height: "100%",
+              backgroundColor: "#ffffff",
+              borderRadius: "16px",
+              overflow: "hidden",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+            }}
+          >
+            {/* Browser header */}
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
+                padding: "12px 16px",
+                backgroundColor: "#f1f5f9",
+                borderBottom: "1px solid #e2e8f0",
                 gap: "8px",
-                marginBottom: "20px",
               }}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              <span style={{ color: "#3b82f6", fontSize: "18px", fontWeight: "500" }}>
-                {createdAt}
-              </span>
+              {/* Browser dots */}
+              <div style={{ display: "flex", gap: "6px" }}>
+                <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: "#ef4444" }} />
+                <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: "#eab308" }} />
+                <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: "#22c55e" }} />
+              </div>
+              {/* URL bar */}
+              <div
+                style={{
+                  display: "flex",
+                  flex: 1,
+                  backgroundColor: "#ffffff",
+                  borderRadius: "6px",
+                  padding: "6px 12px",
+                  fontSize: "12px",
+                  color: "#64748b",
+                  marginLeft: "8px",
+                }}
+              >
+                hakivo.com/briefs/{id.substring(0, 8)}...
+              </div>
             </div>
-          )}
 
-          {/* Title */}
-          <h1
-            style={{
-              fontSize: "36px",
-              fontWeight: "bold",
-              color: "white",
-              lineHeight: 1.2,
-              margin: 0,
-              marginBottom: "16px",
-            }}
-          >
-            {title}
-          </h1>
-
-          {/* Headline */}
-          {truncatedHeadline && (
-            <p
-              style={{
-                fontSize: "20px",
-                color: "#cbd5e1",
-                lineHeight: 1.5,
-                margin: 0,
-                marginBottom: "24px",
-              }}
-            >
-              {truncatedHeadline}
-            </p>
-          )}
-
-          {/* Spacer */}
-          <div style={{ flex: 1, display: "flex" }} />
-
-          {/* Interests Tags */}
-          {interests.length > 0 && (
+            {/* Content area */}
             <div
               style={{
                 display: "flex",
-                gap: "10px",
-                flexWrap: "wrap",
-                marginBottom: "20px",
+                flexDirection: "column",
+                flex: 1,
+                padding: "20px",
+                backgroundColor: "#ffffff",
               }}
             >
-              {interests.slice(0, 4).map((interest: string, i: number) => (
+              {/* Date */}
+              {createdAt && (
+                <span style={{ color: "#3b82f6", fontSize: "12px", fontWeight: "500", marginBottom: "8px" }}>
+                  {createdAt}
+                </span>
+              )}
+
+              {/* Title */}
+              <h2
+                style={{
+                  fontSize: "20px",
+                  fontWeight: "700",
+                  color: "#0f172a",
+                  lineHeight: 1.2,
+                  margin: 0,
+                  marginBottom: "12px",
+                }}
+              >
+                {title.length > 60 ? title.substring(0, 57) + "..." : title}
+              </h2>
+
+              {/* Featured Image (if available) */}
+              {featuredImage && (
                 <div
-                  key={i}
                   style={{
-                    backgroundColor: "#334155",
-                    color: "#e2e8f0",
-                    padding: "6px 14px",
-                    borderRadius: "14px",
-                    fontSize: "14px",
-                    fontWeight: "500",
+                    display: "flex",
+                    width: "100%",
+                    height: "120px",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    marginBottom: "12px",
+                    backgroundColor: "#f1f5f9",
                   }}
                 >
-                  {interest}
-                </div>
-              ))}
-              {interests.length > 4 && (
-                <div
-                  style={{
-                    backgroundColor: "#334155",
-                    color: "#94a3b8",
-                    padding: "6px 14px",
-                    borderRadius: "14px",
-                    fontSize: "14px",
-                  }}
-                >
-                  +{interests.length - 4} more
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={featuredImage}
+                    alt=""
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Footer */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingTop: "16px",
-              borderTop: "1px solid #475569",
-            }}
-          >
-            <span style={{ color: "#64748b", fontSize: "16px" }}>
-              {articleCount > 0 ? `${articleCount} articles` : "Congressional News"}
-            </span>
-            <span style={{ color: "#64748b", fontSize: "16px" }}>
-              hakivo.com
-            </span>
+              {/* Content preview */}
+              <p
+                style={{
+                  fontSize: "13px",
+                  color: "#475569",
+                  lineHeight: 1.5,
+                  margin: 0,
+                  display: "-webkit-box",
+                  overflow: "hidden",
+                }}
+              >
+                {contentPreview || "Your personalized congressional news brief with the latest legislative updates, bill tracking, and representative activity..."}
+              </p>
+
+              {/* Fade out effect at bottom */}
+              <div
+                style={{
+                  display: "flex",
+                  marginTop: "auto",
+                  height: "40px",
+                  background: "linear-gradient(transparent, white)",
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
