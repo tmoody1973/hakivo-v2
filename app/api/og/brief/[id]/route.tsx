@@ -59,126 +59,149 @@ export async function GET(
           height: "100%",
           width: "100%",
           display: "flex",
-          flexDirection: "column",
           backgroundColor: "#0f172a",
-          padding: "60px",
         }}
       >
-        {/* Header with Logo and Date */}
+        {/* LEFT SIDE - Branding */}
         <div
           style={{
+            width: "45%",
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "40px",
+            flexDirection: "column",
+            justifyContent: "center",
+            padding: "50px",
+            borderRight: "3px solid #1e40af",
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`${SITE_URL}/hakivo.png`}
-            width="180"
-            height="80"
+            width="160"
+            height="70"
             alt="Hakivo"
-            style={{ objectFit: "contain" }}
+            style={{ objectFit: "contain", marginBottom: "24px" }}
           />
 
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              marginBottom: "24px",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "72px",
+                fontWeight: "800",
+                color: "white",
+                lineHeight: 1,
+                letterSpacing: "-2px",
+              }}
+            >
+              DAILY
+            </span>
+            <span
+              style={{
+                fontSize: "72px",
+                fontWeight: "800",
+                color: "#3b82f6",
+                lineHeight: 1,
+                letterSpacing: "-2px",
+              }}
+            >
+              BRIEF
+            </span>
+          </div>
+
+          <p
+            style={{
+              fontSize: "22px",
+              color: "#94a3b8",
+              lineHeight: 1.4,
+              margin: 0,
+              marginBottom: "24px",
+            }}
+          >
+            Personalized congressional news and legislation tracking.
+          </p>
+
+          {/* Audio badge */}
+          {hasAudio && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                backgroundColor: "#10b981",
+                color: "white",
+                padding: "8px 16px",
+                borderRadius: "20px",
+                fontSize: "16px",
+                fontWeight: "600",
+                width: "fit-content",
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
+              </svg>
+              Listen Now
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT SIDE - Content Preview */}
+        <div
+          style={{
+            width: "55%",
+            display: "flex",
+            flexDirection: "column",
+            padding: "50px",
+            backgroundColor: "#1e293b",
+          }}
+        >
           {/* Date Badge */}
           {createdAt && (
             <div
               style={{
                 display: "flex",
-                backgroundColor: "#1e40af",
-                color: "white",
-                padding: "12px 24px",
-                borderRadius: "24px",
-                fontSize: "20px",
-                fontWeight: "500",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "20px",
               }}
             >
-              {createdAt}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span style={{ color: "#3b82f6", fontSize: "18px", fontWeight: "500" }}>
+                {createdAt}
+              </span>
             </div>
           )}
-        </div>
 
-        {/* Main Content */}
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-          }}
-        >
-          {/* Brief Type Label */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              marginBottom: "16px",
-            }}
-          >
-            <svg
-              width="32"
-              height="32"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#3b82f6"
-              strokeWidth="2"
-            >
-              <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2" />
-              <path d="M18 14h-8" />
-              <path d="M15 18h-5" />
-              <path d="M10 6h8v4h-8V6Z" />
-            </svg>
-            <span style={{ color: "#3b82f6", fontSize: "24px", fontWeight: "600" }}>
-              Daily Congressional Brief
-            </span>
-            {hasAudio && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  backgroundColor: "#10b981",
-                  color: "white",
-                  padding: "6px 12px",
-                  borderRadius: "12px",
-                  fontSize: "16px",
-                }}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
-                </svg>
-                Audio
-              </div>
-            )}
-          </div>
-
+          {/* Title */}
           <h1
             style={{
-              fontSize: "52px",
+              fontSize: "36px",
               fontWeight: "bold",
               color: "white",
               lineHeight: 1.2,
               margin: 0,
-              marginBottom: "24px",
+              marginBottom: "16px",
             }}
           >
             {title}
           </h1>
 
+          {/* Headline */}
           {truncatedHeadline && (
             <p
               style={{
-                fontSize: "28px",
-                color: "#94a3b8",
-                lineHeight: 1.4,
+                fontSize: "20px",
+                color: "#cbd5e1",
+                lineHeight: 1.5,
                 margin: 0,
                 marginBottom: "24px",
               }}
@@ -187,13 +210,17 @@ export async function GET(
             </p>
           )}
 
+          {/* Spacer */}
+          <div style={{ flex: 1, display: "flex" }} />
+
           {/* Interests Tags */}
           {interests.length > 0 && (
             <div
               style={{
                 display: "flex",
-                gap: "12px",
+                gap: "10px",
                 flexWrap: "wrap",
+                marginBottom: "20px",
               }}
             >
               {interests.slice(0, 4).map((interest: string, i: number) => (
@@ -202,9 +229,10 @@ export async function GET(
                   style={{
                     backgroundColor: "#334155",
                     color: "#e2e8f0",
-                    padding: "8px 16px",
-                    borderRadius: "16px",
-                    fontSize: "18px",
+                    padding: "6px 14px",
+                    borderRadius: "14px",
+                    fontSize: "14px",
+                    fontWeight: "500",
                   }}
                 >
                   {interest}
@@ -215,9 +243,9 @@ export async function GET(
                   style={{
                     backgroundColor: "#334155",
                     color: "#94a3b8",
-                    padding: "8px 16px",
-                    borderRadius: "16px",
-                    fontSize: "18px",
+                    padding: "6px 14px",
+                    borderRadius: "14px",
+                    fontSize: "14px",
                   }}
                 >
                   +{interests.length - 4} more
@@ -225,25 +253,24 @@ export async function GET(
               )}
             </div>
           )}
-        </div>
 
-        {/* Footer */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: "40px",
-            paddingTop: "24px",
-            borderTop: "1px solid #334155",
-          }}
-        >
-          <span style={{ color: "#64748b", fontSize: "24px" }}>
-            {articleCount > 0 ? `${articleCount} articles` : "Personalized Congressional News"}
-          </span>
-          <span style={{ color: "#64748b", fontSize: "24px" }}>
-            hakivo.com/briefs/{id}
-          </span>
+          {/* Footer */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingTop: "16px",
+              borderTop: "1px solid #475569",
+            }}
+          >
+            <span style={{ color: "#64748b", fontSize: "16px" }}>
+              {articleCount > 0 ? `${articleCount} articles` : "Congressional News"}
+            </span>
+            <span style={{ color: "#64748b", fontSize: "16px" }}>
+              hakivo.com
+            </span>
+          </div>
         </div>
       </div>
     ),

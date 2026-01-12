@@ -86,10 +86,10 @@ export const metadata: Metadata = {
       "Make sense of Congressional legislation with AI-powered summaries, podcast briefings, and representative tracking. Democracy made accessible.",
     images: [
       {
-        url: "/og-image.png",
+        url: `${SITE_URL}/api/og`,
         width: 1200,
         height: 630,
-        alt: "Hakivo - Civic Engagement Platform",
+        alt: "Hakivo - Understand Congress",
       },
     ],
   },
@@ -98,7 +98,7 @@ export const metadata: Metadata = {
     title: "Hakivo - Understand Congress",
     description:
       "Make sense of Congressional legislation with AI-powered summaries and podcast briefings.",
-    images: ["/og-image.png"],
+    images: [`${SITE_URL}/api/og`],
     creator: "@hakivoapp",
   },
   alternates: {
